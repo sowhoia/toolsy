@@ -221,6 +221,16 @@ struct ProcessMonitorTests {
         #expect(app.process.terminationReason == .exit)
     }
 
+    @Test func appsAreNamedWithoutTheirExtension() throws {
+        // Finder shows the extension when it is set to show them all, as it is on some Macs.
+        let folder = FileManager.default.temporaryDirectory.appending(path: "toolsy-names-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let app = folder.appending(path: "Sample Tool.app")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        #expect(ProcessMonitor.bundleName(atPath: app.path(percentEncoded: false)) == "Sample Tool")
+        #expect(!ProcessMonitor.bundleName(atPath: "/System/Applications/Calculator.app").lowercased().hasSuffix(".app"))
+    }
+
     @Test func nothingElseCanBeQuit() async throws {
         let panel = PanelState()
         panel.setVisible(true)

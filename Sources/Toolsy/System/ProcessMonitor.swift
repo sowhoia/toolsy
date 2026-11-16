@@ -140,7 +140,7 @@ final class ProcessMonitor {
             switch reading.kind {
             case .bundle(let path):
                 id = path
-                look = looks[id] ?? Look(name: FileManager.default.displayName(atPath: path), icon: NSWorkspace.shared.icon(forFile: path))
+                look = looks[id] ?? Look(name: Self.bundleName(atPath: path), icon: NSWorkspace.shared.icon(forFile: path))
                 seen[id] = look
             case .process(let key, let executable):
                 id = "\(key.pid)-\(key.start)"
@@ -165,6 +165,12 @@ final class ProcessMonitor {
     private struct Look {
         var name: String
         var icon: NSImage?
+    }
+
+    /// The name Finder shows for an app, without the extension it adds when it is set to show them all.
+    static func bundleName(atPath path: String) -> String {
+        let name = FileManager.default.displayName(atPath: path)
+        return name.lowercased().hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 
     /// Regular apps only: background apps and agents have no Quit command a person would choose. Toolsy
