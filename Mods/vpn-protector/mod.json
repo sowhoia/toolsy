@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "id": "vpn-protector",
+  "name": "VPN Protector",
+  "version": "1.0.0",
+  "author": "Toolsy",
+  "summary": "Kill switch: выпускает трафик только через VPN-туннель",
+  "icon": "lock.shield.fill",
+  "tint": "indigo",
+  "settings": {
+    "tunnelAddresses": "",
+    "tunnelInterfaces": "",
+    "endpoints": "",
+    "allowDHCPv4": true
+  },
+  "commands": {
+    "enable": { "exec": "bin/vpn-protector", "args": ["enable", "--toolsy"], "privileged": true, "stdin": true, "timeout": 180 },
+    "disable": { "exec": "bin/vpn-protector", "args": ["disable", "--toolsy"], "privileged": true, "timeout": 120 },
+    "status": { "exec": "bin/vpn-protector", "args": ["status", "--toolsy"], "privileged": true, "timeout": 30 },
+    "uninstall": { "exec": "bin/vpn-protector", "args": ["uninstall", "--toolsy"], "privileged": true, "timeout": 30 },
+    "check": { "exec": "bin/vpn-protector", "args": ["check", "--toolsy"], "stdin": true, "timeout": 30 },
+    "forget-check": { "shell": "echo '{\"checkResult\": null}'" }
+  },
+  "lifecycle": {
+    "enable": "enable",
+    "disable": "disable",
+    "uninstall": "uninstall",
+    "refresh": { "command": "status", "every": 20 }
+  },
+  "ui": [
+    {
+      "type": "section",
+      "title": "Состояние",
+      "footer": "Обновляется каждые 20 секунд, пока открыта панель. Состояние самого VPN смотрите в его клиенте.",
+      "children": [
+        { "type": "value", "label": "Защита", "icon": "shield.lefthalf.filled", "value": "{{status|default:Проверяется…}}", "tint": "{{level}}" },
+        { "type": "text", "text": "Пока защита включена, настройки изменить нельзя. Выключите её, измените поля и включите снова.", "style": "caption", "when": "enabled" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Туннель",
+      "footer": "Адреса туннеля — локальные IP вашего VPN-интерфейса: их показывает клиент VPN или «ifconfig utunN». Добавьте IPv6-адрес, если VPN обслуживает IPv6. Без списка интерфейсов подойдёт любой utun0…utun63 с этими адресами; точные имена заблокируют туннель, если клиент выберет другой номер.",
+      "children": [
+        { "type": "input", "label": "Адреса туннеля", "icon": "point.3.connected.trianglepath.dotted", "bind": "tunnelAddresses", "placeholder": "198.18.0.1, fd00::2", "command": "forget-check", "disabled": "enabled" },
+        { "type": "input", "label": "Интерфейсы", "icon": "network", "bind": "tunnelInterfaces", "placeholder": "любой utun или utun4, utun7", "command": "forget-check", "disabled": "enabled" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Сервер VPN",
+      "footer": "Числовые IPv4-адреса серверов с протоколом и портом через запятую. Клиент должен переподключаться по ним без DNS. Суффикс ?uid=N разрешает соединение с сервером только сокетам пользователя с этим UID. DHCPv4 нужен, чтобы получать и продлевать адрес в сети.",
+      "children": [
+        { "type": "input", "label": "Серверы", "icon": "server.rack", "bind": "endpoints", "placeholder": "udp://192.0.2.10:51820, tcp://192.0.2.11:443?uid=501", "command": "forget-check", "disabled": "enabled" },
+        { "type": "toggle", "label": "Разрешить DHCPv4", "icon": "antenna.radiowaves.left.and.right", "bind": "allowDHCPv4", "command": "forget-check", "disabled": "enabled" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Проверка",
+      "footer": "Проверка ничего не меняет в системе. Включение сохраняет копию /etc/pf.conf, применяет правила PF и сбрасывает их состояния, поэтому текущие соединения могут оборваться.",
+      "children": [
+        { "type": "button", "label": "Проверить конфигурацию", "icon": "checkmark.seal", "command": "check" },
+        { "type": "value", "label": "Результат", "icon": "checkmark.circle.fill", "value": "{{checkResult}}", "tint": "ok", "when": "checkResult" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Если Toolsy недоступен",
+      "footer": "Команда в Терминале снимает защиту и восстанавливает исходный /etc/pf.conf.",
+      "when": "enabled",
+      "children": [
+        { "type": "text", "text": "sudo /Library/VPNProtector/vpn-protector disable", "style": "mono" }
+      ]
+    }
+  ]
+}

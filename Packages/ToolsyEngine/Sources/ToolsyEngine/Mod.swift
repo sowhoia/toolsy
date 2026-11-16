@@ -1,0 +1,728 @@
+import Foundation
+import Observation
+import ToolsyShared
+
+/// Whether a mod can run its privileged commands, and if not, what is missing.
+public enum AdministratorAccess: Sendable, Equatable {
+    /// The mod has no privileged commands.
+    case notNeeded
+    /// The helper is not installed (`.notInstalled`) or must be updated (`.needsUpdate`).
+    case helperUnavailable(HelperStatus)
+    /// The helper holds no approval of the mod's current files; only installing the mod again from a
+    /// package gives it one. `modified`: the helper approved other files under this id, so the installed
+    /// ones were changed after the mod was installed.
+    case notApproved(modified: Bool)
+    case granted
+}
+
+/// One installed mod: its manifest, its state and everything it runs. Obtained from `ModStore.mods`.
+///
+/// Commands of a mod run strictly one after another in the order they were started. After the mod was
+/// removed or replaced (or the store shut down) every operation is ignored.
+@MainActor @Observable
+public final class Mod: Identifiable {
+    public let manifest: ModManifest
+    /// The installed copy, `<directories.mods>/<id>/`.
+    public let folder: URL
+    /// Settings and live state in one flat object; the page is a function of this and `manifest`.
+    public private(set) var state: ModState
+    /// From a call to `setEnabled` until its hooks have finished. The switch should be inert meanwhile.
+    public private(set) var isSwitching = false
+    public private(set) var access: AdministratorAccess
+
+    public nonisolated var id: String { manifest.id }
+
+    /// Whether the mod has a main switch; mods without one are passive widgets.
+    public var hasSwitch: Bool { manifest.lifecycle.hasToggle }
+    public var isEnabled: Bool { state[ReservedStateKey.enabled]?.boolValue ?? false }
+    public var status: String? { state[ReservedStateKey.status]?.stringValue }
+    public var level: ModLevel? { state[ReservedStateKey.level]?.stringValue.flatMap(ModLevel.init(rawValue:)) }
+    public var error: String? { state[ReservedStateKey.error]?.stringValue }
+
+    /// Names of the commands executing or waiting for their turn; buttons show a spinner for them.
+    public var runningCommands: Set<String> {
+        Set(([currentJob].compactMap(\.self) + queue).compactMap(\.commandName))
+    }
+
+    private enum Phase {
+        case active
+        /// Removal hooks are running: no schedule, no automatic refresh, no service.
+        case removing
+        /// Replaced, removed or shut down.
+        case closed
+    }
+
+    private enum Work: Equatable {
+        case command(String, event: ModEvent, key: String?, value: JSONValue?)
+        case switchOn, switchOff
+    }
+
+    /// Who reported the current `error`; decides what may clear it (MOD_FORMAT.md, "Errors").
+    private enum ErrorSource {
+        /// A command the user started: the switch, a button, a bound control.
+        case user
+        /// The automatic refresh.
+        case refresh
+        case service
+    }
+
+    private struct Job {
+        var work: Work
+        /// Automatic refreshes skip silently when access is missing instead of raising an error.
+        var automatic = false
+        var waiters: [CheckedContinuation<Bool, Never>] = []
+
+        var commandName: String? {
+            if case .command(let name, _, _, _) = work { name } else { nil }
+        }
+    }
+
+    private var phase = Phase.active
+    private var queue: [Job] = []
+    private var currentJob: Job?
+    /// Recorded samples per chart-bound key; see `history(of:)`.
+    private var histories: [String: [Double]] = [:]
+    @ObservationIgnored private var errorSource: ErrorSource?
+
+    @ObservationIgnored private let directories: ToolsyDirectories
+    @ObservationIgnored private let privileged: any PrivilegedExecuting
+    @ObservationIgnored private let timing: EngineTiming
+    @ObservationIgnored private let accessMayHaveChanged: @MainActor () -> Void
+    /// Chart-bound key → the largest `points` among the charts showing it.
+    @ObservationIgnored private let historyLimits: [String: Int]
+    /// `(key, command)` of live sliders, whose pending runs collapse to the latest value.
+    @ObservationIgnored private let liveSliders: Set<[String]>
+    @ObservationIgnored private var worker: Task<Void, Never>?
+    @ObservationIgnored private var isPanelVisible = false
+    @ObservationIgnored private var refreshTimer: Task<Void, Never>?
+
+    @ObservationIgnored private var service: (process: ServiceProcess, events: Task<Void, Never>, started: ContinuousClock.Instant)?
+    /// A scheduled (re)start of the service: crash backoff or the settings debounce.
+    @ObservationIgnored private var pendingServiceStart: Task<Void, Never>?
+    /// The stop in progress, so concurrent stoppers all wait for the process to be gone.
+    @ObservationIgnored private var serviceTermination: Task<Void, Never>?
+    @ObservationIgnored private var nextBackoff: Double = 1
+    /// Delays (unscaled seconds) of the recent crash restarts, newest last; lets tests observe the backoff.
+    @ObservationIgnored private(set) var restartDelays: [Double] = []
+
+    init(
+        manifest: ModManifest,
+        folder: URL,
+        saved: PersistedState,
+        directories: ToolsyDirectories,
+        privileged: any PrivilegedExecuting,
+        timing: EngineTiming,
+        accessMayHaveChanged: @escaping @MainActor () -> Void
+    ) {
+        self.manifest = manifest
+        self.folder = folder
+        self.directories = directories
+        self.privileged = privileged
+        self.timing = timing
+        self.accessMayHaveChanged = accessMayHaveChanged
+        var state = saved.settings
+        state[ReservedStateKey.enabled] = .bool(saved.enabled)
+        self.state = state
+        access = manifest.requiresPrivileges ? .helperUnavailable(.notInstalled) : .notNeeded
+
+        var limits: [String: Int] = [:]
+        var live: Set<[String]> = []
+        for control in manifest.allControls {
+            switch control.kind {
+            case .chart(let chart):
+                for series in chart.series {
+                    limits[series.bind] = max(limits[series.bind] ?? 0, chart.points)
+                }
+            case .slider(let slider) where slider.live:
+                if let command = slider.command { live.insert([slider.bind, command]) }
+            default:
+                break
+            }
+        }
+        historyLimits = limits
+        liveSliders = live
+    }
+
+    // MARK: - Operations
+
+    /// Flips the main switch: `on` runs `enable` and then starts the service; off stops the service and
+    /// runs `disable`. Returns when done. Ignored without a switch, while a switch change is in flight,
+    /// or when the switch already is in that position.
+    public func setEnabled(_ on: Bool) async {
+        guard phase == .active, hasSwitch, !isSwitching, on != isEnabled else { return }
+        isSwitching = true
+        await submit(on ? .switchOn : .switchOff)
+    }
+
+    /// Stores a control's new value. A declared setting is saved and restarts the service; with `command`
+    /// that command runs next with `TOOLSY_KEY`/`TOOLSY_VALUE` set. A `null` value removes the key.
+    /// The keys the host manages (`enabled`, `status`, `level`, `error`) are not bindable and are ignored.
+    public func setValue(_ value: JSONValue, for key: String, command: String? = nil) {
+        guard phase == .active, !ReservedStateKey.all.contains(key) else { return }
+        merge([key: value])
+        if let command {
+            enqueue(Job(work: .command(command, event: .command, key: key, value: value)))
+        }
+    }
+
+    /// Runs a command as a button or list row does; returns when it has finished.
+    public func run(_ command: String, key: String? = nil, value: JSONValue? = nil) async {
+        guard phase == .active else { return }
+        await submit(.command(command, event: .command, key: key, value: value))
+    }
+
+    public func dismissError() {
+        state.removeValue(forKey: ReservedStateKey.error)
+        errorSource = nil
+    }
+
+    /// Renders a template of this mod's manifest against the current state.
+    public func render(_ template: String) -> String {
+        // Manifests are checked at install and load, so their templates always parse; other text stays as is.
+        (try? ModTemplate(template))?.render(state) ?? template
+    }
+
+    /// Evaluates a `when` / `disabled` expression of this mod's manifest against the current state.
+    public func evaluate(_ expression: String) -> Bool {
+        // Checked at install and load like templates; anything that does not parse counts as false.
+        (try? ModExpression(expression))?.evaluate(state) ?? false
+    }
+
+    /// What a chart series bound to `key` plots: an array of numbers held by the key as is, otherwise the
+    /// numbers patches delivered for it, oldest first, at most the largest `points` of the charts showing it.
+    public func history(of key: String) -> [Double] {
+        if let array = state[key]?.arrayValue {
+            return array.compactMap(\.numberValue)
+        }
+        return histories[key] ?? []
+    }
+
+    // MARK: - Driven by the store
+
+    /// Starts what an enabled mod keeps running: the service and a background refresh schedule.
+    func activate(panelVisible: Bool) {
+        isPanelVisible = panelVisible
+        reconcile()
+    }
+
+    func panelVisibilityChanged(_ visible: Bool) {
+        isPanelVisible = visible
+        if visible {
+            requestRefresh()
+        }
+        updateRefreshSchedule()
+    }
+
+    func updateAccess(helperStatus: HelperStatus, approvedDigest: String?) async {
+        guard manifest.requiresPrivileges else {
+            access = .notNeeded
+            return
+        }
+        guard helperStatus == .ready else {
+            access = .helperUnavailable(helperStatus)
+            return
+        }
+        guard let approvedDigest else {
+            access = .notApproved(modified: false)
+            return
+        }
+        let folder = folder
+        do {
+            let digest = try await Task.detached { try ModPayload(directory: folder).digest }.value
+            access = digest == approvedDigest ? .granted : .notApproved(modified: true)
+        } catch {
+            // Files that cannot even be read are not the approved ones.
+            logger.error("mod \(self.id, privacy: .public): cannot read the installed files: \(error.localizedDescription)")
+            access = .notApproved(modified: true)
+        }
+    }
+
+    /// Switches the mod off (running `disable`) and runs `uninstall`. Throws the mod's error when a hook
+    /// fails, unless `force`; the mod then stays as it was.
+    func runRemovalHooks(force: Bool) async throws {
+        guard phase == .active else {
+            throw EngineError("\(manifest.name) is already being removed.")
+        }
+        phase = .removing
+        updateRefreshSchedule()
+        // Queued behind any switch change still in flight, so a mod being switched on is switched off again.
+        if hasSwitch {
+            isSwitching = true
+            if await !submit(.switchOff), !force {
+                throw abortRemoval()
+            }
+        }
+        if let uninstall = manifest.lifecycle.uninstall,
+           await !submit(.command(uninstall, event: .uninstall, key: nil, value: nil)), !force {
+            throw abortRemoval()
+        }
+    }
+
+    /// Returns a mod whose removal failed to normal operation and gives the reason.
+    func abortRemoval() -> EngineError {
+        phase = .active
+        reconcile()
+        return EngineError(error ?? "\(manifest.name) could not be removed.")
+    }
+
+    /// Stops everything without running any hook: on quit, before the files are replaced, after removal.
+    func close() async {
+        phase = .closed
+        refreshTimer?.cancel()
+        refreshTimer = nil
+        let pending = queue
+        queue = []
+        for job in pending {
+            job.waiters.forEach { $0.resume(returning: false) }
+        }
+        // Cancelling the worker kills the command it is running.
+        worker?.cancel()
+        await stopService()
+    }
+
+    // MARK: - Queue
+
+    @discardableResult
+    private func submit(_ work: Work) async -> Bool {
+        await withCheckedContinuation { continuation in
+            enqueue(Job(work: work, waiters: [continuation]))
+        }
+    }
+
+    private func enqueue(_ job: Job) {
+        guard phase != .closed else {
+            job.waiters.forEach { $0.resume(returning: false) }
+            return
+        }
+        if case .command(let name, .command, let key?, _) = job.work, liveSliders.contains([key, name]),
+           let last = queue.indices.last, case .command(let pendingName, .command, let pendingKey, _) = queue[last].work,
+           pendingName == name, pendingKey == key {
+            queue[last].work = job.work
+            queue[last].waiters += job.waiters
+            return
+        }
+        queue.append(job)
+        if worker == nil {
+            worker = Task { await drain() }
+        }
+    }
+
+    private func drain() async {
+        while !queue.isEmpty, !Task.isCancelled {
+            let job = queue.removeFirst()
+            currentJob = job
+            let succeeded = await perform(job)
+            currentJob = nil
+            job.waiters.forEach { $0.resume(returning: succeeded) }
+            if job.commandName != refreshCommand {
+                requestRefresh()
+            }
+        }
+        worker = nil
+    }
+
+    private func perform(_ job: Job) async -> Bool {
+        switch job.work {
+        case .command(let name, let event, let key, let value):
+            await execute(name, event: event, key: key, value: value, automatic: job.automatic) != nil
+        case .switchOn:
+            await switchOn()
+        case .switchOff:
+            await switchOff()
+        }
+    }
+
+    private func switchOn() async -> Bool {
+        defer {
+            isSwitching = false
+            reconcile()
+        }
+        if let enable = manifest.lifecycle.enable {
+            guard let patch = await execute(enable, event: .enable) else {
+                setSwitch(false)
+                return false
+            }
+            // The command may correct the switch itself.
+            if patch[ReservedStateKey.enabled] != nil { return true }
+        }
+        setSwitch(true)
+        return true
+    }
+
+    private func switchOff() async -> Bool {
+        defer {
+            isSwitching = false
+            reconcile()
+        }
+        guard isEnabled else { return true }
+        await stopService()
+        if let disable = manifest.lifecycle.disable {
+            // On failure the switch stays on and `reconcile` brings the service back.
+            guard let patch = await execute(disable, event: .disable) else { return false }
+            if patch[ReservedStateKey.enabled] != nil { return true }
+        }
+        setSwitch(false)
+        return true
+    }
+
+    private func setSwitch(_ on: Bool) {
+        merge([ReservedStateKey.enabled: .bool(on)])
+    }
+
+    // MARK: - Commands
+
+    /// Runs one command and applies its outcome. Returns the applied patch, or nil when it failed or did not run.
+    private func execute(_ name: String, event: ModEvent, key: String? = nil, value: JSONValue? = nil, automatic: Bool = false) async -> ModState? {
+        let source = automatic ? ErrorSource.refresh : .user
+        guard let command = manifest.commands[name] else {
+            fail("\(manifest.name) has no command \"\(name)\".", command: name, detail: "undefined command", from: source)
+            return nil
+        }
+        let input = CommandInput(event: event, command: name, key: key, value: value, state: state)
+        let result: CommandResult
+        do {
+            if command.privileged {
+                if let missing = missingAccess {
+                    if !automatic {
+                        fail(missing.localizedDescription, command: name, detail: "no administrator access", from: source)
+                    }
+                    return nil
+                }
+                result = try await privileged.run(modID: id, command: name, input: input)
+            } else {
+                result = try await ProcessRunner.run(request(for: command, input: input))
+            }
+        } catch is CancellationError {
+            return nil
+        } catch let failure as PrivilegedError {
+            fail(failure.localizedDescription, command: name, detail: "administrator helper error", from: source)
+            accessMayHaveChanged()
+            return nil
+        } catch {
+            fail(error.localizedDescription, command: name, detail: "could not start", from: source)
+            return nil
+        }
+        return apply(result, of: command, named: name, from: source)
+    }
+
+    private var missingAccess: PrivilegedError? {
+        switch access {
+        case .granted, .notNeeded: nil
+        case .helperUnavailable(let status): .helperUnavailable(status)
+        case .notApproved: .notApproved(modID: id)
+        }
+    }
+
+    /// How an unprivileged command or the service is started.
+    private func request(for command: ModCommand, input: CommandInput) throws -> ProcessRunner.Request {
+        let dataDirectory = directories.data.appending(path: id, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
+        let invocation = command.invocation(modDirectory: folder)
+        return ProcessRunner.Request(
+            executable: invocation.executable,
+            arguments: invocation.arguments,
+            environment: CommandEnvironment.variables(
+                modID: id, modDirectory: folder, dataDirectory: dataDirectory, input: input, privileged: false
+            ),
+            currentDirectory: folder,
+            stdin: command.stdin ? try JSONEncoder().encode(input) : nil,
+            timeout: command.timeout
+        )
+    }
+
+    private func apply(_ result: CommandResult, of command: ModCommand, named name: String, from source: ErrorSource) -> ModState? {
+        let object = Self.patch(from: result.stdout)
+        guard result.succeeded else {
+            let reported = object?[ReservedStateKey.error]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
+            let detail = result.timedOut
+                ? "timed out after \(JSONValue.number(command.timeout).text) s"
+                : "exit status \(result.exitCode)"
+            fail(reported ?? lastNonEmptyLine(result.stderr) ?? "\"\(name)\" failed: \(detail).", command: name, detail: detail, from: source)
+            return nil
+        }
+        var patch: ModState
+        if let capture = command.capture {
+            patch = [capture: .string(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))]
+        } else {
+            patch = object ?? [:]
+        }
+        settleError(in: &patch, reportedBy: source)
+        merge(patch)
+        return patch
+    }
+
+    private func report(_ message: String, from source: ErrorSource) {
+        state[ReservedStateKey.error] = .string(message)
+        errorSource = source
+    }
+
+    /// A successful report decides what happens to the error: a patch that names `error` sets or clears
+    /// it; otherwise the error goes away only if the user started this run or its own source raised it.
+    /// That keeps the refresh following every command from wiping the reason a button just failed.
+    private func settleError(in patch: inout ModState, reportedBy source: ErrorSource) {
+        if let reported = patch[ReservedStateKey.error] {
+            if reported.stringValue?.isEmpty == false {
+                errorSource = source
+            } else {
+                // Anything but a message means there is no error.
+                patch[ReservedStateKey.error] = .null
+                errorSource = nil
+            }
+        } else if errorSource != nil, source == .user || source == errorSource {
+            patch[ReservedStateKey.error] = .null
+            errorSource = nil
+        }
+    }
+
+    private func fail(_ message: String, command: String, detail: String, from source: ErrorSource) {
+        report(message, from: source)
+        logger.error("mod \(self.id, privacy: .public): command \(command, privacy: .public) failed: \(detail, privacy: .public)")
+    }
+
+    /// A JSON object, or nil for empty output and anything else, which is ignored.
+    private static func patch(from output: Data) -> ModState? {
+        guard !output.allSatisfy({ $0 == 0x20 || $0 == 0x0A || $0 == 0x0D || $0 == 0x09 }) else { return nil }
+        return (try? JSONDecoder().decode(JSONValue.self, from: output))?.objectValue
+    }
+
+    // MARK: - State
+
+    private func merge(_ patch: ModState, fromService: Bool = false) {
+        // A late result of a replaced mod must not overwrite the state file its successor uses.
+        guard phase != .closed else { return }
+        let wasEnabled = isEnabled
+        var settingsChanged = false
+        for (key, value) in patch where ModManifest.isValidKey(key) {
+            // The switch position must stay a boolean.
+            if key == ReservedStateKey.enabled, value.boolValue == nil { continue }
+            let previous = state[key]
+            if value == .null {
+                state.removeValue(forKey: key)
+            } else {
+                state[key] = value
+            }
+            // A text field committing an unchanged value must not restart the service.
+            if manifest.settings[key] != nil, state[key] != previous {
+                settingsChanged = true
+            }
+            record(value, for: key)
+        }
+        if settingsChanged || isEnabled != wasEnabled {
+            save()
+        }
+        // A service restarting for its own patches would restart forever.
+        if settingsChanged, !fromService {
+            restartServiceSoon()
+        }
+        if isEnabled != wasEnabled {
+            reconcile()
+        }
+    }
+
+    private func record(_ value: JSONValue, for key: String) {
+        guard let limit = historyLimits[key], let number = value.numberValue else { return }
+        var samples = histories[key, default: []]
+        samples.append(number)
+        if samples.count > limit {
+            samples.removeFirst(samples.count - limit)
+        }
+        histories[key] = samples
+    }
+
+    private func save() {
+        let settings = state.filter { manifest.settings[$0.key] != nil }
+        do {
+            try PersistedState(enabled: isEnabled, settings: settings).save(for: id, in: directories)
+        } catch {
+            report("Settings could not be saved: \(error.localizedDescription)", from: .user)
+            logger.error("mod \(self.id, privacy: .public): settings could not be saved: \(error.localizedDescription)")
+        }
+    }
+
+    /// Brings the service and the refresh schedule in line with the switch, the panel and the phase.
+    private func reconcile() {
+        updateRefreshSchedule()
+        // Switch changes start and stop the service themselves and reconcile when done.
+        guard manifest.lifecycle.service != nil, !isSwitching else { return }
+        if wantsService {
+            startServiceIfNeeded()
+        } else if service != nil || pendingServiceStart != nil {
+            Task { await stopService() }
+        }
+    }
+
+    // MARK: - Refresh
+
+    private var refreshCommand: String? { manifest.lifecycle.refresh?.command }
+
+    /// Queues the refresh command unless one is already queued or running.
+    private func requestRefresh() {
+        guard phase == .active, let name = refreshCommand, let command = manifest.commands[name] else { return }
+        // Without access the command cannot run; a schedule must not raise the same error every few seconds.
+        if command.privileged, missingAccess != nil { return }
+        guard currentJob?.commandName != name, !queue.contains(where: { $0.commandName == name }) else { return }
+        enqueue(Job(work: .command(name, event: .refresh, key: nil, value: nil), automatic: true))
+    }
+
+    private func updateRefreshSchedule() {
+        let interval: Double? = {
+            guard phase == .active, let refresh = manifest.lifecycle.refresh, let every = refresh.every else { return nil }
+            let inBackground = refresh.background && (!hasSwitch || isEnabled)
+            return isPanelVisible || inBackground ? every : nil
+        }()
+        guard let interval else {
+            refreshTimer?.cancel()
+            refreshTimer = nil
+            return
+        }
+        guard refreshTimer == nil else { return }
+        let period = timing.duration(interval)
+        refreshTimer = Task { [weak self] in
+            while true {
+                do {
+                    try await Task.sleep(for: period)
+                } catch {
+                    return
+                }
+                guard let self else { return }
+                requestRefresh()
+            }
+        }
+    }
+
+    // MARK: - Service
+
+    private var wantsService: Bool {
+        manifest.lifecycle.service != nil && phase == .active && isEnabled && !isSwitching
+    }
+
+    private func startServiceIfNeeded() {
+        guard wantsService, service == nil, pendingServiceStart == nil,
+              let name = manifest.lifecycle.service, let command = manifest.commands[name] else { return }
+        let started = ContinuousClock.now
+        do {
+            let request = try request(for: command, input: CommandInput(event: .service, command: name, state: state))
+            let process = try ServiceProcess(
+                executable: request.executable, arguments: request.arguments, environment: request.environment,
+                directory: folder, input: request.stdin
+            )
+            let events = Task { [weak self] in
+                for await event in process.events {
+                    switch event {
+                    case .line(let line):
+                        self?.serviceWrote(line)
+                    case .exit(let status, let lastErrorLine):
+                        await self?.serviceExited(process, status: status, lastErrorLine: lastErrorLine)
+                    }
+                }
+            }
+            service = (process, events, started)
+            recordService(process)
+        } catch {
+            serviceFailed(error.localizedDescription, detail: "could not start", ranFor: .zero)
+        }
+    }
+
+    private func serviceWrote(_ line: Data) {
+        guard phase == .active, var patch = Self.patch(from: line) else { return }
+        settleError(in: &patch, reportedBy: .service)
+        merge(patch, fromService: true)
+    }
+
+    private func serviceExited(_ process: ServiceProcess, status: Int32, lastErrorLine: String?) async {
+        // A service stopped on purpose is no longer the current one.
+        guard let current = service, current.process === process else { return }
+        service = nil
+        // Whatever it started dies with it.
+        await process.terminateGroup(grace: timing.killGrace)
+        forgetService(process)
+        // Stopped, restarted or closed meanwhile: this exit no longer decides anything.
+        guard phase == .active, service == nil, pendingServiceStart == nil else { return }
+        if status == 0 {
+            logger.info("mod \(self.id, privacy: .public): service exited with status 0, switching off")
+            await setEnabled(false)
+            return
+        }
+        let detail = "exit status \(status)"
+        serviceFailed(lastErrorLine ?? "The service stopped unexpectedly (\(detail)).", detail: detail,
+                      ranFor: current.started.duration(to: .now))
+    }
+
+    /// Shows why the service is down and restarts it after 1, 2, 4 … 60 s; a healthy run resets the delay.
+    private func serviceFailed(_ message: String, detail: String, ranFor: Duration) {
+        report(message, from: .service)
+        if ranFor >= timing.healthyRun {
+            nextBackoff = 1
+        }
+        let delay = nextBackoff
+        nextBackoff = min(nextBackoff * 2, 60)
+        restartDelays = Array((restartDelays + [delay]).suffix(16))
+        logger.error("mod \(self.id, privacy: .public): service failed (\(detail, privacy: .public)), restarting in \(delay) s")
+        let wait = timing.duration(delay)
+        pendingServiceStart = Task { [weak self] in
+            do {
+                try await Task.sleep(for: wait)
+            } catch {
+                return
+            }
+            self?.pendingServiceStart = nil
+            self?.startServiceIfNeeded()
+        }
+    }
+
+    /// Settings changed: restart a running (or scheduled) service once the changes settle.
+    private func restartServiceSoon() {
+        guard service != nil || pendingServiceStart != nil else { return }
+        pendingServiceStart?.cancel()
+        let debounce = timing.settingsDebounce
+        pendingServiceStart = Task { [weak self] in
+            do {
+                try await Task.sleep(for: debounce)
+            } catch {
+                return
+            }
+            await self?.terminateService()
+            // A stop requested meanwhile cancelled this restart.
+            guard !Task.isCancelled else { return }
+            self?.pendingServiceStart = nil
+            self?.startServiceIfNeeded()
+        }
+    }
+
+    /// Stops the service and cancels any scheduled start; returns when its process group is gone.
+    private func stopService() async {
+        pendingServiceStart?.cancel()
+        pendingServiceStart = nil
+        await terminateService()
+    }
+
+    private func terminateService() async {
+        if let current = service {
+            service = nil
+            let grace = timing.killGrace
+            serviceTermination = Task {
+                await current.process.terminateGroup(grace: grace)
+                await current.events.value
+                forgetService(current.process)
+            }
+        }
+        await serviceTermination?.value
+    }
+
+    /// Notes which process the service is, so a later launch can stop it should this one die first.
+    private func recordService(_ process: ServiceProcess) {
+        do {
+            // Nil when the process is already gone; its exit event then cleans up as usual.
+            try ServiceRecord(pid: process.processIdentifier)?.save(for: id, in: directories)
+        } catch {
+            // The service works without the record; only the cleanup after a crash of Toolsy is lost.
+            logger.error("mod \(self.id, privacy: .public): cannot record the service process: \(error.localizedDescription)")
+        }
+    }
+
+    /// Removes the record of `process` unless a newer service has replaced it meanwhile.
+    private func forgetService(_ process: ServiceProcess) {
+        guard service == nil || service?.process === process else { return }
+        ServiceRecord.remove(for: id, in: directories)
+    }
+}

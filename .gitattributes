@@ -1,0 +1,2 @@
+# Both sides of a merge usually append translations; keep every line of both.
+*.strings merge=union
