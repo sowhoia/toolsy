@@ -30,11 +30,7 @@ struct TileFace<Visual: View>: View {
                 .font(.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                // Numbers that change every second morph rather than roll: `.numericText`
-                // blurs each glyph on the CPU and cost ~13 % CPU for five tiles,
-                // `.interpolate` nothing measurable (M4, panel open, 8 s with top).
-                .contentTransition(.interpolate)
-                .animation(Motion.snappy, value: value)
+                .tickingValue()
             visual
                 .frame(height: 16, alignment: .bottom)
         }
@@ -52,7 +48,6 @@ struct MiniBar: View {
 
     var body: some View {
         LevelBar(fraction: fraction, tint: tint, height: 5)
-            .animation(Motion.gentle, value: fraction)
             .padding(.bottom, 3)
     }
 }
@@ -91,7 +86,7 @@ struct DetailFact: View {
             Text(value)
                 .font(.system(size: 13, weight: .medium).monospacedDigit())
                 .lineLimit(1)
-                .contentTransition(.interpolate)
+                .tickingValue()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

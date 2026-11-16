@@ -159,5 +159,12 @@ Removing it (from Settings) needs no password: the helper deletes its own files.
 
 - No polling while the panel is closed, except what an enabled mod explicitly declares.
 - System metrics are sampled only while the panel is visible.
-- Charts are drawn with `Canvas`/`Path`; no charting framework is loaded.
+- Charts are drawn with paths; no charting framework is loaded.
+- Nothing that changes by itself animates in SwiftUI. A reading that ticks every second replaces
+  its text at once (`tickingValue()`), and the motion that is worth seeing, a chart sliding by one
+  sample or a gauge moving to its new value, is a Core Animation animation of a layer, which the
+  render server runs. SwiftUI drives its animations from the app's process, a transaction per frame,
+  so a handful of values animating every second keeps the panel busy all the time: the open, idle
+  dashboard used 10.6 % of a core that way and uses 0.6 % now, a mod's page with three gauges and
+  two charts fed every second 9.2 % and now 1.0 % (M4, release build, `top` over 10 s).
 - Everything a mod does happens outside the app process.

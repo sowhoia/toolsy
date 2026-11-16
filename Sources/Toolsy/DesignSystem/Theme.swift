@@ -56,3 +56,13 @@ extension Font {
     static let rowValue = Font.system(size: 13).monospacedDigit()
     static let tileTitle = Font.system(size: 12, weight: .semibold)
 }
+
+extension View {
+    /// For text that changes by itself every second or so (a reading, a rate, a countdown): the new
+    /// value simply replaces the old one. Morphing the glyphs (`.interpolate`, `.numericText`) redraws
+    /// the text on the CPU for every frame of the transition, and with a few readings ticking each second
+    /// the panel never stops animating.
+    func tickingValue() -> some View {
+        contentTransition(.identity)
+    }
+}

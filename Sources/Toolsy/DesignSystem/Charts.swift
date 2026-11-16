@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The `style` of a mod's chart.
@@ -37,7 +38,7 @@ struct SampleHistory: Equatable {
 /// A line, area or bar chart of one to six series, drawn with paths (no chart framework).
 ///
 /// The newest sample sits at the trailing edge; `capacity` samples fill the width. When a
-/// series gains a sample, the plot scrolls by one step instead of jumping. The vertical range
+/// series gains a sample, the plot slides by one step instead of jumping. The vertical range
 /// is `min`/`max` where given and otherwise fitted to the data with some headroom.
 struct SeriesChart: View {
     private let label: String?
@@ -66,14 +67,6 @@ struct SeriesChart: View {
         self.format = format
     }
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// How many steps the plot is drawn to the right of its resting place; animated from 1 to
-    /// 0 when a sample arrives. The paths are drawn once per sample and only this translation
-    /// animates, so scrolling costs a layer move per frame, not a redraw.
-    @State private var lag: Double = 0
-    /// The sample of each series that last scrolled out on the left, drawn while it slides out.
-    @State private var carried: [Double?] = []
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if label != nil || showsReadout {
@@ -81,9 +74,6 @@ struct SeriesChart: View {
             }
             plot
                 .frame(height: height)
-        }
-        .onChange(of: series.map(\.values)) { old, new in
-            advance(from: old, to: new)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label ?? String(localized: "Chart"))
@@ -107,15 +97,13 @@ struct SeriesChart: View {
                         }
                         Text(readout.text)
                             .monospacedDigit()
-                            // Readouts change with every sample; see the dashboard on why not numericText.
-                            .contentTransition(.interpolate)
+                            .tickingValue()
                     }
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
                 }
             }
         }
-        .animation(Motion.snappy, value: readouts.map(\.text))
     }
 
     private var readouts: [(label: String?, tint: Color, text: String)] {
@@ -128,8 +116,57 @@ struct SeriesChart: View {
         format?(value) ?? formatNumber(value, unit: unit)
     }
 
-    private var bounds: ClosedRange<Double> {
-        let all = series.flatMap(\.values) + carried.compactMap { $0 }
+    private var plot: some View {
+        ZStack(alignment: .bottom) {
+            Hairline().opacity(0.6)
+            PlotLayers(series: series, style: style, capacity: capacity, fixedMin: fixedMin, fixedMax: fixedMax)
+                // A chart is only looked at: clicks belong to the tile or row it sits in.
+                .allowsHitTesting(false)
+            if series.allSatisfy(\.values.isEmpty) {
+                Text("No data yet")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+}
+
+// MARK: Plot
+
+/// What a plot draws: the samples of every series, oldest first, and where they go.
+struct PlotData: Equatable {
+    var values: [[Double]] = []
+    /// Per series, the sample that just left the plot on the left, drawn while it slides out.
+    var carried: [Double?] = []
+    var style = ChartStyle.line
+    var capacity = 2
+    var fixedMin: Double?
+    var fixedMax: Double?
+
+    /// Whether `new` is `old` plus one sample at the end (and possibly minus the oldest): the plot
+    /// then slides by one step. Anything else is other data and is drawn in place.
+    static func isAppend(_ old: [Double], _ new: [Double]) -> Bool {
+        if new.count == old.count + 1 { return new.dropLast().elementsEqual(old) }
+        if new.count == old.count, !new.isEmpty { return new.dropLast().elementsEqual(old.dropFirst()) }
+        return false
+    }
+
+    /// Takes new samples. Returns whether they continue the old ones by one step; the samples that
+    /// dropped out on the left are then carried, so the lines do not end short while they slide.
+    mutating func advance(to new: [[Double]]) -> Bool {
+        defer { values = new }
+        guard let before = values.first, let after = new.first, Self.isAppend(before, after) else {
+            carried = []
+            return false
+        }
+        carried = values.map { before.count == after.count ? $0.first : nil }
+        return true
+    }
+
+    /// The vertical range: `fixedMin`/`fixedMax` where given, otherwise fitted with some headroom.
+    var range: ClosedRange<Double> {
+        let all = values.joined() + carried.compactMap(\.self)
         var low = fixedMin ?? all.min() ?? 0
         var high = fixedMax ?? all.max() ?? 1
         if high <= low {
@@ -146,156 +183,202 @@ struct SeriesChart: View {
         return low...high
     }
 
-    private var plot: some View {
-        let range = bounds
-        return ZStack(alignment: .bottom) {
-            Hairline().opacity(0.6)
-            ZStack {
-                ForEach(series.indices, id: \.self) { index in
-                    let item = series[index]
-                    let leading = index < carried.count ? carried[index] : nil
-                    switch style {
-                    case .line, .area:
-                        let shape = ChartLine(values: item.values, leading: leading, capacity: capacity,
-                                              low: range.lowerBound, high: range.upperBound)
-                        if style == .area {
-                            let strength = series.count > 1 ? 0.2 : 0.32
-                            shape.closed().fill(LinearGradient(colors: [item.tint.opacity(strength), item.tint.opacity(0.03)],
-                                                               startPoint: .top, endPoint: .bottom))
-                        }
-                        shape.stroke(item.tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                    case .bar:
-                        ChartBars(values: item.values, leading: leading, capacity: capacity,
-                                  low: range.lowerBound, high: range.upperBound, slot: index, slots: series.count)
-                            .fill(item.tint)
-                    }
-                }
-            }
-            .modifier(ScrollEffect(steps: lag, stepsAcross: style == .bar ? capacity : capacity - 1))
-            if series.allSatisfy(\.values.isEmpty) {
-                Text("No data yet")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+    /// The distance between two samples in a plot `width` wide: bars occupy slots, lines end exactly on
+    /// the edges.
+    func step(width: CGFloat) -> CGFloat {
+        width / CGFloat(style == .bar ? capacity : capacity - 1)
+    }
+
+    /// Where the samples of series `index` go in `rect`: the newest at the trailing edge, older ones one
+    /// step left each, the carried sample one step before the first.
+    func points(ofSeries index: Int, in rect: CGRect) -> [CGPoint] {
+        let samples = values[index]
+        let step = step(width: rect.width), range = range
+        func point(_ position: Int, _ value: Double) -> CGPoint {
+            let fraction = (value - range.lowerBound) / Swift.max(range.upperBound - range.lowerBound, .ulpOfOne)
+            return CGPoint(x: rect.maxX - CGFloat(samples.count - 1 - position) * step - (style == .bar ? step / 2 : 0),
+                           y: rect.maxY - CGFloat(fraction) * rect.height)
         }
-        .clipped()
+        let leading = index < carried.count ? carried[index].map { [point(-1, $0)] } ?? [] : []
+        return leading + samples.indices.map { point($0, samples[$0]) }
     }
 
-    private func advance(from old: [[Double]], to new: [[Double]]) {
-        guard let before = old.first, let after = new.first, !reduceMotion,
-              Self.isAppend(before, after) else {
-            // Replaced data, or Reduce Motion: redraw in place.
-            carried = []
-            lag = 0
-            return
-        }
-        let dropped = before.count == after.count
-        carried = old.map { dropped ? $0.first : nil }
-        lag = 1
-        withAnimation(.easeOut(duration: 0.55)) { lag = 0 }
-    }
-
-    /// Whether `new` is `old` plus one sample at the end (and possibly minus the oldest).
-    private static func isAppend(_ old: [Double], _ new: [Double]) -> Bool {
-        if new.count == old.count + 1 { return new.dropLast().elementsEqual(old) }
-        if new.count == old.count, !new.isEmpty { return new.dropLast().elementsEqual(old.dropFirst()) }
-        return false
-    }
-}
-
-/// Moves the plot right by a number of sample steps.
-private struct ScrollEffect: GeometryEffect {
-    var steps: Double
-    let stepsAcross: Int
-
-    var animatableData: Double {
-        get { steps }
-        set { steps = newValue }
-    }
-
-    func effectValue(size: CGSize) -> ProjectionTransform {
-        ProjectionTransform(CGAffineTransform(translationX: size.width / CGFloat(stepsAcross) * steps, y: 0))
-    }
-}
-
-/// Places samples on the time axis: the newest at the trailing edge, older ones one step left
-/// each, the carried sample (index -1) one step before the first.
-private nonisolated struct TimeAxis {
-    let rect: CGRect
-    let capacity: Int
-    let low: Double
-    let high: Double
-    let valueCount: Int
-    /// Bars occupy slots, lines end exactly on the edges.
-    let slotted: Bool
-
-    var step: CGFloat { slotted ? rect.width / CGFloat(capacity) : rect.width / CGFloat(capacity - 1) }
-
-    func x(_ index: Int) -> CGFloat {
-        rect.maxX - CGFloat(valueCount - 1 - index) * step - (slotted ? step / 2 : 0)
-    }
-
-    func y(_ value: Double) -> CGFloat {
-        let fraction = (value - low) / max(high - low, .ulpOfOne)
-        return rect.maxY - CGFloat(fraction) * rect.height
-    }
-}
-
-private struct ChartLine: Shape {
-    var values: [Double]
-    var leading: Double?
-    var capacity: Int
-    var low: Double
-    var high: Double
-    var isClosed = false
-
-    func closed() -> ChartLine {
-        var copy = self
-        copy.isClosed = true
-        return copy
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let axis = TimeAxis(rect: rect, capacity: capacity, low: low, high: high, valueCount: values.count, slotted: false)
-        var points = values.indices.map { CGPoint(x: axis.x($0), y: axis.y(values[$0])) }
-        if let leading { points.insert(CGPoint(x: axis.x(-1), y: axis.y(leading)), at: 0) }
-        guard let first = points.first, let last = points.last else { return Path() }
-        var path = Path()
-        path.move(to: first)
-        for point in points.dropFirst() { path.addLine(to: point) }
-        if isClosed {
-            path.addLine(to: CGPoint(x: last.x, y: rect.maxY + 1))
-            path.addLine(to: CGPoint(x: first.x, y: rect.maxY + 1))
+    /// The line through the samples of a series; `closed` down to the bottom edge for the area under it.
+    func line(ofSeries index: Int, in rect: CGRect, closed: Bool = false) -> CGPath {
+        let points = points(ofSeries: index, in: rect)
+        let path = CGMutablePath()
+        guard let first = points.first, let last = points.last else { return path }
+        path.addLines(between: points)
+        if closed {
+            path.addLine(to: CGPoint(x: last.x, y: rect.maxY))
+            path.addLine(to: CGPoint(x: first.x, y: rect.maxY))
             path.closeSubpath()
         }
         return path
     }
-}
 
-private struct ChartBars: Shape {
-    var values: [Double]
-    var leading: Double?
-    var capacity: Int
-    var low: Double
-    var high: Double
-    var slot: Int
-    var slots: Int
-
-    func path(in rect: CGRect) -> Path {
-        let axis = TimeAxis(rect: rect, capacity: capacity, low: low, high: high, valueCount: values.count, slotted: true)
-        let groupWidth = axis.step * 0.72
-        let width = max(1, groupWidth / CGFloat(slots) - (slots > 1 ? 1 : 0))
-        let baseline = axis.y(min(max(0, low), high))
-        var path = Path()
-        var bars = values.indices.map { ($0, values[$0]) }
-        if let leading { bars.insert((-1, leading), at: 0) }
-        for (index, value) in bars {
-            let x = axis.x(index) - groupWidth / 2 + CGFloat(slot) * (groupWidth / CGFloat(slots))
-            let y = axis.y(value)
-            let bar = CGRect(x: x, y: min(y, baseline), width: width, height: max(abs(baseline - y), 1))
-            path.addRoundedRect(in: bar, cornerSize: CGSize(width: min(2, width / 2), height: min(2, width / 2)))
+    /// One bar per sample; the series of a chart stand side by side within a step.
+    func bars(ofSeries index: Int, in rect: CGRect) -> CGPath {
+        let step = step(width: rect.width), range = range, slots = CGFloat(values.count)
+        let groupWidth = step * 0.72
+        let width = Swift.max(1, groupWidth / slots - (slots > 1 ? 1 : 0))
+        let zero = Swift.min(Swift.max(0, range.lowerBound), range.upperBound)
+        let baseline = rect.maxY - CGFloat((zero - range.lowerBound) / Swift.max(range.upperBound - range.lowerBound, .ulpOfOne)) * rect.height
+        let path = CGMutablePath()
+        for point in points(ofSeries: index, in: rect) {
+            let bar = CGRect(x: point.x - groupWidth / 2 + CGFloat(index) * (groupWidth / slots), y: Swift.min(point.y, baseline),
+                             width: width, height: Swift.max(abs(baseline - point.y), 1))
+            let corner = Swift.min(2, width / 2, bar.height / 2)
+            path.addRoundedRect(in: bar, cornerWidth: corner, cornerHeight: corner)
         }
         return path
+    }
+}
+
+/// The plot of a `SeriesChart` as Core Animation layers, so that the slide of an arriving sample is run
+/// by the render server. SwiftUI would drive it from this process, a transaction per frame: with two
+/// sparklines sliding for half of every second, the open panel never came to rest.
+private struct PlotLayers: NSViewRepresentable {
+    let series: [ChartSeries]
+    let style: ChartStyle
+    let capacity: Int
+    let fixedMin: Double?
+    let fixedMax: Double?
+
+    func makeNSView(context: Context) -> PlotView {
+        PlotView()
+    }
+
+    func updateNSView(_ view: PlotView, context: Context) {
+        view.show(series.map(\.values), tints: series.map { NSColor($0.tint) }, style: style, capacity: capacity,
+                  fixedMin: fixedMin, fixedMax: fixedMax, slides: !context.environment.accessibilityReduceMotion)
+    }
+}
+
+private final class PlotView: NSView {
+    /// The layers of one series: the line or bars, and the gradient under an area's line.
+    private struct Marks {
+        let shape = CAShapeLayer()
+        let area = CAGradientLayer()
+        let areaShape = CAShapeLayer()
+
+        init() {
+            shape.lineWidth = 1.5
+            shape.lineCap = .round
+            shape.lineJoin = .round
+            area.mask = areaShape
+        }
+    }
+
+    private var data = PlotData()
+    private var tints: [NSColor] = []
+    private var marks: [Marks] = []
+    /// Holds every mark and slides as a whole. It reaches one step beyond the view's leading edge,
+    /// where the carried samples are drawn until they have slid out.
+    private let canvas = CALayer()
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        layer?.addSublayer(canvas)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not used from a nib")
+    }
+
+    // Top-left origin, like the SwiftUI views around it.
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    func show(_ values: [[Double]], tints: [NSColor], style: ChartStyle, capacity: Int, fixedMin: Double?, fixedMax: Double?,
+              slides: Bool) {
+        var next = data
+        next.style = style
+        next.capacity = capacity
+        next.fixedMin = fixedMin
+        next.fixedMax = fixedMax
+        let continues = next.advance(to: values)
+        guard next != data || tints != self.tints else { return }
+        data = next
+        self.tints = tints
+        draw()
+        if continues, slides, bounds.width > 0 {
+            let slide = CABasicAnimation(keyPath: "transform.translation.x")
+            slide.fromValue = data.step(width: bounds.width)
+            slide.toValue = 0
+            slide.duration = 0.55
+            slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            canvas.add(slide, forKey: "slide")
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        draw()
+    }
+
+    // Colours are resolved for the appearance, shapes rendered for the screen's scale.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        draw()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        draw()
+    }
+
+    private func draw() {
+        // Layers that back no view animate every change by themselves; these changes are the data.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        while marks.count < data.values.count {
+            let added = Marks()
+            canvas.addSublayer(added.area)
+            canvas.addSublayer(added.shape)
+            marks.append(added)
+        }
+        for removed in marks.dropFirst(data.values.count) {
+            removed.area.removeFromSuperlayer()
+            removed.shape.removeFromSuperlayer()
+        }
+        marks.removeLast(marks.count - data.values.count)
+
+        let step = bounds.width > 0 ? data.step(width: bounds.width) : 0
+        canvas.frame = CGRect(x: -step, y: 0, width: bounds.width + step, height: bounds.height)
+        let rect = CGRect(x: step, y: 0, width: bounds.width, height: bounds.height)
+        let scale = window?.backingScaleFactor ?? 2
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            for (index, mark) in marks.enumerated() {
+                let tint = index < tints.count ? tints[index] : .controlAccentColor
+                for layer in [mark.shape, mark.area, mark.areaShape] {
+                    layer.frame = canvas.bounds
+                    layer.contentsScale = scale
+                }
+                mark.area.isHidden = data.style != .area
+                switch data.style {
+                case .bar:
+                    mark.shape.path = data.bars(ofSeries: index, in: rect)
+                    mark.shape.fillColor = tint.cgColor
+                    mark.shape.strokeColor = nil
+                case .line, .area:
+                    mark.shape.path = data.line(ofSeries: index, in: rect)
+                    mark.shape.fillColor = nil
+                    mark.shape.strokeColor = tint.cgColor
+                    if data.style == .area {
+                        let strength = data.values.count > 1 ? 0.2 : 0.32
+                        mark.area.colors = [tint.withAlphaComponent(strength).cgColor, tint.withAlphaComponent(0.03).cgColor]
+                        mark.areaShape.path = data.line(ofSeries: index, in: rect, closed: true)
+                    }
+                }
+            }
+        }
     }
 }
