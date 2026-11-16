@@ -9,6 +9,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private let keepOpen: Bool
     let window = GlassPanel()
     private let monitor: SystemMonitor
+    private let dashboard: DashboardStore
     private var anchor: NSWindow?
     private var dismissalMonitors: [Any] = []
     private var activationObserver: NSObjectProtocol?
@@ -17,8 +18,9 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var modalDepth = 0
 
     init(state: PanelState, options: LaunchOptions, mods: ModsModel, loginItem: LoginItem,
-         processes: ProcessMonitor, memoryOptimizer: MemoryOptimizer) {
+         dashboard: DashboardStore, processes: ProcessMonitor, memoryOptimizer: MemoryOptimizer) {
         self.state = state
+        self.dashboard = dashboard
         keepOpen = options.keepOpen
         monitor = SystemMonitor(simulateNoBattery: options.simulateNoBattery)
         super.init()
@@ -42,6 +44,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         let root = PanelRootView()
             .environment(state)
             .environment(monitor)
+            .environment(dashboard)
             .environment(mods)
             .environment(loginItem)
             .environment(processes)
@@ -148,12 +151,15 @@ final class PanelController: NSObject, NSWindowDelegate {
         activationObserver = nil
     }
 
-    /// Esc closes the dialog if one is shown, otherwise the panel. Returns whether it was handled.
+    /// Esc closes the dialog if one is shown, then leaves editing the dashboard, otherwise closes the
+    /// panel. Returns whether it was handled.
     private func handleKeyDown(isEscape: Bool, windowNumber: Int) -> Bool {
         guard isEscape, windowNumber == window.windowNumber else { return false }
         if let dialog = state.dialog {
             // Work in progress (installing while macOS asks for the password) cannot be cancelled here.
             if !dialog.isProgress { state.dismissDialog(confirmed: false) }
+        } else if dashboard.isEditing {
+            withAnimation(Motion.resolve(Motion.gentle, reduceMotion: reduceMotion)) { dashboard.isEditing = false }
         } else if !keepOpen {
             hide()
         }

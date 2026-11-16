@@ -21,6 +21,17 @@ enum Format {
         return String(localized: "\(amount)/s")
     }
 
+    /// Network speeds as providers state them: decimal bits per second.
+    static func bitRate(_ bytesPerSecond: Double) -> String {
+        let bits = max(bytesPerSecond, 0) * 8
+        let units: [UnitInformationStorage] = [.bits, .kilobits, .megabits, .gigabits]
+        let exponent = min(Int(log10(max(bits, 1)) / 3), units.count - 1)
+        let amount = Measurement(value: bits / pow(1000, Double(exponent)), unit: units[exponent])
+            .formatted(.measurement(width: .abbreviated, usage: .asProvided,
+                                    numberFormatStyle: .number.precision(.fractionLength(exponent == 0 ? 0 : 1))))
+        return String(localized: "\(amount)/s")
+    }
+
     private static let durationFormatter: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.day, .hour, .minute]

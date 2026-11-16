@@ -28,14 +28,14 @@ final class BatteryReader {
         if service != 0 { IOObjectRelease(service) }
     }
 
+    /// Whether the Mac has an internal battery.
+    static var isPresent: Bool {
+        internalBattery() != nil
+    }
+
     /// The internal battery, or nil on a Mac without one.
     func read() -> BatteryReading? {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
-        let battery = sources.lazy
-            .compactMap { IOPSGetPowerSourceDescription(info, $0)?.takeUnretainedValue() as? [String: Any] }
-            .first { $0[kIOPSTypeKey] as? String == kIOPSInternalBatteryType }
-        guard let battery,
+        guard let battery = Self.internalBattery(),
               let current = battery[kIOPSCurrentCapacityKey] as? Int,
               let maximum = battery[kIOPSMaxCapacityKey] as? Int, maximum > 0 else { return nil }
 
@@ -54,6 +54,15 @@ final class BatteryReader {
             cycleCount: property("CycleCount").map(Int.init),
             watts: voltage.flatMap { volts in amperage.map { Double(volts) * Double($0) / 1_000_000 } }
         )
+    }
+
+    /// The power source description of the internal battery.
+    private static func internalBattery() -> [String: Any]? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        return sources.lazy
+            .compactMap { IOPSGetPowerSourceDescription(info, $0)?.takeUnretainedValue() as? [String: Any] }
+            .first { $0[kIOPSTypeKey] as? String == kIOPSInternalBatteryType }
     }
 
     private func property(_ key: String) -> Int64? {

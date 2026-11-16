@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panelState = PanelState()
     let mods: ModsModel
     let loginItem: LoginItem
+    let dashboard: DashboardStore
     let processes: ProcessMonitor
     let memoryOptimizer: MemoryOptimizer
 
@@ -52,8 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         processes = ProcessMonitor(panel: panelState)
         memoryOptimizer = MemoryOptimizer(helper: privileged, store: store, panel: panelState)
         loginItem = LoginItem(canChange: options.managesLoginItem)
+        dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"),
+                                   hasBattery: !options.simulateNoBattery && BatteryReader.isPresent)
         super.init()
         mods.presentPanel = { [weak self] in self?.openPanel(on: nil) }
+        panelState.addVisibilityHandler { [dashboard] visible in
+            if !visible { dashboard.isEditing = false }  // closing the panel ends editing
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -179,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makePanelController() -> PanelController {
         let controller = PanelController(state: panelState, options: options, mods: mods, loginItem: loginItem,
-                                         processes: processes, memoryOptimizer: memoryOptimizer)
+                                         dashboard: dashboard, processes: processes, memoryOptimizer: memoryOptimizer)
         panelController = controller
         return controller
     }

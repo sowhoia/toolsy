@@ -1,14 +1,25 @@
 import Foundation
 import Observation
 
-/// Samples the Mac about once a second while the panel is visible and not at all otherwise.
+/// A reading of the Mac the dashboard can show. Each is the subject of one built-in widget.
+enum SystemMetric: String, CaseIterable, Sendable {
+    case cpu, memory, battery, network, storage, gpu, disk
+}
+
+/// Samples the Mac about once a second while the panel is visible and not at all otherwise, and
+/// only the metrics something on the dashboard shows (`shownMetrics`).
 ///
 /// Readings are kept when sampling stops, so reopening the panel shows the last values at once
 /// instead of zeros; each start takes a fresh baseline for the rate-based readings (CPU,
-/// network) and replaces the stale values a quarter of a second later.
+/// network, disk) and replaces the stale values a quarter of a second later.
 @Observable
 final class SystemMonitor {
     let device = DeviceInfo.current()
+    /// What this Mac can measure: no battery on a desktop Mac, no GPU or disk activity where the
+    /// drivers do not report them. The dashboard offers only these.
+    let availableMetrics: Set<SystemMetric>
+    /// The GPU's name, such as "Apple M4".
+    let gpuModel: String?
     private(set) var uptime: TimeInterval?
     private(set) var cpu: CPULoad?
     private(set) var cpuHistory = SampleHistory(capacity: 60)
@@ -22,10 +33,17 @@ final class SystemMonitor {
     private(set) var uploadHistory = SampleHistory(capacity: 60)
     private(set) var interface: NetworkInterface?
     private(set) var thermalState = ProcessInfo.processInfo.thermalState
+    private(set) var gpu: GPUReading?
+    private(set) var gpuHistory = SampleHistory(capacity: 60)
+    private(set) var disk: DiskActivity?
+    private(set) var diskReadHistory = SampleHistory(capacity: 60)
+    private(set) var diskWriteHistory = SampleHistory(capacity: 60)
 
     @ObservationIgnored private let cpuSampler = CPUSampler()
     @ObservationIgnored private let networkSampler = NetworkSampler()
+    @ObservationIgnored private let diskSampler = DiskActivitySampler()
     @ObservationIgnored private let batteryReader: BatteryReader?
+    @ObservationIgnored private let gpuReader: GPUReader?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var ticks = 0
     @ObservationIgnored private var storageTask: Task<Void, Never>?
@@ -38,19 +56,33 @@ final class SystemMonitor {
         }
     }
 
+    /// The metrics a widget on the dashboard shows; nothing else is sampled. One that is added while
+    /// sampling runs is read (or, for a rate, gets its baseline) at once.
+    @ObservationIgnored var shownMetrics: Set<SystemMetric> = [] {
+        didSet {
+            guard isRunning else { return }
+            for metric in shownMetrics.subtracting(oldValue) { begin(metric) }
+        }
+    }
+
     init(simulateNoBattery: Bool = false) {
-        batteryReader = simulateNoBattery ? nil : BatteryReader()
+        batteryReader = simulateNoBattery || !BatteryReader.isPresent ? nil : BatteryReader()
+        gpuReader = GPUReader()
+        gpuModel = gpuReader?.model
+        var available = Set(SystemMetric.allCases)
+        if batteryReader == nil { available.remove(.battery) }
+        if gpuReader == nil { available.remove(.gpu) }
+        if DiskActivitySampler.readCounters().isEmpty { available.remove(.disk) }
+        availableMetrics = available
     }
 
     var isRunning: Bool { timer != nil }
 
     func start() {
         guard timer == nil else { return }
-        cpuSampler.reset()
-        networkSampler.reset()
-        _ = cpuSampler.sample()
-        _ = networkSampler.sample()
-        readSlowValues()
+        for metric in shownMetrics { begin(metric) }
+        thermalState = ProcessInfo.processInfo.thermalState
+        updateUptime()
         ticks = 0
         // The first real sample comes quickly so the stale values do not linger; after that
         // once a second. The tolerance lets the system coalesce the wake-ups.
@@ -76,33 +108,58 @@ final class SystemMonitor {
     private func tick() {
         guard timer != nil else { return }
         ticks += 1
-        if let load = cpuSampler.sample() {
+        let shown = shownMetrics
+        if shown.contains(.cpu), let load = cpuSampler.sample() {
             cpu = load
             cpuHistory.append(load.total * 100)
         }
-        if let rates = networkSampler.sample() {
+        if shown.contains(.network), let rates = networkSampler.sample() {
             downloadRate = rates.download
             uploadRate = rates.upload
             downloadHistory.append(rates.download)
             uploadHistory.append(rates.upload)
         }
-        memory = MemoryReading.read()
+        if shown.contains(.gpu), let reading = gpuReader?.read() {
+            gpu = reading
+            gpuHistory.append(reading.utilization * 100)
+        }
+        if shown.contains(.disk), let activity = diskSampler.sample() {
+            disk = activity
+            diskReadHistory.append(activity.readRate)
+            diskWriteHistory.append(activity.writeRate)
+        }
+        if shown.contains(.memory) { memory = MemoryReading.read() }
         updateUptime()
         thermalState = ProcessInfo.processInfo.thermalState
-        if ticks.isMultiple(of: 5) { battery = batteryReader?.read() }
-        if wantsInterfaceUpdates, ticks.isMultiple(of: 10) { interface = networkSampler.primaryInterface() }
-        if ticks.isMultiple(of: 30) { refreshStorage() }
+        if shown.contains(.battery), ticks.isMultiple(of: 5) { battery = batteryReader?.read() }
+        if shown.contains(.network), wantsInterfaceUpdates, ticks.isMultiple(of: 10) { interface = networkSampler.primaryInterface() }
+        if shown.contains(.storage), ticks.isMultiple(of: 30) { refreshStorage() }
         schedule(after: 1)
     }
 
-    /// Values that change slowly, read on start and every few seconds.
-    private func readSlowValues() {
-        memory = MemoryReading.read()
-        battery = batteryReader?.read()
-        interface = networkSampler.primaryInterface()
-        thermalState = ProcessInfo.processInfo.thermalState
-        updateUptime()
-        refreshStorage()
+    /// Starts sampling a metric: a fresh baseline for a rate, the current value of anything else.
+    /// Slow values are read here and then only every few seconds.
+    private func begin(_ metric: SystemMetric) {
+        switch metric {
+        case .cpu:
+            cpuSampler.reset()
+            _ = cpuSampler.sample()
+        case .network:
+            networkSampler.reset()
+            _ = networkSampler.sample()
+            interface = networkSampler.primaryInterface()
+        case .disk:
+            diskSampler.reset()
+            _ = diskSampler.sample()
+        case .gpu:
+            gpu = gpuReader?.read()
+        case .memory:
+            memory = MemoryReading.read()
+        case .battery:
+            battery = batteryReader?.read()
+        case .storage:
+            refreshStorage()
+        }
     }
 
     private func updateUptime() {

@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import SwiftUI
 import ToolsyEngine
 import ToolsyShared
 
@@ -23,9 +24,13 @@ import ToolsyShared
 ///     sh <shell command>
 ///     dropstatus on|off              droppanel on|off     capturedir <folder>
 ///     capture <name> [anchor]        print <text>         quit
+///     dashboard edit|done|reset|print|add <widget>|remove <widget>|move <widget> <index>
+///               size <widget> small|medium|wide|style <widget> line|area|bar|unit <widget> bytes|bits
+///               deviceline on|off
 ///
 /// Pages are root, settings, gallery and mod:<id>. Anchors are the names given with `debugAnchor`
-/// (`tile:<id>`, `dialog-confirm`, …); a mod's control is `<id>/<index path>` or found by a field,
+/// (`tile:<id>`, `widget:<widget>`, `widget-remove:<widget>`, `gallery:<widget>`, `edit-widgets`, `edit-done`,
+/// `option-size`, …; a widget is `cpu`, `gpu`, … or `mod:<mod>/<widget>`); a mod's control is `<id>/<index path>` or found by a field,
 /// `<id>:bind=<key>`, `<id>:command=<name>`, `<id>:label=<text>`. `clickat` takes fractions of the
 /// anchor's width and height from its top left; `drag` positions are fractions of its width along
 /// its bottom edge (where a slider's track is). `press` holds the mouse button down at a point given
@@ -286,6 +291,8 @@ private final class Runner {
             let (mod, position) = try modAndRest(rest)
             mods.setEnabled(mod, position == "on")
             try await Task.sleep(for: .milliseconds(300))
+        case "dashboard":
+            try await dashboard(arguments)
         case "print":
             say(rest)
         case "quit":
@@ -293,6 +300,44 @@ private final class Runner {
         default:
             throw ScriptError("unknown command \(command)")
         }
+    }
+
+    /// Changes the dashboard through the store's API, as the editing tools do, and prints the layout.
+    func dashboard(_ arguments: [String]) async throws {
+        let store = app.dashboard
+        let usage = ScriptError("dashboard edit|done|reset|print|add|remove|move|size|style|unit|deviceline")
+        guard let command = arguments.first else { throw usage }
+        let widget = arguments.count > 1 ? WidgetID(rawValue: arguments[1]) : nil
+        let value = arguments.count > 2 ? arguments[2] : nil
+        let change: () -> Void
+        switch command {
+        case "edit": change = { store.isEditing = true }
+        case "done": change = { store.isEditing = false }
+        case "reset": change = store.reset
+        case "print": change = {}
+        case "deviceline": change = { store.setShowsDeviceLine(arguments.last == "on") }
+        case "add": guard let widget else { throw usage }; change = { store.add(widget) }
+        case "remove": guard let widget else { throw usage }; change = { store.remove(widget) }
+        case "move":
+            guard let widget, let index = value.flatMap({ Int($0) }) else { throw usage }
+            change = { store.move(widget, to: index) }
+        case "size":
+            guard let widget, let size = value.flatMap(WidgetSize.init(rawValue:)) else { throw usage }
+            change = { store.setSize(size, of: widget) }
+        case "style":
+            guard let widget, let style = value.flatMap(ChartStyle.init(rawValue:)) else { throw usage }
+            change = { store.setChartStyle(style, of: widget) }
+        case "unit":
+            guard let widget, let unit = value.flatMap(RateUnit.init(rawValue:)) else { throw usage }
+            change = { store.setRateUnit(unit, of: widget) }
+        default: throw usage
+        }
+        withAnimation(Motion.gentle, change)
+        let widgets = store.layout.widgets.map {
+            [$0.id.rawValue, $0.size?.rawValue, $0.chartStyle?.rawValue, $0.rateUnit?.rawValue].compactMap(\.self).joined(separator: ":")
+        }
+        say("DASHBOARD editing=\(store.isEditing) device=\(store.layout.showsDeviceLine) \(widgets.joined(separator: " "))")
+        try await Task.sleep(for: .seconds(0.6))
     }
 
     func page(_ name: String) throws -> PanelPage {
