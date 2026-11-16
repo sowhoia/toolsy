@@ -21,16 +21,22 @@ public struct CommandInput: Codable, Sendable, Equatable {
     public var value: JSONValue?
     /// The mod's settings and live state at the time of the call.
     public var state: ModState
-    /// The user's first preferred language as a BCP 47 code, e.g. `ru` or `en-us`; `TOOLSY_LOCALE`.
+    /// The user's first preferred language as a lowercase BCP 47 code, e.g. `ru` or `en-us`; `TOOLSY_LOCALE`.
     public var locale: String?
 
+    /// `locale` is kept as commands are told it (`languageTag`), so standard input and `TOOLSY_LOCALE` agree.
     public init(event: ModEvent, command: String, key: String? = nil, value: JSONValue? = nil, state: ModState, locale: String? = nil) {
         self.event = event
         self.command = command
         self.key = key
         self.value = value
         self.state = state
-        self.locale = locale
+        self.locale = locale.flatMap(Self.languageTag)
+    }
+
+    /// A language as commands are told it: lowercase, and nothing at all unless it is a well-formed code.
+    static func languageTag(_ language: String) -> String? {
+        language.wholeMatch(of: /[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*/) != nil ? language.lowercased() : nil
     }
 }
 
@@ -110,10 +116,9 @@ public enum CommandEnvironment {
         variables["TOOLSY_COMMAND"] = input.command
         variables["TOOLSY_KEY"] = input.key
         variables["TOOLSY_VALUE"] = input.value?.text
-        // For a privileged command the locale is data from a user-level process: only a well-formed code passes.
-        if let locale = input.locale, locale.wholeMatch(of: /[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*/) != nil {
-            variables["TOOLSY_LOCALE"] = locale.lowercased()
-        }
+        // For a privileged command the input was decoded from what a user-level process sent, so the locale is
+        // checked here again: only a well-formed code passes.
+        variables["TOOLSY_LOCALE"] = input.locale.flatMap(CommandInput.languageTag)
         for (key, value) in input.state where value.isScalar {
             variables["TOOLSY_STATE_\(key)"] = value.text
         }

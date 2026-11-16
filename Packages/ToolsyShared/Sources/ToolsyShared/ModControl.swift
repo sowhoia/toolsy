@@ -200,8 +200,10 @@ extension ModControl {
 
             /// The options a picker with `optionsFrom` offers: the elements of that state array that have the
             /// shape of an `options` element (a string, or an object with a scalar `value` and optional
-            /// string `label` and `icon`), at most `Picker.maxOptions`. Anything else is skipped.
+            /// string `label` and `icon`), at most `Picker.maxOptions`. Anything else is skipped, and so is
+            /// a value that came before: an option is known by its value, so the second could not be chosen.
             public static func options(from value: JSONValue?) -> [Option] {
+                var seen: Set<JSONValue> = []
                 let options = (value?.arrayValue ?? []).compactMap { element -> Option? in
                     if let shorthand = element.stringValue {
                         return Option(value: element, label: shorthand)
@@ -214,7 +216,7 @@ extension ModControl {
                         return nil
                     }
                     return Option(value: value, label: label?.stringValue ?? value.text, icon: icon?.stringValue)
-                }
+                }.filter { seen.insert($0.value).inserted }
                 return Array(options.prefix(Picker.maxOptions))
             }
         }

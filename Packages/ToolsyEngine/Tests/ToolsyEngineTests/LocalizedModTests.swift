@@ -33,20 +33,31 @@ import ToolsyShared
             #expect(mod.render(mod.manifest.widgets[0].value) == "Осталось 5", "a template is translated, then rendered")
 
             await mod.run("tick")
-            #expect(harness.log() == ["de-de"], "commands are told the user's first language, whatever the mod translates")
+            #expect(harness.log() == ["ru-ru"], "commands are told the language the page is in, as the user's system names it")
 
             await harness.relaunch()
             #expect(try harness.mod().manifest.name == "Таймер", "a mod loaded at launch is translated too")
         }
     }
 
-    @Test func withoutATableForTheUsersLanguagesTheModKeepsItsOwnText() async throws {
+    @Test func withoutTextInTheUsersLanguagesTheModIsShownAsWritten() async throws {
         try await withHarness(languages: ["fr-CA"]) { harness in
             let mod = try await harness.install(Self.timer, scripts: Self.scripts)
             #expect(mod.manifest.name == "Timer")
             #expect(label(of: mod.manifest.ui.first) == "Start")
             await mod.run("tick")
-            #expect(harness.log() == ["fr-ca"])
+            #expect(harness.log() == ["en"], "commands are told the manifest's own language")
+        }
+    }
+
+    @Test func aUserWhoPrefersTheManifestsLanguageReadsItAsWritten() async throws {
+        // English first, Russian second: the Russian table must not win over the English the mod is written in.
+        try await withHarness(languages: ["en-US", "ru-RU"]) { harness in
+            let mod = try await harness.install(Self.timer, scripts: Self.scripts)
+            #expect(mod.manifest.name == "Timer")
+            #expect(label(of: mod.manifest.ui.first) == "Start")
+            await mod.run("tick")
+            #expect(harness.log() == ["en-us"])
         }
     }
 

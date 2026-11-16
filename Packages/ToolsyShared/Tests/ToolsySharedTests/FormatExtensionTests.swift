@@ -216,6 +216,10 @@ private func widgets(_ widgets: String) -> String {
         #expect(ModControl.Picker.Option.options(from: many).map(\.label) == (0..<32).map { "o\($0)" })
         #expect(ModControl.Picker.Option.options(from: nil).isEmpty)
         #expect(ModControl.Picker.Option.options(from: "text").isEmpty)
+        // An option is known by its value: a value that came before could not be chosen.
+        let repeated = ModControl.Picker.Option.options(from: ["en0", ["value": "en0", "label": "Wi-Fi"], "en1", ["value": 1], ["value": "1"]])
+        #expect(repeated.map(\.label) == ["en0", "en1", "1", "1"], "the first one stays; the number 1 and the text \"1\" are two values")
+        #expect(repeated.map(\.value) == ["en0", "en1", 1, "1"])
         #expect(ModControl.Picker.Option.options(from: ["k": "v"]).isEmpty)
         #expect(ModControl.Picker.Option.options(from: []).isEmpty)
     }
@@ -311,6 +315,42 @@ private func widgets(_ widgets: String) -> String {
         #expect(mod.localized(for: ["de-AT", "ru"]) == mod)
     }
 
+    @Test func theManifestsOwnLanguageIsOneOfItsLanguages() throws {
+        // The source is English unless the manifest says otherwise.
+        let mod = try manifest(Self.source)
+        #expect(mod.language == "en")
+        #expect(mod.localizationCode(for: ["en-US", "ru-RU"]) == nil, "a user who prefers English reads it as written")
+        #expect(mod.localized(for: ["en-US", "ru-RU"]) == mod)
+        #expect(mod.localized(for: ["en", "pt-BR"]) == mod)
+        #expect(mod.localized(for: ["fr", "ru", "en"]).name == "Демо", "English comes after Russian for this user")
+
+        let german = try manifest(minimal(#""language": "de", "localizations": {"en": {"Demo": "Mod"}}"#))
+        #expect(german.language == "de")
+        #expect(german.localized(for: ["de-CH", "en"]) == german)
+        #expect(german.localized(for: ["en-GB", "de"]).name == "Mod")
+        #expect(german.localized(for: ["ru"]) == german, "nothing matches: as written")
+    }
+
+    @Test func saysWhichLanguageTheUserIsShown() throws {
+        let mod = try manifest(Self.source)
+        #expect(mod.shownLanguage(for: ["ru-RU", "en-US"]) == "ru-RU", "as the user's system names it")
+        #expect(mod.shownLanguage(for: ["en-US", "ru-RU"]) == "en-US")
+        #expect(mod.shownLanguage(for: ["fr-FR", "pt-BR"]) == "pt-BR")
+        #expect(mod.shownLanguage(for: ["fr-FR", "ja"]) == "en", "none of the user's: the manifest's own")
+        #expect(mod.shownLanguage(for: []) == "en")
+        #expect(try manifest(minimal(#""language": "ru""#)).shownLanguage(for: ["ja"]) == "ru")
+    }
+
+    @Test func rejectsABadLanguageAndATableForTheManifestsOwn() {
+        #expect(failure(minimal(#""language": "English""#))
+            == #"language: "English" is not a language code: use a lowercase BCP 47 language, optionally with a region, such as "en" or "pt-br""#)
+        #expect(failure(minimal(#""language": "ru", "localizations": {"ru": {"Demo": "Мод"}}"#))
+            == #"localizations.ru: the manifest itself is written in "ru" (see "language"); a table translates it into another language"#)
+        #expect(failure(minimal(#""localizations": {"en": {"Demo": "Mod"}}"#))
+            == #"localizations.en: the manifest itself is written in "en" (see "language"); a table translates it into another language"#)
+        #expect(failure(minimal(#""language": "ru", "localizations": {"en": {"Demo": "Mod"}}"#)) == "no error")
+    }
+
     @Test func returnsTheManifestUnchangedWithoutAMatch() throws {
         let mod = try manifest(Self.source)
         #expect(mod.localized(for: ["fr", "ja-JP"]) == mod)
@@ -366,6 +406,24 @@ private func widgets(_ widgets: String) -> String {
             #expect(variables(locale: locale)["TOOLSY_LOCALE"] == nil, "\(String(describing: locale))")
             #expect(variables(locale: locale, privileged: true)["TOOLSY_LOCALE"] == nil)
         }
+    }
+
+    @Test func theInputCarriesItAsTheVariableDoes() {
+        #expect(CommandInput(event: .refresh, command: "s", state: [:], locale: "pt-BR").locale == "pt-br")
+        #expect(CommandInput(event: .refresh, command: "s", state: [:], locale: "ru_RU").locale == nil)
+    }
+
+    @Test func oneDecodedFromAClientIsCheckedAgain() throws {
+        // What the root helper decodes was written by a user-level process.
+        let received = try JSONDecoder().decode(CommandInput.self, from: Data(#"""
+            {"event": "refresh", "command": "status", "state": {}, "locale": "ru;rm -rf /"}
+            """#.utf8))
+        let variables = CommandEnvironment.variables(
+            modID: "demo", modDirectory: URL(filePath: "/tmp/mod"), dataDirectory: URL(filePath: "/tmp/data"),
+            input: received, privileged: true
+        )
+        #expect(variables["TOOLSY_LOCALE"] == nil)
+        #expect(variables["TOOLSY_COMMAND"] == "status")
     }
 
     @Test func travelsInTheInput() throws {

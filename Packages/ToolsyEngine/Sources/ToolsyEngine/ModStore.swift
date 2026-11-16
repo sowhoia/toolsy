@@ -94,8 +94,8 @@ public final class ModStore {
     @ObservationIgnored private var orphanedWork: [String: Task<Void, Never>] = [:]
 
     /// `languages` are the user's languages, most preferred first (BCP 47, as in `Locale.preferredLanguages`):
-    /// a mod is shown in the first of them it has a translation for, and its commands are told the first
-    /// one as `TOOLSY_LOCALE`.
+    /// a mod is shown in the first of them it has text in, and its commands are told that language as
+    /// `TOOLSY_LOCALE` (`ModManifest.shownLanguage(for:)`).
     public convenience init(
         directories: ToolsyDirectories = .user, privileged: any PrivilegedExecuting,
         languages: [String] = Locale.preferredLanguages
@@ -465,7 +465,8 @@ public final class ModStore {
             saved: try PersistedState.load(for: manifest, from: directories),
             directories: directories,
             privileged: privileged,
-            locale: languages.first,
+            // Without the user's languages there is nothing to tell.
+            locale: languages.isEmpty ? nil : manifest.shownLanguage(for: languages),
             timing: timing,
             after: predecessorWork,
             accessMayHaveChanged: { [weak self] in

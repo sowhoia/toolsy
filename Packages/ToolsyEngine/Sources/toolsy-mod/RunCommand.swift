@@ -57,7 +57,7 @@ struct RunCommand {
         if let locale = arguments.value("--locale"), locale.wholeMatch(of: /[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*/) == nil {
             throw fail("--locale: \"\(locale)\" is not a BCP 47 language code such as ru or en-us")
         }
-        locale = arguments.value("--locale") ?? Locale.preferredLanguages.first
+        locale = arguments.value("--locale")
         dataDirectory = arguments.value("--data").map { absolute($0) }
         if let text = arguments.value("--for") {
             guard let seconds = Double(text), seconds > 0, seconds <= ModCommand.maxTimeout else {
@@ -93,7 +93,8 @@ struct RunCommand {
         }
 
         var input = CommandInput(event: event ?? (isService ? .service : .command), command: name, key: key, value: value,
-                                 state: startingState(of: manifest), locale: locale)
+                                 state: startingState(of: manifest),
+                                 locale: locale ?? manifest.shownLanguage(for: Locale.preferredLanguages))
         var notes: [String] = []
         if command.privileged {
             notes.append("\"\(name)\" is privileged: it ran as \(NSUserName()), not root, with root's environment (PATH of system directories only); whatever needs root failed or did something else")

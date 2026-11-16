@@ -99,7 +99,7 @@ public final class Mod: Identifiable {
     let manifestDigest: SHA256.Digest
     @ObservationIgnored private let directories: ToolsyDirectories
     @ObservationIgnored private let privileged: any PrivilegedExecuting
-    /// The user's first language, which commands are told as `TOOLSY_LOCALE`.
+    /// The language the mod is shown in, which commands are told as `TOOLSY_LOCALE`.
     @ObservationIgnored private let locale: String?
     @ObservationIgnored private let timing: EngineTiming
     @ObservationIgnored private let accessMayHaveChanged: @MainActor () -> Void

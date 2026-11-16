@@ -300,12 +300,18 @@ extension ModManifest {
     }
 
     private func validateLocalizations() throws {
+        guard Self.isValidLanguageCode(language) else {
+            throw ManifestError("language: \"\(language)\" is not a language code: use a lowercase BCP 47 language, optionally with a region, such as \"en\" or \"pt-br\"")
+        }
         guard localizations.count <= Self.maxLanguages else {
             throw ManifestError("localizations: at most \(Self.maxLanguages) languages")
         }
         for (code, table) in localizations.sorted(by: { $0.key < $1.key }) {
             guard Self.isValidLanguageCode(code) else {
                 throw ManifestError("localizations: \"\(code)\" is not a language code: use a lowercase BCP 47 language, optionally with a region, such as \"ru\" or \"pt-br\"")
+            }
+            guard code != language else {
+                throw ManifestError("localizations.\(code): the manifest itself is written in \"\(code)\" (see \"language\"); a table translates it into another language")
             }
             guard table.count <= Self.maxTranslations else {
                 throw ManifestError("localizations.\(code): at most \(Self.maxTranslations) entries")

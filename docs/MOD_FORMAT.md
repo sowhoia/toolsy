@@ -88,7 +88,7 @@ A warning is something valid that almost always is a mistake. It never changes t
 | `--state <json>` | The state the command sees. |
 | `--key <key>`, `--value <json>` | What a control sends: `TOOLSY_KEY` and `TOOLSY_VALUE`. When an input binds the key, the value is stored in the state first, as the control does. `--value` alone is a button's `value`. |
 | `--event <event>` | `TOOLSY_EVENT`; by default `service` for the service and `command` for every other command. |
-| `--locale <code>` | `TOOLSY_LOCALE`; by default the user's first language. |
+| `--locale <code>` | `TOOLSY_LOCALE`; by default the language Toolsy shows the mod in on this Mac. |
 | `--data <folder>` | `TOOLSY_DATA_DIR`; by default a new temporary folder, removed afterwards. |
 | `--for <seconds>` | The service only: how long it runs before it is stopped as Toolsy stops it (default 5). Each line it printed is reported. |
 | `--as-user` | Runs a privileged command as the user, with root's environment. Without it a privileged command is refused: `toolsy-mod` never runs anything as root and never contacts the helper. |
@@ -134,6 +134,7 @@ Toolsy shows for a failed run; and standard error.
 | `lifecycle` | no | Which commands Toolsy runs on its own, see [Lifecycle](#lifecycle). |
 | `ui` | no | The mod's page, see [Interface](#interface). |
 | `widgets` | no | Tiles for the dashboard, see [Widgets](#widgets). |
+| `language` | no | The language the manifest's own text is written in, as a code like the keys of `localizations`. Default `"en"`. |
 | `localizations` | no | Translations of the mod's text, see [Localization](#localization). |
 
 Unknown fields are ignored. A manifest that breaks any rule in this document is rejected at
@@ -192,7 +193,7 @@ nothing else:
 | `TOOLSY_COMMAND` | Name of the command. |
 | `TOOLSY_KEY` | State key of the control that started the command, if any. |
 | `TOOLSY_VALUE` | New value of that control, or the button's `value`, as text. |
-| `TOOLSY_LOCALE` | The user's first preferred language as a lowercase BCP 47 code, such as `ru`, `en-us` or `zh-hans-cn`; compare its first part (`${TOOLSY_LOCALE%%-*}`) to pick a language. Absent when it is not a well-formed code. |
+| `TOOLSY_LOCALE` | The language the mod is shown in, as a lowercase BCP 47 code: the first of the user's preferred languages the mod has text in, as the system names it (`ru-ru`, `en-us`, `zh-hans-cn`), or the mod's own `language` when it has text in none of them (see [Localization](#localization)). Compare its first part (`${TOOLSY_LOCALE%%-*}`) to pick a language, so that what a command reports matches the page. |
 | `TOOLSY_STATE_<key>` | One per state key holding a string, number or boolean, as text (`true`/`false` for booleans). |
 | `PATH` | `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` — for privileged commands only the system directories. |
 | `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `SHELL`, `LANG` | The user's; for privileged commands root's. |
@@ -375,8 +376,8 @@ those in the `detail` of its [widgets](#widgets).
 A picker option is `{ "value": …, "label": "…", "icon": "…" }` with a string, number or boolean
 value, or just a string that serves as both value and label. With `optionsFrom` the options are
 read from that state key, which a command fills with an array of such elements; elements of any
-other shape are skipped, and at most 32 are used. Until the key holds an array the picker has no
-options.
+other shape are skipped, as is a value that already came before it, and at most 32 are used.
+Until the key holds an array the picker has no options.
 
 ### Displays
 
@@ -452,7 +453,8 @@ A widget has at most one of `chart` and `gauge`.
 | --- | --- |
 | Languages | Keys are language codes: a lowercase BCP 47 language, optionally with a region (`ru`, `de`, `pt-br`). At most 20 languages. |
 | Entries | Each language maps a source string, exactly as written in the manifest, to its translation. At most 500 entries per language. Text without an entry stays as written. |
-| Choice | Toolsy uses the first of the user's preferred languages that has a table, the most specific first: for `pt-BR` it takes `pt-br`, otherwise `pt`; for `ru-RU`, `ru`. Without a match the manifest is shown as written. |
+| Choice | Toolsy goes through the user's preferred languages in order and stops at the first the mod has text in: the manifest's own `language`, for which the manifest is shown as written, or a table, the most specific first (for `pt-BR` it takes `pt-br`, otherwise `pt`; for `ru-RU`, `ru`). So a user who prefers English and then Russian reads an English mod in English, whatever tables it has. Without a match the manifest is shown as written. |
+| The manifest's language | `language` says what the manifest's own text is written in (`"en"` unless stated). It cannot also be a key of `localizations`. |
 | What is translated | `name`, `summary`, and in every control and widget the text fields: `label`, `title`, `footer`, `text`, `value`, `placeholder`, `confirm`, `empty`, `unit`, `help`, `copy`, option labels, chart and series labels, widget `title` and `value`. |
 | What is not | `id`, commands, `bind`s, icons, tints, expressions, `author`, option values, a button's `value`, and anything a command reports. |
 | Templates | A template is translated as a whole string before it is rendered: `"{{ms}} ms"` → `"{{ms}} мс"`. Translations must keep the manifest valid: they are checked at install like the text they replace. |

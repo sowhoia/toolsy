@@ -23,6 +23,9 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     public var ui: [ModControl]
     /// Tiles the mod offers for the dashboard.
     public var widgets: [ModWidget]
+    /// The language the manifest's own text is written in, a lowercase BCP 47 code; `en` unless stated.
+    /// A user who prefers it is shown the manifest as written, whatever `localizations` offers.
+    public var language: String
     /// Language code (`ru`, `pt-br`) → source string, exactly as written in the manifest → translation.
     /// Applied by `localized(for:)`.
     public var localizations: [String: [String: String]]
@@ -33,7 +36,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schema, id, name, version, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui, widgets, localizations
+        case schema, id, name, version, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui, widgets, language, localizations
     }
 
     public init(from decoder: any Decoder) throws {
@@ -52,6 +55,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
         lifecycle = try container.decodeIfPresent(ModLifecycle.self, forKey: .lifecycle) ?? ModLifecycle()
         ui = try container.decodeIfPresent([ModControl].self, forKey: .ui) ?? []
         widgets = try container.decodeIfPresent([ModWidget].self, forKey: .widgets) ?? []
+        language = try container.decodeIfPresent(String.self, forKey: .language) ?? Self.defaultLanguage
         localizations = try container.decodeIfPresent([String: [String: String]].self, forKey: .localizations) ?? [:]
     }
 

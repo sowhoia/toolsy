@@ -63,7 +63,7 @@ enum Usage {
               --value <json>    the control's new value or the button's value (TOOLSY_VALUE), as JSON: 7, true, '"text"'
               --event <event>   TOOLSY_EVENT: enable, disable, uninstall, refresh, service, command, launch, wake,
                                 network or power (default: service for the service, command otherwise)
-              --locale <code>   TOOLSY_LOCALE, a BCP 47 code such as ru or en-us (default: your first language)
+              --locale <code>   TOOLSY_LOCALE, a BCP 47 code such as ru or en-us (default: the language Toolsy shows the mod in on this Mac)
               --data <folder>   TOOLSY_DATA_DIR (default: a new temporary folder, removed afterwards)
               --for <seconds>   how long the service runs before it is stopped (default 5); service only
               --as-user         run a privileged command as you, not root, with root's environment; never as root
