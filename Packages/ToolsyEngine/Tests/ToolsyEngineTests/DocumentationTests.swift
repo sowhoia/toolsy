@@ -6,7 +6,7 @@ import ToolsyShared
 /// The documentation is part of the contract: every complete manifest it shows must be valid, and so must
 /// the mods maintained in this repository.
 @Suite struct DocumentedManifestTests {
-    private static let repository = URL(filePath: #filePath)
+    static let repository = URL(filePath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent()
 
