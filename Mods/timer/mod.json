@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "id": "timer",
+  "name": "Focus Timer",
+  "version": "1.0.0",
+  "author": "Toolsy",
+  "summary": "Work and break phases with a notification when each one ends",
+  "icon": "timer",
+  "tint": "red",
+  "settings": {
+    "workMinutes": 25,
+    "breakMinutes": 5,
+    "phase": "work",
+    "endsAt": 0,
+    "pausedLeft": 0
+  },
+  "commands": {
+    "start": { "exec": "scripts/timer.sh", "args": ["start"] },
+    "pause": { "exec": "scripts/timer.sh", "args": ["pause"] },
+    "reset": { "exec": "scripts/timer.sh", "args": ["reset"] },
+    "show": { "exec": "scripts/timer.sh", "args": ["show"] },
+    "wait": { "exec": "scripts/timer.sh", "args": ["wait"] }
+  },
+  "lifecycle": {
+    "enable": "start",
+    "disable": "pause",
+    "service": "wait",
+    "refresh": { "command": "show", "every": 1 },
+    "events": { "wake": "show" }
+  },
+  "ui": [
+    { "type": "text", "text": "{{clock|default:—}}", "style": "title" },
+    { "type": "gauge", "label": "{{phaseName|default:Work}}", "icon": "timer", "bind": "progress", "unit": "%", "style": "bar", "tint": "{{level|default:off}}" },
+    {
+      "type": "row",
+      "children": [
+        { "type": "button", "label": "{{pausedLeft|either:Resume:Start}}", "icon": "play.fill", "command": "start", "style": "prominent", "when": "!enabled" },
+        { "type": "button", "label": "Pause", "icon": "pause.fill", "command": "pause", "when": "enabled" },
+        { "type": "button", "label": "Reset", "icon": "arrow.counterclockwise", "command": "reset", "disabled": "!enabled && !pausedLeft && phase == 'work'" }
+      ]
+    },
+    { "type": "text", "text": "Work ends at {{endsAt|time}}, then a break of {{breakMinutes}} min starts.", "style": "caption", "when": "enabled && phase == 'work'" },
+    { "type": "text", "text": "The break ends at {{endsAt|time}}. The timer then waits for you to start the next work phase.", "style": "caption", "when": "enabled && phase == 'break'" },
+    {
+      "type": "section",
+      "title": "Lengths",
+      "footer": "A new length applies from the next phase. Toolsy shows a notification when a phase ends, if notifications are allowed for it in System Settings.",
+      "children": [
+        { "type": "stepper", "label": "Work", "icon": "laptopcomputer", "bind": "workMinutes", "min": 5, "max": 180, "step": 5, "unit": " min" },
+        { "type": "stepper", "label": "Break", "icon": "cup.and.saucer", "bind": "breakMinutes", "min": 1, "max": 60, "unit": " min" }
+      ]
+    }
+  ],
+  "widgets": [
+    {
+      "id": "timer",
+      "title": "{{phaseName|default:Focus Timer}}",
+      "value": "{{clock|default:—}}",
+      "tint": "{{level|default:off}}",
+      "gauge": { "bind": "progress" },
+      "detail": [
+        {
+          "type": "row",
+          "children": [
+            { "type": "button", "label": "{{pausedLeft|either:Resume:Start}}", "icon": "play.fill", "command": "start", "style": "prominent", "when": "!enabled" },
+            { "type": "button", "label": "Pause", "icon": "pause.fill", "command": "pause", "when": "enabled" },
+            { "type": "button", "label": "Reset", "icon": "arrow.counterclockwise", "command": "reset", "disabled": "!enabled && !pausedLeft && phase == 'work'" }
+          ]
+        },
+        {
+          "type": "row",
+          "children": [
+            { "type": "stat", "label": "Work", "value": "{{workMinutes}} min" },
+            { "type": "stat", "label": "Break", "value": "{{breakMinutes}} min" },
+            { "type": "stat", "label": "Ends", "value": "{{endsAt|time}}", "when": "enabled" }
+          ]
+        }
+      ]
+    }
+  ],
+  "localizations": {
+    "ru": {
+      "Focus Timer": "Фокус-таймер",
+      "Work and break phases with a notification when each one ends": "Работа и перерывы с уведомлением в конце каждого этапа",
+      "{{phaseName|default:Work}}": "{{phaseName|default:Работа}}",
+      "{{phaseName|default:Focus Timer}}": "{{phaseName|default:Фокус-таймер}}",
+      "{{pausedLeft|either:Resume:Start}}": "{{pausedLeft|either:Продолжить:Старт}}",
+      "Pause": "Пауза",
+      "Reset": "Сбросить",
+      "Work ends at {{endsAt|time}}, then a break of {{breakMinutes}} min starts.": "Работа закончится в {{endsAt|time}}, затем начнётся перерыв на {{breakMinutes}} мин.",
+      "The break ends at {{endsAt|time}}. The timer then waits for you to start the next work phase.": "Перерыв закончится в {{endsAt|time}}. Затем таймер подождёт, пока вы начнёте следующий этап работы.",
+      "Lengths": "Длительность",
+      "A new length applies from the next phase. Toolsy shows a notification when a phase ends, if notifications are allowed for it in System Settings.": "Новая длительность действует со следующего этапа. Когда этап заканчивается, Toolsy показывает уведомление, если они разрешены в Системных настройках.",
+      "Work": "Работа",
+      "Break": "Перерыв",
+      " min": " мин",
+      "{{workMinutes}} min": "{{workMinutes}} мин",
+      "{{breakMinutes}} min": "{{breakMinutes}} мин",
+      "Ends": "Окончание"
+    }
+  }
+}
