@@ -12,8 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let dashboard: DashboardStore
     let processes: ProcessMonitor
     let memoryOptimizer: MemoryOptimizer
-    /// Turns what happens to the Mac into the system events mods declare.
+    /// Mods' system events and notifications.
     let systemEvents: SystemEventMonitor
+    let notifier: ModNotifier
 
     private let options: LaunchOptions
     private var statusItem: NSStatusItem?
@@ -58,7 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"),
                                    hasBattery: !options.simulateNoBattery && BatteryReader.isPresent)
         systemEvents = SystemEventMonitor(observing: { store.observedEvents }, post: { store.post($0) })
+        notifier = ModNotifier(center: ModNotifier.center(for: options), mods: mods)
         super.init()
+        notifier.openPanel = { [weak self] page in self?.openPanel(on: page) }
         mods.presentPanel = { [weak self] in self?.openPanel(on: nil) }
         panelState.addVisibilityHandler { [dashboard] visible in
             if !visible { dashboard.isEditing = false }  // closing the panel ends editing
