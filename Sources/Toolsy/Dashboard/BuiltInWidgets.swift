@@ -82,9 +82,9 @@ private struct CPUDetail: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .contentTransition(.interpolate)
                 }
             }
+            ProcessList(title: String(localized: "Using the most CPU"), measure: .cpu, count: 4)
         }
     }
 }
@@ -132,7 +132,7 @@ private struct CoreBars: View {
 
 // MARK: Memory
 
-private func memoryTint(_ pressure: MemoryPressure?) -> Color {
+func memoryTint(_ pressure: MemoryPressure?) -> Color {
     switch pressure {
     case .warning: .yellow
     case .critical: .red
@@ -148,54 +148,6 @@ private struct MemoryFace: View {
         TileFace(title: String(localized: "Memory"), symbol: "memorychip", value: memory.map { Format.memory($0.used) } ?? "—") {
             MiniBar(fraction: memory.map { Double($0.used) / Double(max($0.total, 1)) } ?? 0,
                     tint: memoryTint(memory?.pressure))
-        }
-    }
-}
-
-private struct MemoryDetail: View {
-    @Environment(SystemMonitor.self) private var monitor
-
-    var body: some View {
-        if let memory = monitor.memory {
-            HStack(alignment: .center, spacing: 14) {
-                RingGauge(value: Double(memory.used) / Double(max(memory.total, 1)) * 100,
-                          text: Format.percent(Double(memory.used) / Double(max(memory.total, 1))),
-                          tint: memoryTint(memory.pressure), size: 56)
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(String(localized: "\(Format.memory(memory.used)) of \(Format.memory(memory.total))"))
-                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                        Spacer(minLength: 6)
-                        StatusLabel(pressureText(memory.pressure), level: pressureLevel(memory.pressure))
-                    }
-                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-                        GridRow {
-                            DetailFact(label: String(localized: "Apps"), value: Format.memory(memory.app))
-                            DetailFact(label: String(localized: "Wired"), value: Format.memory(memory.wired))
-                        }
-                        GridRow {
-                            DetailFact(label: String(localized: "Compressed"), value: Format.memory(memory.compressed))
-                            DetailFact(label: String(localized: "Swap"), value: Format.memory(memory.swapUsed))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func pressureText(_ pressure: MemoryPressure) -> String {
-        switch pressure {
-        case .normal: String(localized: "Pressure normal")
-        case .warning: String(localized: "Pressure elevated")
-        case .critical: String(localized: "Pressure critical")
-        }
-    }
-
-    private func pressureLevel(_ pressure: MemoryPressure) -> StatusLevel {
-        switch pressure {
-        case .normal: .ok
-        case .warning: .warn
-        case .critical: .error
         }
     }
 }

@@ -21,7 +21,7 @@ import ToolsyShared
 ///     state <mod>     running <mod>  history <mod> <key>  access <mod>
 ///     helper cancel-next|needs-update (the next password prompt is dismissed; Toolsy "was updated")
 ///     helper reclaim-fails|reclaim-partly (the next memory optimisation fails, or does one step only)
-///     sh <shell command>
+///     sh <shell command>             processes (whether apps are being sampled, and how many groups)
 ///     dropstatus on|off              droppanel on|off     capturedir <folder>
 ///     capture <name> [anchor]        print <text>         quit
 ///     dashboard edit|done|reset|print|add <widget>|remove <widget>|move <widget> <index>
@@ -32,7 +32,10 @@ import ToolsyShared
 ///
 /// Pages are root, settings, gallery and mod:<id>. Anchors are the names given with `debugAnchor`
 /// (`tile:<id>`, `widget:<widget>`, `widget-remove:<widget>`, `gallery:<widget>`, `edit-widgets`, `edit-done`,
-/// `option-size`, `fold:<section title>`, `widget-switch:<widget>`, `mod-reload`, `recent-runs`, …; a widget is `cpu`, `gpu`, … or `mod:<mod>/<widget>`); a mod's control is `<id>/<index path>` or found by a field,
+/// `option-size`, `fold:<section title>`, `widget-switch:<widget>`, `mod-reload`, `recent-runs`, `detail:memory`,
+/// `memory-optimize`, `memory-status`, `memory-dismiss`, `process-list:memory|cpu`, `process-quit:<n>` for the n-th quit
+/// control of the list, …; a widget is `cpu`, `gpu`, … or `mod:<mod>/<widget>`); a mod's control is `<id>/<index path>`
+/// or found by a field,
 /// `<id>:bind=<key>`, `<id>:command=<name>`, `<id>:label=<text>`. `clickat` takes fractions of the
 /// anchor's width and height from its top left; `drag` positions are fractions of its width along
 /// its bottom edge (where a slider's track is). `press` holds the mouse button down at a point given
@@ -276,6 +279,8 @@ private final class Runner {
             case "reclaim-partly": await helper.setNextReclaim(.success(MemoryReclaimReport(diskCacheFlushed: true, pressureWarningSent: false)))
             default: throw ScriptError("helper cancel-next|needs-update|reclaim-fails|reclaim-partly")
             }
+        case "processes":
+            say("PROCESSES sampling=\(app.processes.isSampling) groups=\(app.processes.groups.count)")
         case "dropstatus":
             app.showDropTarget(rest == "on")
         case "droppanel":

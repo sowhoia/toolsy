@@ -315,3 +315,25 @@
 "Service started" = "Служба запущена";
 "Service restarted" = "Служба перезапущена";
 "Service exited with code %lld" = "Служба завершилась с кодом %lld";
+/* Memory and CPU details: optimising memory, apps by memory and CPU */
+"Free Up Memory" = "Освободить память";
+"Clears caches and asks apps to return memory they don’t need. No app is closed." = "Очищает кэш и просит приложения вернуть ненужную им память. Ничего не закрывается.";
+"Freeing memory…" = "Освобождение памяти…";
+"Apps keep running." = "Приложения продолжают работать.";
+"Memory used: %@ → %@" = "Занято: %@ → %@";
+"%@ freed" = "Освобождено %@";
+"Nothing to free right now" = "Сейчас освобождать нечего";
+"Done in part: %@ freed" = "Частично: освобождено %@";
+"Done in part: nothing freed" = "Частично: ничего не освобождено";
+"Apps couldn’t be asked to return memory." = "Не удалось попросить приложения вернуть память.";
+"The disk cache couldn’t be cleared." = "Не удалось очистить дисковый кэш.";
+"Cached files" = "Кэш файлов";
+"Using the most memory" = "Больше всего памяти";
+"Using the most CPU" = "Больше всего нагружают ЦП";
+"Quit “%@”?" = "Завершить «%@»?";
+"“%@” may ask you to save changes first. Nothing is forced to close." = "«%@» может предложить сохранить изменения. Ничего не закрывается принудительно.";
+"Quit" = "Завершить";
+"Quit “%@”…" = "Завершить «%@»…";
+"“%@” couldn’t be asked to quit" = "Не удалось попросить «%@» завершиться";
+"It may have quit already." = "Возможно, оно уже завершилось.";
+"processes: %lld" = "процессов: %lld";
