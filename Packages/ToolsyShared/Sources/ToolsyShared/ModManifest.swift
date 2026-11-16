@@ -21,6 +21,8 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     public var commands: [String: ModCommand]
     public var lifecycle: ModLifecycle
     public var ui: [ModControl]
+    /// Tiles the mod offers for the dashboard.
+    public var widgets: [ModWidget]
 
     /// Whether any command runs as root, i.e. the mod needs the privileged helper and the user's approval.
     public var requiresPrivileges: Bool {
@@ -28,7 +30,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schema, id, name, version, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui
+        case schema, id, name, version, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui, widgets
     }
 
     public init(from decoder: any Decoder) throws {
@@ -46,6 +48,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
         commands = try container.decodeIfPresent([String: ModCommand].self, forKey: .commands) ?? [:]
         lifecycle = try container.decodeIfPresent(ModLifecycle.self, forKey: .lifecycle) ?? ModLifecycle()
         ui = try container.decodeIfPresent([ModControl].self, forKey: .ui) ?? []
+        widgets = try container.decodeIfPresent([ModWidget].self, forKey: .widgets) ?? []
     }
 
     /// Decodes and validates a manifest. Every failure is a `ManifestError` with a message meant for the mod author.
@@ -139,8 +142,26 @@ public struct ModLifecycle: Decodable, Sendable, Equatable {
     /// Long-running command kept alive while the mod is on; every stdout line is a JSON state patch.
     public var service: String?
     public var refresh: Refresh?
+    /// Commands run when something happens to the Mac, while the mod is on (always, for a mod without a switch).
+    public var events: [ModSystemEvent: String]
 
-    public init() {}
+    public init() {
+        events = [:]
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enable, disable, uninstall, service, refresh, events
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enable = try container.decodeIfPresent(String.self, forKey: .enable)
+        disable = try container.decodeIfPresent(String.self, forKey: .disable)
+        uninstall = try container.decodeIfPresent(String.self, forKey: .uninstall)
+        service = try container.decodeIfPresent(String.self, forKey: .service)
+        refresh = try container.decodeIfPresent(Refresh.self, forKey: .refresh)
+        events = try container.decodeIfPresent([ModSystemEvent: String].self, forKey: .events) ?? [:]
+    }
 
     /// Mods without any of these are passive widgets and get no main switch.
     public var hasToggle: Bool {
@@ -158,8 +179,10 @@ public enum ReservedStateKey {
     public static let level = "level"
     /// Message of the last failure; cleared by the next successful command.
     public static let error = "error"
+    /// Not state: a patch that carries it asks the host to show a notification, and the key is never stored.
+    public static let notify = "notify"
 
-    public static let all: Set<String> = [enabled, status, level, error]
+    public static let all: Set<String> = [enabled, status, level, error, notify]
 }
 
 public enum ModLevel: String, Sendable, CaseIterable {

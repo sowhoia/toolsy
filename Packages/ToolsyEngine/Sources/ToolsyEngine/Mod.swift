@@ -139,6 +139,12 @@ public final class Mod: Identifiable {
                 break
             }
         }
+        for widget in manifest.widgets {
+            guard let chart = widget.chart else { continue }
+            for series in chart.series {
+                limits[series.bind] = max(limits[series.bind] ?? 0, chart.points)
+            }
+        }
         historyLimits = limits
         liveSliders = live
     }

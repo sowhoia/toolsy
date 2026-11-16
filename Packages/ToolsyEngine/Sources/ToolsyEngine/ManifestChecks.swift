@@ -21,12 +21,12 @@ extension ModManifest {
         }
     }
 
-    /// Every control of the page, depth first.
+    /// Every control of the page and of the widgets' details, depth first.
     var allControls: [ModControl] {
         func flatten(_ controls: [ModControl]) -> [ModControl] {
             controls.flatMap { [$0] + flatten($0.children) }
         }
-        return flatten(ui)
+        return flatten(ui) + widgets.flatMap { flatten($0.detail) }
     }
 
     private static func check(_ controls: [ModControl], path: String) throws(ManifestError) {

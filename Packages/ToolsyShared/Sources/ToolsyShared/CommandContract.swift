@@ -5,6 +5,8 @@ public enum ModEvent: String, Codable, Sendable {
     case enable, disable, uninstall, refresh, service
     /// Started by a control: a button, or a bound control with a `command`.
     case command
+    /// Started by a system event the mod listens to (`lifecycle.events`); see `ModSystemEvent`.
+    case launch, wake, network, power
 }
 
 /// Everything a command is told about its invocation. Sent as JSON on stdin when the command sets
