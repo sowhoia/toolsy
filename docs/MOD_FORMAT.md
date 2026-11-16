@@ -56,13 +56,17 @@ toolsy-mod pack my-mod -o my-mod.toolsymod
 | `new <id> [--template T] [--name N] [-o F]` | Writes a folder (`./<id>` unless `-o`; never over an existing one) holding a mod that validates and works as it is: `mod.json`, its script and a `README.md` saying how to try it. Templates: `basic` (a value kept fresh by `refresh`, a stepper setting, a button; the default), `switch` (`enable`/`disable` of a lasting effect, with `refresh` reporting `enabled`), `service` (a service feeding a chart and the status), `widget` (a dashboard widget with a gauge and `detail`, system events, a notification). |
 | `validate <mod> [--json]` | Takes a folder, a `.toolsymod` file or a lone manifest and runs every check installing runs. Prints `OK <id> <version>`, or the error naming the field on standard error. Then [warnings](#warnings), one per line on standard error after `warning: `. |
 | `run <folder> <command> [options]` | Validates the mod, runs one command exactly as Toolsy does and reports what Toolsy would make of it, see [Running a command](#running-a-command). |
-| `preview <folder> [--state J] [--language L]` | Prints what the page and the widgets show for a state, as an outline: each control with its rendered text and bound value, `[hidden]` when its `when` is false (or nothing inside a section or row is shown), `[disabled]`, a picker's options, a list's rows, each widget's title, value, gauge or chart and `detail`. `--language` shows the mod through its table for that language. Runs nothing. |
+| `preview <mod> [--state J] [--language L]` | Takes a folder, a `.toolsymod` file or a lone manifest and prints what the page and the widgets show for a state, as an outline: each control with its rendered text and bound value, `[hidden]` when its `when` is false (or nothing inside a section or row is shown), `[disabled]`, a picker's options, a list's rows, each widget's title, value, gauge or chart and `detail`. `--language` shows the mod through its table for that language. Runs nothing. |
 | `pack <folder> [-o file.toolsymod]` | Validates the folder and writes it as a package (`./<id>.toolsymod` unless `-o`), without `.DS_Store` files. Prints `OK <id> <version> <file>`. |
 
 `--state` takes a JSON object merged over the state a mod starts with, its `settings` plus
 `"enabled": false`; `null` removes a key. Exit status: `0` success, `1` the mod or the run failed (a
-validation error, a command that exited with another status or timed out), `2` the tool was used
-wrongly (an unknown command or option, a missing or malformed argument).
+validation error, a command that exited with another status, timed out or could not start), `2` the
+tool was used wrongly (an unknown command or option, a missing or malformed argument, a command the
+mod does not have, a privileged command without `--as-user`, `--for` for a command that is not the
+service, `run` on something other than a folder, `preview --language` for a language without a
+table). Without arguments `toolsy-mod` prints its overview on standard error and exits with `2`;
+`toolsy-mod help` prints it on standard output and exits with `0`.
 
 `validate --json` prints one object instead: `{"ok": true, "id", "version", "name", "commands",
 "privilegedCommands", "widgets", "languages", "warnings"}` (command names and languages sorted,
@@ -91,7 +95,7 @@ A warning is something valid that almost always is a mistake. It never changes t
 | `--locale <code>` | `TOOLSY_LOCALE`; by default the language Toolsy shows the mod in on this Mac. |
 | `--data <folder>` | `TOOLSY_DATA_DIR`; by default a new temporary folder, removed afterwards. |
 | `--for <seconds>` | The service only: how long it runs before it is stopped as Toolsy stops it (default 5). Each line it printed is reported. |
-| `--as-user` | Runs a privileged command as the user, with root's environment. Without it a privileged command is refused: `toolsy-mod` never runs anything as root and never contacts the helper. |
+| `--as-user` | Runs a privileged command as the user, with root's environment. Without it a privileged command is refused: `toolsy-mod` never runs anything as root and never contacts the helper. The command really runs, so use it only for commands that change nothing when run without root. |
 | `--json` | Prints the report as one JSON object. |
 
 The report gives the exit status and the duration; what standard output is to Toolsy — a patch
@@ -105,16 +109,16 @@ Toolsy shows for a failed run; and standard error.
 ```json
 {
   "schema": 1,
-  "id": "keep-awake",
-  "name": "Keep Awake",
+  "id": "stay-awake",
+  "name": "Stay Awake",
   "version": "1.0.0",
   "author": "You",
   "summary": "Stops the Mac from sleeping",
   "icon": "cup.and.saucer.fill",
   "tint": "orange",
-  "homepage": "https://example.com/keep-awake",
+  "homepage": "https://example.com/stay-awake",
   "settings": { "displayToo": true },
-  "commands": { "hold": { "shell": "[ \"$TOOLSY_STATE_displayToo\" = true ] && display=-d; exec caffeinate -i $display" } },
+  "commands": { "hold": { "shell": "[ \"$TOOLSY_STATE_displayToo\" = true ] && display=-d; exec /usr/bin/caffeinate -i $display" } },
   "lifecycle": { "service": "hold" },
   "ui": [ { "type": "toggle", "label": "Keep the display on", "bind": "displayToo" } ]
 }
@@ -179,7 +183,7 @@ These keys are read by Toolsy itself and cannot be used as settings:
 | `timeout` | `30` | Seconds (up to 3600) before the command and everything it started are killed. Not applied to the service. |
 | `capture` | | State key that receives trimmed standard output as text, instead of treating the output as a patch. |
 
-Command names use letters, digits, `_` and `-`.
+Command names are 1–64 letters, digits, `_` and `-`, starting with a letter or `_`.
 
 A command runs with the mod's folder as its working directory and with this environment and
 nothing else:
@@ -246,7 +250,8 @@ system notification:
 | State | `notify` is never stored: it cannot be a setting, a bound key or a `capture` key, and `{{notify}}` is always empty. |
 | Length | The title is cut to 80 characters, the body to 240. |
 | Rate | At most one notification per mod every 5 seconds; others are dropped. An identical notification repeated within a minute is dropped. |
-| Permission | Notifications appear only if the user allowed Toolsy to show them; macOS asks the first time. |
+| Permission | macOS asks the user the first time a mod notifies. While Toolsy may not notify, notifications are dropped without an error. |
+| Delivery | A banner without sound, grouped per mod, also while the panel is open. A click opens the panel on the mod's page. |
 | Failures | A failed command's patch is discarded, its `notify` with it. Commands with `capture` cannot notify. |
 
 ### Errors
@@ -258,13 +263,16 @@ system notification:
   `error` in its patch;
 - the error was reported by `refresh` or by the service, and that same source reports again
   without it;
-- the error was reported by an [event command](#system-events), and an event command succeeds.
+- the error was reported by an [event command](#system-events), and an event command succeeds;
+- a patch sets `error` to `null`, `""` or anything else that is not a non-empty string.
 
 So the automatic `refresh` that follows every command does not wipe the reason a button or the
 switch just failed, while a status problem found by `refresh` disappears as soon as `refresh`
 finds it resolved.
 
-Commands of one mod never overlap: they run one after another in the order they were started.
+Commands of one mod never overlap: they run one after another in the order they were started. The
+[service](#service) is not one of them: it runs alongside, so a state transition that a command and
+the service can both observe must lead both to the same patch.
 
 ## Lifecycle
 
@@ -287,7 +295,7 @@ Every value names a command.
 | `disable` | The user switches the mod off. On success `enabled` becomes `false`. On failure the switch stays on. |
 | `uninstall` | The mod is being removed, after `disable`. Use it to delete what the mod left on the system. |
 | `service` | Kept running while the mod is on. See below. |
-| `refresh` | Reports current state. Runs when the panel opens, after any other command of the mod finishes, and every `every` seconds (minimum 1) while the panel is open. With `"background": true` the schedule also runs while the panel is closed, as long as the mod is on (or always, for a mod without a switch). |
+| `refresh` | Reports current state. Runs when the panel opens, after any other command of the mod finishes, and every `every` seconds (minimum 1) while the panel is open. With `"background": true` the schedule also runs while the panel is closed, as long as the mod is on (or always, for a mod without a switch). It does not run when Toolsy starts; answer the `launch` event for that. |
 | `events` | Commands that answer something happening to the Mac. See [System events](#system-events). |
 
 A mod has a main switch if it declares `enable`, `disable` or `service`. A mod with none of
@@ -306,8 +314,8 @@ effect persists on its own (a system setting, a firewall rule) reports the truth
 | --- | --- |
 | `launch` | Toolsy started, usually at login. |
 | `wake` | The Mac woke from sleep. |
-| `network` | The primary network interface or its addresses changed. |
-| `power` | The Mac switched between the power adapter and the battery. |
+| `network` | The primary network interface or its router changed, or the addresses of any interface did (also one that is not primary, such as a VPN with a split tunnel); link-local addresses do not count. Posted about 2 seconds after the network has settled, so a burst of changes is one event. The daily rotation of temporary IPv6 addresses is an event too. |
+| `power` | The Mac switched between the power adapter and the battery (or a UPS). Changes of the charge are not events. |
 
 - An event command runs only while the mod is on (always, for a mod without a switch), with
   `TOOLSY_EVENT` set to the event's name.
@@ -317,6 +325,7 @@ effect persists on its own (a system setting, a firewall rule) reports the truth
   administrator access.
 - `refresh` runs after it, as after any other command.
 - The service command cannot also be an event command. Events alone do not give a mod a switch.
+- An event that happens while the Mac sleeps is not replayed; answer `wake` to catch up.
 
 ### Service
 
@@ -327,7 +336,9 @@ group, `SIGKILL` two seconds later — before `disable` runs and when Toolsy qui
 - Every line it writes to standard output is a patch, applied immediately. This is how a mod
   feeds charts and gauges without polling.
 - It is restarted when the user or a command changes one of the mod's settings, so it always
-  sees current values. Its own patches do not restart it.
+  sees current values. Settings in its own patches are saved like those of a command's patch, but do
+  not restart it.
+- It runs in parallel with the mod's commands.
 - If it exits with status 0 the mod switches off, exactly as if the user had flipped the switch
   (so `disable` runs). If it exits any other way it is restarted after 1, 2, 4, … up to 60
   seconds and `error` shows why; the delay resets once it has been running for 30 seconds.
@@ -370,14 +381,15 @@ those in the `detail` of its [widgets](#widgets).
 | `slider` | **`label`**, `icon`, **`bind`** (number), **`min`**, **`max`**, `step`, `unit` (suffix such as `"%"`), `command`, `live` (run the command while dragging, not only on release) |
 | `stepper` | **`label`**, `icon`, **`bind`** (number), `min`, `max`, `step` (default 1), `unit`, `command` |
 | `picker` | `label`, `icon`, **`bind`**, **`options`** (1–32) **or** **`optionsFrom`** (a state key), `style` (`"segmented"` or `"menu"`; by default segmented up to four options), `command` |
-| `input` | `label`, `icon`, **`bind`** (string), `placeholder`, `command` (runs when the text is committed with Return or by leaving the field) |
+| `input` | `label`, `icon`, **`bind`** (string), `placeholder`, `command` (runs when the text is committed with Return or by leaving the field). It always stores a string, even over a number. |
 | `button` | **`label`**, `icon`, exactly one of `command`, `open` (an `http(s)` URL) and `copy` (template; clicking copies the rendered text), `value` (handed to the command), `style` (`"normal"`, `"prominent"`, `"destructive"`), `confirm` (question asked first) |
 
 A picker option is `{ "value": …, "label": "…", "icon": "…" }` with a string, number or boolean
 value, or just a string that serves as both value and label. With `optionsFrom` the options are
 read from that state key, which a command fills with an array of such elements; elements of any
 other shape are skipped, as is a value that already came before it, and at most 32 are used.
-Until the key holds an array the picker has no options.
+Until the key holds an array with an option the picker shows an inert "No options". When the bound
+value is none of the options, nothing is shown as selected and the value is kept.
 
 ### Displays
 
@@ -399,7 +411,9 @@ plots the last `points` samples. A series bound to an **array of numbers** plots
 is.
 
 A list row is an object `{ "title", "subtitle", "value", "icon", "tint", "id" }` (only `title`
-is required; `id` defaults to the title) or a bare string or number.
+is required; `id` defaults to the title) or a bare string or number. A row click runs the list's
+`command` with `TOOLSY_KEY` set to the list's `bind` and `TOOLSY_VALUE` to the row's `id`. A list
+has no label of its own: a caption above it is a `text` control.
 
 ### Colours
 
@@ -439,6 +453,10 @@ one headline value and, optionally, a small chart or gauge.
 
 A widget has at most one of `chart` and `gauge`.
 
+When a mod is installed for the first time, its widgets are put on the dashboard. Installing it
+again or updating it adds none and brings back none the user removed; the user switches each widget
+on the mod's page.
+
 ## Localization
 
 `localizations` translates the mod's text into other languages:
@@ -468,7 +486,8 @@ Commands localise what they report (`status`, list rows, notifications) themselv
 
 `{{key}}` is replaced by the state value under `key` — text as is, whole numbers without a
 decimal point, `true`/`false`, nothing for a missing key. Arrays and objects render as compact
-JSON.
+JSON. Text around placeholders is kept as written, line breaks (`\n`) included, so a `copy` button
+can copy several lines.
 
 A **path** reaches inside arrays and objects: `{{disk.free}}`, `{{rows.0.title}}`. The first
 segment is a state key; each further segment (1–64 of `A-Z a-z 0-9 _`) indexes an object by
@@ -503,7 +522,12 @@ Each filter acts on the kind of value it is made for and passes anything else th
 unchanged. In particular numeric filters leave non-numbers untouched (a numeric string such as
 `"12"` is not a number), so `{{ping|fixed:1|default:—}}` shows a dash until the first
 measurement arrives. `bytes`, `rate` and `bitrate` use decimal units with at most one decimal,
-`percent` rounds to a whole number. Arithmetic that overflows renders nothing. Texts of
+`percent` rounds to a whole number. `time`, `date`, `ago` and `number` follow the user's language and
+region; `duration` does not (`1h 05m` in every language), so a mod that wants a localised duration
+formats it in its command. Arithmetic that overflows renders nothing.
+
+Templates and expressions have no clock: a countdown is worked out by a command from the wall clock
+and kept fresh with a `refresh` that runs `every` second while the panel is open. Texts of
 `default`, `join` and `either` are kept exactly as written, spaces included; they cannot contain
 `|` or `}}`. An unknown filter or a bad argument is an error at install time that names the field.
 
@@ -579,9 +603,9 @@ A widget with no switch — one manifest, no other files:
 ```json
 {
   "schema": 1, "id": "local-ip", "name": "Local IP", "version": "1.0", "icon": "network",
-  "commands": { "read": { "shell": "ipconfig getifaddr en0 || echo offline", "capture": "ip" } },
-  "lifecycle": { "refresh": { "command": "read", "every": 30 } },
-  "ui": [ { "type": "value", "label": "Wi-Fi address", "value": "{{ip|default:…}}", "copyable": true } ]
+  "commands": { "read": { "shell": "i=$(echo 'show State:/Network/Global/IPv4' | /usr/sbin/scutil | /usr/bin/awk '$1 == \"PrimaryInterface\" { print $3 }'); [ -z \"$i\" ] || /sbin/ifconfig \"$i\" | /usr/bin/awk '$1 == \"inet\" { print $2; exit }'", "capture": "ip" } },
+  "lifecycle": { "refresh": { "command": "read", "every": 30 }, "events": { "network": "read" } },
+  "ui": [ { "type": "value", "label": "Address", "value": "{{ip|default:Offline}}", "copyable": true } ]
 }
 ```
 
@@ -623,8 +647,8 @@ speaks Russian:
   "schema": 1, "id": "network-watch", "name": "Network watch", "version": "1.0", "icon": "network",
   "summary": "Shows the Mac's address and tells when it changes",
   "commands": {
-    "read": { "shell": "printf '{\"address\": \"%s\"}' \"$(ipconfig getifaddr en0)\"" },
-    "changed": { "exec": "changed.sh", "timeout": 10 }
+    "read": { "exec": "address.sh", "args": ["read"], "timeout": 10 },
+    "changed": { "exec": "address.sh", "args": ["changed"], "timeout": 10 }
   },
   "lifecycle": { "events": { "launch": "read", "wake": "changed", "network": "changed" } },
   "widgets": [
@@ -659,16 +683,29 @@ speaks Russian:
 
 ```sh
 #!/bin/sh
-# changed.sh — runs on wake and whenever the network changes
-address=$(ipconfig getifaddr en0)
-[ "$address" = "$TOOLSY_STATE_address" ] && exit 0      # empty output changes nothing
-changes=$(( ${TOOLSY_STATE_changes:-0} + 1 ))
-case ${TOOLSY_LOCALE%%-*} in
-  ru) text="Новый адрес: ${address:-нет сети}" ;;
-  *)  text="New address: ${address:-offline}" ;;
-esac
-printf '{"address": "%s", "changedAt": %s, "changes": %s, "notify": "%s"}\n' "$address" "$(date +%s)" "$changes" "$text"
+# address.sh read|changed — the IPv4 address of the primary interface. "changed" runs on wake and
+# whenever the network changes; it counts the change and announces it.
+set -eu
+interface=$(echo 'show State:/Network/Global/IPv4' | /usr/sbin/scutil | /usr/bin/awk '$1 == "PrimaryInterface" { print $3 }')
+address=
+[ -z "$interface" ] || address=$(/sbin/ifconfig "$interface" | /usr/bin/awk '$1 == "inet" { print $2; exit }')
+if [ "${1-}" = changed ]; then
+  [ "$address" != "${TOOLSY_STATE_address-}" ] || exit 0      # empty output changes nothing
+  changes=$(( ${TOOLSY_STATE_changes:-0} + 1 ))
+  case ${TOOLSY_LOCALE-} in
+    ru | ru-*) text="Новый адрес: ${address:-нет сети}" ;;
+    *) text="New address: ${address:-offline}" ;;
+  esac
+else
+  changes=0 text=
+fi
+# jq escapes the text; an empty address becomes null, which removes the key.
+/usr/bin/jq -n -c --arg address "$address" --argjson changedAt "$(date +%s)" --argjson changes "$changes" --arg text "$text" '
+  {address: (if $address == "" then null else $address end)}
+  + if $text == "" then {} else {changedAt: $changedAt, changes: $changes, notify: $text} end'
 ```
 
-`Mods/` in the Toolsy repository holds complete mods: `showcase` exercises every control, and
-`vpn-protector` is a privileged mod with a compiled helper program.
+`Mods/` in the Toolsy repository holds complete mods: `keep-awake`, `timer` and `network-info` are
+small mods to copy, `showcase` exercises every part of the format, and `vpn-protector` is a
+privileged mod with a compiled helper program. [MOD_AUTHORING_FOR_AI.md](MOD_AUTHORING_FOR_AI.md)
+is the version of this document written for AI models that write mods.
