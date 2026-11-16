@@ -32,6 +32,16 @@ json_string() {
         END { print json(text) }'
 }
 
+# say ENGLISH RUSSIAN: prints the text in the user's language, which Toolsy passes as TOOLSY_LOCALE.
+# The manifest translates itself; what a command reports, it translates with this.
+say() {
+    locale=${TOOLSY_LOCALE-}
+    case ${locale%%-*} in
+    ru) printf '%s' "$2" ;;
+    *) printf '%s' "$1" ;;
+    esac
+}
+
 fail() {
     printf '%s\n' "$*" >&2
     exit 1
@@ -43,6 +53,13 @@ require_number() {
         v = ARGV[1]
         exit !(v ~ /^-?[0-9]+([.][0-9]+)?$/ && v + 0 >= ARGV[2] + 0 && v + 0 <= ARGV[3] + 0)
     }' "$1" "$2" "$3"; then
-        fail "$4: ожидается число от $2 до $3, получено «$1»"
+        fail "$4: $(say "expected a number from $2 to $3, got" "ожидается число от $2 до $3, получено") «$1»"
     fi
+}
+
+# require_count VALUE NAME: fails unless VALUE is a whole number of at most nine digits.
+require_count() {
+    case $1 in
+    '' | *[!0-9]* | ??????????*) fail "$2: $(say "expected a whole number, got" "ожидается целое число, получено") «$1»" ;;
+    esac
 }

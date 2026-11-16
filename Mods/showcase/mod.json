@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "id": "showcase",
-  "name": "Витрина",
-  "version": "1.0.0",
+  "name": "Showcase",
+  "version": "2.0.0",
   "author": "Toolsy",
-  "summary": "Все элементы формата модов на одной странице",
+  "summary": "Every part of the mod format on one page",
   "icon": "square.grid.2x2.fill",
   "tint": "teal",
   "settings": {
@@ -12,12 +12,15 @@
     "period": 20,
     "waveShape": "sine",
     "showSecond": true,
-    "sortBy": "CPU",
+    "order": "CPU",
     "greetingName": ""
   },
   "commands": {
+    "on": { "shell": "printf '{\"onSince\": %s}\\n' \"$(date +%s)\"" },
+    "off": { "shell": "echo '{\"onSince\": null}'" },
     "watch": { "exec": "scripts/service.sh" },
     "refresh": { "exec": "scripts/refresh.sh", "timeout": 10 },
+    "event": { "exec": "scripts/action.sh", "args": ["event"] },
     "greet": { "exec": "scripts/action.sh", "args": ["greet"] },
     "count": { "exec": "scripts/action.sh", "args": ["count"] },
     "reset": { "exec": "scripts/action.sh", "args": ["reset"] },
@@ -26,124 +29,340 @@
     "fail": { "exec": "scripts/action.sh", "args": ["fail"] },
     "slow": { "exec": "scripts/action.sh", "args": ["slow"], "timeout": 10 },
     "process-info": { "exec": "scripts/action.sh", "args": ["process-info"] },
-    "os-version": { "shell": "sw_vers -productVersion", "capture": "osVersion" }
+    "interface-info": { "exec": "scripts/action.sh", "args": ["interface-info"] },
+    "notify": { "exec": "scripts/action.sh", "args": ["notify"] },
+    "os-version": { "shell": "sw_vers -productVersion", "capture": "osVersion" },
+    "input": { "shell": "jq -c '{inputKeys: (.state | length), inputEvent: .event, inputLocale: (.locale // \"none\")}'", "stdin": true }
   },
   "lifecycle": {
+    "enable": "on",
+    "disable": "off",
     "service": "watch",
-    "refresh": { "command": "refresh", "every": 5 }
+    "refresh": { "command": "refresh", "every": 5 },
+    "events": { "launch": "event", "wake": "event", "network": "event", "power": "event" }
   },
   "ui": [
     {
       "type": "section",
-      "title": "Система сейчас",
-      "footer": "Служба присылает эти значения раз в секунду, пока мод включён.",
+      "title": "System now",
+      "footer": "The service sends these values every second while the mod is on.",
       "children": [
-        { "type": "text", "text": "Включите мод переключателем, чтобы запустить службу.", "style": "caption", "when": "!enabled" },
+        { "type": "text", "text": "Switch the mod on to start its service.", "style": "caption", "when": "!enabled" },
         {
           "type": "row",
           "when": "enabled",
           "children": [
-            { "type": "gauge", "label": "Нагрузка", "icon": "cpu", "bind": "loadPercent", "unit": "%", "style": "ring", "tint": "{{loadLevel}}" },
-            { "type": "gauge", "label": "Память", "icon": "memorychip", "bind": "memoryUsed", "unit": "%", "style": "ring", "tint": "purple" }
+            { "type": "gauge", "label": "Load", "icon": "cpu", "bind": "loadPercent", "unit": "%", "style": "ring", "tint": "{{loadLevel}}" },
+            { "type": "gauge", "label": "Memory", "icon": "memorychip", "bind": "memoryUsed", "format": "percent", "style": "ring", "tint": "purple" }
           ]
         },
-        { "type": "value", "label": "Средняя нагрузка", "icon": "speedometer", "value": "{{load1|fixed:2|default:—}} · {{load5|fixed:2|default:—}} · {{load15|fixed:2|default:—}}", "tint": "{{loadLevel}}" },
-        { "type": "value", "label": "Доступно памяти", "icon": "square.stack.3d.up", "value": "{{availableBytes|bytes|default:—}} ({{memoryUsed|percent|default:—}} занято)" },
-        { "type": "value", "label": "Сеть (en*)", "icon": "arrow.up.arrow.down", "value": "↓ {{rxRate|rate|default:—}}  ↑ {{txRate|rate|default:—}}" },
-        { "type": "chart", "label": "Нагрузка за 2 минуты", "series": [ { "bind": "load1", "label": "1 мин", "tint": "orange" } ], "style": "area", "points": 120, "min": 0 }
+        {
+          "type": "row",
+          "when": "enabled",
+          "children": [
+            { "type": "stat", "label": "On since", "icon": "power", "value": "{{onSince|time|default:—}}" },
+            { "type": "stat", "label": "Load", "icon": "speedometer", "value": "{{load1|fixed:2|default:—}}", "tint": "{{loadLevel}}" },
+            { "type": "stat", "label": "Available", "icon": "square.stack.3d.up", "value": "{{availableBytes|bytes|default:—}}" }
+          ]
+        },
+        { "type": "value", "label": "Load average", "icon": "speedometer", "value": "{{load1|fixed:2|default:—}} · {{load5|fixed:2|default:—}} · {{load15|fixed:2|default:—}}", "tint": "{{loadLevel}}", "help": "Over 1, 5 and 15 minutes" },
+        { "type": "value", "label": "Available memory", "icon": "square.stack.3d.up", "value": "{{availableBytes|bytes|default:—}} ({{memoryUsed|percent|default:—}} used)" },
+        { "type": "text", "text": "Memory is running low.", "style": "caption", "tint": "warn", "when": "enabled && (availableBytes / 1000000000 < 2 || memoryUsed > 90)" },
+        { "type": "value", "label": "Network (en*)", "icon": "arrow.up.arrow.down", "value": "↓ {{rxRate|rate|default:—}}  ↑ {{txRate|rate|default:—}}" },
+        { "type": "value", "label": "In bits", "icon": "arrow.up.arrow.down", "value": "↓ {{rxRate|bitrate|default:—}}  ↑ {{txRate|bitrate|default:—}}" },
+        { "type": "chart", "label": "Load over 2 minutes", "series": [ { "bind": "load1", "label": "1 min", "tint": "orange" } ], "style": "area", "points": 120, "min": 0 },
+        { "type": "chart", "label": "Network", "series": [ { "bind": "rxRate", "label": "In", "tint": "blue" }, { "bind": "txRate", "label": "Out", "tint": "green" } ], "style": "line", "min": 0, "format": "rate" }
       ]
     },
     {
       "type": "section",
-      "title": "Волна",
-      "footer": "Настройки этого раздела сохраняются между запусками. Когда они меняются, Toolsy перезапускает службу.",
+      "title": "Wave",
+      "footer": "The settings of this section are kept between launches. When they change, Toolsy restarts the service.",
       "children": [
-        { "type": "chart", "label": "Сигнал", "series": [ { "bind": "wave", "label": "Основная", "tint": "blue" }, { "bind": "wave2", "label": "Вторая", "tint": "pink" } ], "style": "line", "points": 60, "min": -100, "max": 100 },
-        { "type": "gauge", "label": "Уровень", "icon": "waveform.path", "bind": "wave", "min": -100, "max": 100, "style": "bar", "tint": "blue" },
-        { "type": "value", "label": "Сейчас", "icon": "number", "value": "{{wave|round|default:—}}" },
+        { "type": "chart", "label": "Signal", "series": [ { "bind": "wave", "label": "Main", "tint": "blue" }, { "bind": "wave2", "label": "Second", "tint": "pink" } ], "style": "line", "points": 60, "min": -100, "max": 100 },
+        { "type": "gauge", "label": "Level", "icon": "waveform.path", "bind": "wave", "min": -100, "max": 100, "style": "bar", "tint": "blue" },
+        { "type": "value", "label": "Now", "icon": "number", "value": "{{wave|round|default:—}}" },
         {
-          "type": "picker", "label": "Форма", "bind": "waveShape", "style": "segmented",
+          "type": "picker", "label": "Shape", "bind": "waveShape", "style": "segmented",
           "options": [
-            { "value": "sine", "label": "Синус", "icon": "waveform.path" },
-            { "value": "triangle", "label": "Треугольник", "icon": "triangle" },
-            { "value": "square", "label": "Меандр", "icon": "square" }
+            { "value": "sine", "label": "Sine", "icon": "waveform.path" },
+            { "value": "triangle", "label": "Triangle", "icon": "triangle" },
+            { "value": "square", "label": "Square", "icon": "square" }
           ]
         },
-        { "type": "slider", "label": "Амплитуда", "icon": "arrow.up.and.down", "bind": "amplitude", "min": 10, "max": 100, "step": 5, "unit": "%" },
-        { "type": "stepper", "label": "Период", "icon": "timer", "bind": "period", "min": 5, "max": 60, "step": 5, "unit": " с" },
-        { "type": "toggle", "label": "Вторая волна", "icon": "square.on.square", "bind": "showSecond" },
-        { "type": "text", "text": "Служба остановлена, график не обновляется.", "style": "caption", "tint": "warn", "when": "!enabled" }
+        { "type": "slider", "label": "Amplitude", "icon": "arrow.up.and.down", "bind": "amplitude", "min": 10, "max": 100, "step": 5, "unit": "%" },
+        { "type": "stepper", "label": "Period", "icon": "timer", "bind": "period", "min": 5, "max": 60, "step": 5, "unit": " s" },
+        { "type": "toggle", "label": "Second wave", "icon": "square.on.square", "bind": "showSecond" },
+        { "type": "text", "text": "The service is stopped, so the chart does not move.", "style": "caption", "tint": "warn", "when": "!enabled" }
       ]
     },
     {
       "type": "section",
-      "title": "Процессы",
-      "footer": "Обновляется каждые 5 секунд, пока открыта панель. Нажмите на процесс, чтобы узнать о нём больше.",
+      "title": "Processes",
+      "footer": "Updated every 5 seconds while the panel is open. Click a process to learn more about it.",
       "children": [
-        { "type": "picker", "label": "Сортировка", "icon": "arrow.up.arrow.down", "bind": "sortBy", "style": "menu", "options": ["CPU", "Память"], "command": "refresh" },
-        { "type": "chart", "label": "CPU первых восьми, %", "series": [ { "bind": "topCPU", "tint": "green" } ], "style": "bar", "min": 0 },
-        { "type": "list", "bind": "processes", "command": "process-info", "empty": "Список появится после первого обновления", "limit": 8 },
-        { "type": "value", "label": "Выбран", "icon": "info.circle", "value": "{{selectedProcess}}", "when": "selectedProcess" },
-        { "type": "value", "label": "Всего процессов", "icon": "number", "value": "{{processCount|default:—}}" }
+        {
+          "type": "picker", "label": "Sort by", "icon": "arrow.up.arrow.down", "bind": "order", "style": "menu", "command": "refresh",
+          "options": [ "CPU", "Memory" ]
+        },
+        { "type": "chart", "label": "CPU of the top eight, %", "series": [ { "bind": "topCPU", "tint": "green" } ], "style": "bar", "min": 0, "unit": "%" },
+        { "type": "list", "bind": "processes", "command": "process-info", "empty": "The list appears after the first refresh", "limit": 8 },
+        { "type": "value", "label": "Selected", "icon": "info.circle", "value": "{{selectedProcess}}", "when": "selectedProcess" },
+        { "type": "value", "label": "Busiest", "icon": "flame", "value": "{{processes.0.title|default:—}}", "help": "The first row of the list, read with a template path" },
+        { "type": "value", "label": "All processes", "icon": "number", "value": "{{processCount|number|default:—}}" }
       ]
     },
     {
       "type": "section",
-      "title": "Кнопки и ввод",
-      "footer": "Кнопка «Ошибка» всегда завершается сбоем, «Долгая операция» длится три секунды.",
+      "title": "Buttons and input",
+      "footer": "“Fail” always fails, “Slow” takes three seconds.",
       "children": [
-        { "type": "input", "label": "Имя", "icon": "person", "bind": "greetingName", "placeholder": "Как вас зовут?", "command": "greet" },
-        { "type": "text", "text": "{{greeting|default:Введите имя и нажмите Return.}}" },
+        { "type": "input", "label": "Name", "icon": "person", "bind": "greetingName", "placeholder": "What is your name?", "command": "greet" },
+        { "type": "text", "text": "{{greeting|default:Type a name and press Return.}}" },
+        { "type": "text", "text": "That is this app's name too.", "style": "caption", "when": "greetingName contains 'Toolsy'" },
         { "type": "divider" },
         {
           "type": "row",
           "children": [
-            { "type": "button", "label": "Нажать", "icon": "hand.tap", "command": "count", "value": 1 },
-            { "type": "button", "label": "Бросок", "icon": "dice", "command": "dice", "style": "prominent" },
-            { "type": "button", "label": "Сбросить", "icon": "arrow.counterclockwise", "command": "reset", "style": "destructive", "confirm": "Сбросить счётчик нажатий?", "disabled": "!clicks" }
+            { "type": "button", "label": "Press", "icon": "hand.tap", "command": "count", "value": 1 },
+            { "type": "button", "label": "Roll", "icon": "dice", "command": "dice", "style": "prominent" },
+            { "type": "button", "label": "Reset", "icon": "arrow.counterclockwise", "command": "reset", "style": "destructive", "confirm": "Reset the press counter?", "disabled": "!clicks" }
           ]
         },
         {
           "type": "row",
           "children": [
-            { "type": "value", "label": "Нажатий", "value": "{{clicks|default:0}}" },
-            { "type": "value", "label": "Кубик", "value": "{{dice|default:—}}", "tint": "blue" }
+            { "type": "stat", "label": "Presses", "value": "{{clicks|default:0}}" },
+            { "type": "stat", "label": "Die", "value": "{{dice|default:—}}", "tint": "blue" }
           ]
         },
+        { "type": "text", "text": "A multiple of ten!", "style": "caption", "tint": "ok", "when": "clicks > 0 && clicks % 10 == 0" },
         { "type": "divider" },
-        { "type": "slider", "label": "Живой ползунок", "icon": "slider.horizontal.3", "bind": "liveLevel", "min": 0, "max": 100, "step": 1, "command": "live-echo", "live": true },
-        { "type": "text", "text": "{{liveEcho|default:Двигайте ползунок: команда запускается прямо во время движения.}}", "style": "caption" },
+        { "type": "slider", "label": "Live slider", "icon": "slider.horizontal.3", "bind": "liveLevel", "min": 0, "max": 100, "step": 1, "command": "live-echo", "live": true },
+        { "type": "text", "text": "{{liveEcho|default:Move the slider: its command runs while you drag.}}", "style": "caption" },
+        { "type": "divider" },
+        { "type": "picker", "label": "Interface", "icon": "network", "bind": "interface", "optionsFrom": "interfaces", "style": "menu", "command": "interface-info", "help": "The options come from the refresh command" },
+        { "type": "value", "label": "Traffic", "icon": "arrow.up.arrow.down", "value": "↓ {{interfaceIn|bytes}}  ↑ {{interfaceOut|bytes}}", "when": "interface && interfaceIn != null" },
         { "type": "divider" },
         {
           "type": "row",
           "children": [
-            { "type": "button", "label": "Долгая операция", "icon": "hourglass", "command": "slow" },
-            { "type": "button", "label": "Ошибка", "icon": "exclamationmark.triangle", "command": "fail" }
+            { "type": "button", "label": "Slow", "icon": "hourglass", "command": "slow" },
+            { "type": "button", "label": "Fail", "icon": "exclamationmark.triangle", "command": "fail" }
           ]
         },
-        { "type": "value", "label": "Долгая операция", "icon": "checkmark.circle", "value": "{{slowResult}}", "tint": "ok", "when": "slowResult" },
+        { "type": "value", "label": "Slow", "icon": "checkmark.circle", "value": "{{slowResult}}", "tint": "ok", "when": "slowResult" },
         {
           "type": "row",
           "children": [
-            { "type": "button", "label": "Версия macOS", "icon": "apple.logo", "command": "os-version" },
+            { "type": "button", "label": "macOS version", "icon": "apple.logo", "command": "os-version" },
+            { "type": "button", "label": "Command input", "icon": "curlybraces", "command": "input" },
             { "type": "button", "label": "SF Symbols", "icon": "safari", "open": "https://developer.apple.com/sf-symbols/" }
           ]
         },
-        { "type": "value", "label": "macOS", "icon": "desktopcomputer", "value": "{{osVersion}}", "when": "osVersion" }
+        { "type": "value", "label": "macOS", "icon": "desktopcomputer", "value": "{{osVersion}}", "when": "osVersion" },
+        { "type": "value", "label": "Command input", "icon": "curlybraces", "value": "{{inputKeys}} state keys · event {{inputEvent}} · language {{inputLocale}}", "when": "inputKeys" }
       ]
     },
     {
       "type": "section",
-      "title": "Текст и значения",
-      "footer": "Нажмите на имя компьютера, чтобы скопировать его.",
+      "title": "Events and notifications",
+      "footer": "While the mod is on, it counts what happens to the Mac: Toolsy starting, waking from sleep, network and power changes.",
       "children": [
-        { "type": "text", "text": "{{hostname|default:Этот Mac}}", "style": "title" },
-        { "type": "text", "text": "Обычный текст страницы мода. Шаблоны подставляют значения состояния и форматируют их фильтрами.", "style": "body" },
-        { "type": "text", "text": "Подпись: второстепенная информация мелким шрифтом.", "style": "caption" },
+        {
+          "type": "row",
+          "children": [
+            { "type": "stat", "label": "Last event", "icon": "bolt", "value": "{{lastEvent|default:None yet}}" },
+            { "type": "stat", "label": "When", "icon": "clock", "value": "{{lastEventAt|ago|default:—}}" },
+            { "type": "stat", "label": "Events", "icon": "number", "value": "{{eventCount|default:0}}" }
+          ]
+        },
+        {
+          "type": "row",
+          "children": [
+            { "type": "button", "label": "Notify", "icon": "bell", "command": "notify", "value": "text" },
+            { "type": "button", "label": "Notify with a title", "icon": "bell.badge", "command": "notify", "value": "titled" }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Text and values",
+      "footer": "Click the computer's name to copy it.",
+      "children": [
+        { "type": "text", "text": "{{hostname|default:This Mac}}", "style": "title" },
+        { "type": "text", "text": "Body text of a mod page. Templates insert values of the state and format them with filters.", "style": "body" },
+        { "type": "text", "text": "A caption: secondary information in a small font.", "style": "caption" },
         { "type": "text", "text": "uptime {{uptime|duration|default:—}} · load {{load1|fixed:2|default:—}}", "style": "mono" },
-        { "type": "value", "label": "Имя компьютера", "icon": "laptopcomputer", "value": "{{hostname|default:—}}", "copyable": true },
-        { "type": "value", "label": "Работает без перезагрузки", "icon": "clock", "value": "{{uptime|duration|default:—}}" }
+        { "type": "value", "label": "Computer name", "icon": "laptopcomputer", "value": "{{hostname|default:—}}", "copyable": true },
+        { "type": "value", "label": "Up for", "icon": "clock", "value": "{{uptime|duration|default:—}}" },
+        { "type": "button", "label": "Copy a summary", "icon": "doc.on.doc", "copy": "{{hostname}}: up for {{uptime|duration}}, {{processCount}} processes", "disabled": "!hostname" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Template filters",
+      "footer": "Each line passes a value of the state through filters.",
+      "collapsible": true,
+      "collapsed": true,
+      "children": [
+        { "type": "value", "label": "Booted", "value": "{{bootTime|date|default:—}} {{bootTime|time|default:—}}, {{bootTime|ago|default:—}}" },
+        { "type": "value", "label": "Up for, in hours", "value": "{{uptime|div:3600|fixed:1|default:—}}" },
+        { "type": "value", "label": "Load × 100 + 1", "value": "{{load1|mul:100|add:1|round|default:—}}" },
+        { "type": "value", "label": "Available, in bytes", "value": "{{availableBytes|number|default:—}}" },
+        { "type": "value", "label": "Name in capitals", "value": "{{hostname|upper|default:—}}" },
+        { "type": "value", "label": "Name in lowercase, cut", "value": "{{hostname|lower|truncate:10|default:—}}" },
+        { "type": "value", "label": "Characters in the name", "value": "{{hostname|count|default:—}}" },
+        { "type": "value", "label": "CPU of the top eight", "value": "{{topCPU|join: · |default:—}}" },
+        { "type": "value", "label": "Interfaces", "value": "{{interfaces|count|default:0}}: {{interfaces|join}}" },
+        { "type": "value", "label": "Service", "value": "{{enabled|either:running:stopped}}", "tint": "{{enabled|either:ok:off}}" }
       ]
     }
-  ]
+  ],
+  "widgets": [
+    {
+      "id": "load", "title": "Load", "icon": "cpu", "value": "{{load1|fixed:2|default:—}}", "tint": "{{loadLevel|default:off}}",
+      "chart": { "series": [ { "bind": "load1" } ], "style": "area", "points": 60, "min": 0 },
+      "when": "enabled"
+    },
+    {
+      "id": "memory", "title": "Memory", "icon": "memorychip", "value": "{{memoryUsed|percent|default:—}}", "tint": "purple",
+      "gauge": { "bind": "memoryUsed" },
+      "when": "enabled"
+    },
+    {
+      "id": "clicks", "title": "Presses", "icon": "hand.tap", "value": "{{clicks|number|default:0}}", "size": "medium",
+      "detail": [
+        {
+          "type": "row",
+          "children": [
+            { "type": "button", "label": "Press", "icon": "hand.tap", "command": "count", "value": 1, "style": "prominent" },
+            { "type": "button", "label": "Reset", "icon": "arrow.counterclockwise", "command": "reset", "confirm": "Reset the press counter?", "disabled": "!clicks" }
+          ]
+        },
+        { "type": "button", "label": "Notify with a title", "icon": "bell.badge", "command": "notify", "value": "titled" }
+      ]
+    },
+    {
+      "id": "wave", "title": "Wave", "icon": "waveform.path", "value": "{{wave|round|default:—}}", "size": "wide",
+      "chart": { "series": [ { "bind": "wave", "label": "Main", "tint": "blue" }, { "bind": "wave2", "label": "Second", "tint": "pink" } ], "style": "line", "points": 60, "min": -100, "max": 100 },
+      "detail": [
+        {
+          "type": "picker", "label": "Shape", "bind": "waveShape",
+          "options": [ { "value": "sine", "label": "Sine" }, { "value": "triangle", "label": "Triangle" }, { "value": "square", "label": "Square" } ]
+        },
+        { "type": "slider", "label": "Amplitude", "bind": "amplitude", "min": 10, "max": 100, "step": 5, "unit": "%" },
+        { "type": "toggle", "label": "Second wave", "bind": "showSecond" },
+        { "type": "text", "text": "Switch the mod on to start the wave.", "style": "caption", "when": "!enabled" }
+      ]
+    }
+  ],
+  "localizations": {
+    "ru": {
+      "Showcase": "Витрина",
+      "Every part of the mod format on one page": "Все элементы формата модов на одной странице",
+      "System now": "Система сейчас",
+      "The service sends these values every second while the mod is on.": "Служба присылает эти значения раз в секунду, пока мод включён.",
+      "Switch the mod on to start its service.": "Включите мод переключателем, чтобы запустить службу.",
+      "Load": "Нагрузка",
+      "Memory": "Память",
+      "On since": "Включён с",
+      "Available": "Доступно",
+      "Load average": "Средняя нагрузка",
+      "Over 1, 5 and 15 minutes": "За 1, 5 и 15 минут",
+      "Available memory": "Доступно памяти",
+      "{{availableBytes|bytes|default:—}} ({{memoryUsed|percent|default:—}} used)": "{{availableBytes|bytes|default:—}} ({{memoryUsed|percent|default:—}} занято)",
+      "Memory is running low.": "Памяти осталось мало.",
+      "Network (en*)": "Сеть (en*)",
+      "In bits": "В битах",
+      "Load over 2 minutes": "Нагрузка за 2 минуты",
+      "1 min": "1 мин",
+      "Network": "Сеть",
+      "In": "Приём",
+      "Out": "Передача",
+      "Wave": "Волна",
+      "The settings of this section are kept between launches. When they change, Toolsy restarts the service.": "Настройки этого раздела сохраняются между запусками. Когда они меняются, Toolsy перезапускает службу.",
+      "Signal": "Сигнал",
+      "Main": "Основная",
+      "Second": "Вторая",
+      "Level": "Уровень",
+      "Now": "Сейчас",
+      "Shape": "Форма",
+      "Sine": "Синус",
+      "Triangle": "Треугольник",
+      "Square": "Меандр",
+      "Amplitude": "Амплитуда",
+      "Period": "Период",
+      " s": " с",
+      "Second wave": "Вторая волна",
+      "The service is stopped, so the chart does not move.": "Служба остановлена, график не обновляется.",
+      "Processes": "Процессы",
+      "Updated every 5 seconds while the panel is open. Click a process to learn more about it.": "Обновляется каждые 5 секунд, пока открыта панель. Нажмите на процесс, чтобы узнать о нём больше.",
+      "Sort by": "Сортировка",
+      "CPU of the top eight, %": "CPU первых восьми, %",
+      "The list appears after the first refresh": "Список появится после первого обновления",
+      "Selected": "Выбран",
+      "Busiest": "Самый занятый",
+      "The first row of the list, read with a template path": "Первая строка списка, прочитанная путём в шаблоне",
+      "All processes": "Всего процессов",
+      "Buttons and input": "Кнопки и ввод",
+      "“Fail” always fails, “Slow” takes three seconds.": "«Ошибка» всегда завершается сбоем, «Долго» длится три секунды.",
+      "Name": "Имя",
+      "What is your name?": "Как вас зовут?",
+      "{{greeting|default:Type a name and press Return.}}": "{{greeting|default:Введите имя и нажмите Return.}}",
+      "That is this app's name too.": "Так зовут и это приложение.",
+      "Press": "Нажать",
+      "Roll": "Бросить",
+      "Reset": "Сбросить",
+      "Reset the press counter?": "Сбросить счётчик нажатий?",
+      "Presses": "Нажатий",
+      "Die": "Кубик",
+      "A multiple of ten!": "Круглое число!",
+      "Live slider": "Живой ползунок",
+      "{{liveEcho|default:Move the slider: its command runs while you drag.}}": "{{liveEcho|default:Двигайте ползунок: команда запускается прямо во время движения.}}",
+      "Interface": "Интерфейс",
+      "The options come from the refresh command": "Варианты присылает команда обновления",
+      "Traffic": "Трафик",
+      "Slow": "Долго",
+      "Fail": "Ошибка",
+      "macOS version": "Версия macOS",
+      "macOS": "macOS",
+      "SF Symbols": "SF Symbols",
+      "Command input": "Ввод команды",
+      "{{inputKeys}} state keys · event {{inputEvent}} · language {{inputLocale}}": "Ключей состояния: {{inputKeys}} · событие {{inputEvent}} · язык {{inputLocale}}",
+      "Events and notifications": "События и уведомления",
+      "While the mod is on, it counts what happens to the Mac: Toolsy starting, waking from sleep, network and power changes.": "Пока мод включён, он считает, что происходит с Mac: запуск Toolsy, выход из сна, смену сети и питания.",
+      "Last event": "Последнее",
+      "{{lastEvent|default:None yet}}": "{{lastEvent|default:Пока нет}}",
+      "When": "Когда",
+      "Events": "Событий",
+      "Notify": "Уведомить",
+      "Notify with a title": "Уведомить с заголовком",
+      "Text and values": "Текст и значения",
+      "Click the computer's name to copy it.": "Нажмите на имя компьютера, чтобы скопировать его.",
+      "{{hostname|default:This Mac}}": "{{hostname|default:Этот Mac}}",
+      "Body text of a mod page. Templates insert values of the state and format them with filters.": "Обычный текст страницы мода. Шаблоны подставляют значения состояния и форматируют их фильтрами.",
+      "A caption: secondary information in a small font.": "Подпись: второстепенная информация мелким шрифтом.",
+      "uptime {{uptime|duration|default:—}} · load {{load1|fixed:2|default:—}}": "работает {{uptime|duration|default:—}} · нагрузка {{load1|fixed:2|default:—}}",
+      "Computer name": "Имя компьютера",
+      "Up for": "Работает без перезагрузки",
+      "Copy a summary": "Скопировать сводку",
+      "{{hostname}}: up for {{uptime|duration}}, {{processCount}} processes": "{{hostname}}: работает {{uptime|duration}}, процессов: {{processCount}}",
+      "Template filters": "Фильтры шаблонов",
+      "Each line passes a value of the state through filters.": "Каждая строка пропускает значение состояния через фильтры.",
+      "Booted": "Загружен",
+      "Up for, in hours": "Работает, часов",
+      "Load × 100 + 1": "Нагрузка × 100 + 1",
+      "Available, in bytes": "Доступно, байт",
+      "Name in capitals": "Имя заглавными",
+      "Name in lowercase, cut": "Имя строчными, обрезанное",
+      "Characters in the name": "Символов в имени",
+      "CPU of the top eight": "CPU первых восьми",
+      "Interfaces": "Интерфейсы",
+      "Service": "Служба",
+      "{{enabled|either:running:stopped}}": "{{enabled|either:работает:остановлена}}",
+      "Switch the mod on to start the wave.": "Включите мод, чтобы запустить волну."
+    }
+  }
 }

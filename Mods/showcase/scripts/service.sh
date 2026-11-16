@@ -8,15 +8,15 @@ amplitude=${TOOLSY_STATE_amplitude-}
 period=${TOOLSY_STATE_period-}
 shape=${TOOLSY_STATE_waveShape-}
 second=${TOOLSY_STATE_showSecond-}
-require_number "$amplitude" 0 100 "Амплитуда"
-require_number "$period" 2 120 "Период"
+require_number "$amplitude" 0 100 "$(say "Amplitude" "Амплитуда")"
+require_number "$period" 2 120 "$(say "Period" "Период")"
 case $shape in
 sine | triangle | square) ;;
-*) fail "Неизвестная форма волны «${shape}»" ;;
+*) fail "$(say "Unknown wave shape" "Неизвестная форма волны") «${shape}»" ;;
 esac
 case $second in
 true | false) ;;
-*) fail "Вторая волна: ожидается true или false, получено «${second}»" ;;
+*) fail "$(say "Second wave: expected true or false, got" "Вторая волна: ожидается true или false, получено") «${second}»" ;;
 esac
 cpus=$(sysctl -n hw.ncpu)
 memory=$(sysctl -n hw.memsize)
@@ -28,10 +28,11 @@ while :; do
     netstat -ib
     echo tick
     sleep 1
-done | LC_ALL=C awk '
+done | LC_ALL=C awk "$JSON_AWK"'
     BEGIN {
         amplitude = ARGV[1]; period = ARGV[2]; shape = ARGV[3]; second = ARGV[4]
-        cpus = ARGV[5]; memory = ARGV[6]
+        json_init()
+        cpus = ARGV[5]; memory = ARGV[6]; loadWord = ARGV[7]; memoryWord = ARGV[8]; stopped = ARGV[9]
         ARGC = 1
         pi = atan2(0, -1)
         t = 0
@@ -58,13 +59,14 @@ done | LC_ALL=C awk '
         printf ", \"loadPercent\": %.1f, \"loadLevel\": \"%s\"", loadPercent, level
         printf ", \"memoryUsed\": %d, \"availableBytes\": %.0f", 100 - free, memory * free / 100
         if (t > 0) printf ", \"rxRate\": %.0f, \"txRate\": %.0f", rx - previousRx, tx - previousTx
-        printf ", \"status\": \"Нагрузка %.2f · память %d%%\", \"level\": \"%s\"}\n", load1, 100 - free, level
+        printf ", \"status\": %s, \"level\": \"%s\"}\n", json(sprintf("%s %.2f · %s %d%%", loadWord, load1, memoryWord, 100 - free)), level
         fflush()
         previousRx = rx; previousTx = tx; rx = 0; tx = 0
         t++
     }
     # The loop runs until the service is stopped, so running out of input means it failed.
     END {
-        print "Сбор данных остановился" > "/dev/stderr"
+        print stopped > "/dev/stderr"
         exit 1
-    }' "$amplitude" "$period" "$shape" "$second" "$cpus" "$memory"
+    }' "$amplitude" "$period" "$shape" "$second" "$cpus" "$memory" \
+    "$(say Load Нагрузка)" "$(say memory память)" "$(say "Collecting readings stopped" "Сбор данных остановился")"

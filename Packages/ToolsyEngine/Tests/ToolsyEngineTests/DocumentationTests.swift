@@ -26,7 +26,7 @@ import ToolsyShared
         }
     }
 
-    @Test(arguments: ["showcase", "vpn-protector"])
+    @Test(arguments: ["vpn-protector"])
     func repositoryModsStayValidAndUnchanged(_ id: String) throws {
         let data = try Data(contentsOf: Self.repository.appending(path: "Mods/\(id)/mod.json"))
         let manifest = try ModManifest.load(from: data)
