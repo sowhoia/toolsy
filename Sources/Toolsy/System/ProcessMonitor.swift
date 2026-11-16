@@ -40,9 +40,10 @@ final class ProcessMonitor {
     @ObservationIgnored private(set) var isSampling = false
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var sampling: Task<Void, Never>?
-    /// Display name and icon of each bundle in the latest sample. They do not change while the bundle
-    /// runs, and each lookup reads the file system.
-    @ObservationIgnored private var bundleLooks: [String: BundleLook] = [:]
+    /// Display name and icon of each group in the latest sample, by its id. They do not change while the
+    /// group runs, and each lookup reads the file system; a new image every sample would also make the
+    /// lists draw every icon again.
+    @ObservationIgnored private var looks: [String: Look] = [:]
 
     init(panel: PanelState, interval: TimeInterval = 2.5) {
         self.interval = interval
@@ -129,26 +130,28 @@ final class ProcessMonitor {
         for application in NSWorkspace.shared.runningApplications {
             applications[application.processIdentifier] = application
         }
-        let bundles = Set(readings.compactMap { if case .bundle(let path) = $0.kind { path } else { nil } })
-        bundleLooks = bundleLooks.filter { bundles.contains($0.key) }
+        var seen: [String: Look] = [:]
         groups = readings.map { reading in
             // Several processes of a bundle can be registered applications (an app and its login
             // item); the one with a Dock icon is the app.
             let candidates = reading.pids.compactMap { applications[$0] }
             let application = candidates.first { $0.activationPolicy == .regular } ?? candidates.first
-            let id: String, look: BundleLook
+            let id: String, look: Look
             switch reading.kind {
             case .bundle(let path):
                 id = path
-                look = bundleLook(path)
+                look = looks[id] ?? Look(name: FileManager.default.displayName(atPath: path), icon: NSWorkspace.shared.icon(forFile: path))
+                seen[id] = look
             case .process(let key, let executable):
                 id = "\(key.pid)-\(key.start)"
-                look = BundleLook(name: (executable as NSString).lastPathComponent, icon: nil)
+                look = looks[id] ?? Look(name: (executable as NSString).lastPathComponent, icon: application?.icon)
+                // Kept only once it has an icon: a process can become an application after it started.
+                if look.icon != nil { seen[id] = look }
             }
             return ProcessGroup(
                 id: id,
                 name: application?.localizedName ?? look.name,
-                icon: application?.icon ?? look.icon,
+                icon: look.icon,
                 memory: reading.memory,
                 cpu: reading.cpu,
                 processCount: reading.pids.count,
@@ -156,18 +159,12 @@ final class ProcessMonitor {
                 applicationPID: application?.processIdentifier
             )
         }
+        looks = seen
     }
 
-    private struct BundleLook {
+    private struct Look {
         var name: String
         var icon: NSImage?
-    }
-
-    private func bundleLook(_ path: String) -> BundleLook {
-        if let look = bundleLooks[path] { return look }
-        let look = BundleLook(name: FileManager.default.displayName(atPath: path), icon: NSWorkspace.shared.icon(forFile: path))
-        bundleLooks[path] = look
-        return look
     }
 
     /// Regular apps only: background apps and agents have no Quit command a person would choose. Toolsy
