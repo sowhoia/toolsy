@@ -226,6 +226,18 @@ struct MemoryOptimizerTests {
         #expect(fixture.readings.remaining.count == 2)
     }
 
+    @Test func aClosedPanelIsNotAskedAndNothingRuns() async throws {
+        // The panel closed between the click and the helper's answer: there is nobody to ask.
+        let fixture = try Fixture(FakeHelper(status: .notInstalled))
+        fixture.panel.setVisible(false)
+        let optimizer = fixture.optimizer
+        optimizer.optimize()
+        try await fixture.waitUntil("idle") { optimizer.phase == .idle }
+        #expect(fixture.panel.dialog == nil)
+        #expect(await fixture.helper.calls.isEmpty)
+        #expect(fixture.readings.remaining.count == 2)
+    }
+
     @Test func aDismissedPasswordPromptIsAnAnswer() async throws {
         let fixture = try Fixture(FakeHelper(status: .notInstalled, installError: .cancelled))
         let optimizer = fixture.optimizer

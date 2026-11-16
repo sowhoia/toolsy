@@ -86,6 +86,22 @@ private let backToNormal = "memory_pressure -S -l normal -s 0"
         #expect(MemoryTools.production.memoryPressure.path(percentEncoded: false) == "/usr/bin/memory_pressure")
     }
 
+    /// The real tool, as the current user: it is refused at the system call, harmlessly, but only after
+    /// it has accepted its arguments. A level it does not know makes it print "Incorrect level" and exit
+    /// with status 0, which the helper would take for success: a typo in the way back to normal would
+    /// then leave the Mac at the warn level and report that all is well.
+    @Test(arguments: [MemoryTools.warnArguments, MemoryTools.normalArguments])
+    func theSystemToolAcceptsTheArguments(_ arguments: [String]) async throws {
+        try #require(getuid() != 0, "as root this would change the system's memory-pressure level")
+        let result = try await ProcessRunner.run(ProcessRunner.Request(
+            executable: MemoryTools.production.memoryPressure, arguments: arguments, environment: MemoryTools.environment, timeout: 30
+        ))
+        let output = String(decoding: result.stdout + result.stderr, as: UTF8.self)
+        #expect(!output.contains("Incorrect level"), "\(output)")
+        #expect(output.contains("kern.memorypressure_manual_trigger") && output.contains("Operation not permitted"), "\(output)")
+        #expect(!result.succeeded, "refused, so not a success")
+    }
+
     @Test func runsTheFixedStepsInOrderWithAFixedEnvironment() async throws {
         let standIns = try await StandInTools()
         let report = try await standIns.service().reclaimMemory()
