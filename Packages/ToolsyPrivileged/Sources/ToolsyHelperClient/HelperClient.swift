@@ -5,7 +5,7 @@ import ToolsyHelperXPC
 import ToolsyShared
 
 /// Talks to the privileged helper over XPC and installs it. This is what the app hands the engine.
-public struct HelperClient: PrivilegedExecuting {
+public struct HelperClient: PrivilegedExecuting, SystemMaintaining {
     struct Configuration: Sendable {
         var installedHelper: URL
         var launchdPlist: URL
@@ -41,6 +41,8 @@ public struct HelperClient: PrivilegedExecuting {
         var approve: Duration = .seconds(120)
         /// The longest command timeout, plus the helper's grace period for killing it.
         var run: Duration = .seconds(ModCommand.maxTimeout + 30)
+        /// The helper's own timeouts for every step of the reclaim, plus the grace period for each kill.
+        var reclaimMemory: Duration = .seconds(180)
         /// From the end of the install script until the new helper answers.
         var startAfterInstall: Duration = .seconds(15)
     }
@@ -152,6 +154,16 @@ public struct HelperClient: PrivilegedExecuting {
                 finish(Self.completion(error, modID: modID).map {
                     CommandResult(exitCode: exitCode, stdout: stdout, stderr: stderr, timedOut: timedOut)
                 })
+            }
+        }
+    }
+
+    // MARK: SystemMaintaining
+
+    public func reclaimMemory() async throws -> MemoryReclaimReport {
+        try await perform(timeout: configuration.timeouts.reclaimMemory) { helper, finish in
+            helper.reclaimMemory { flushed, warned, error in
+                finish(Self.completion(error).map { MemoryReclaimReport(diskCacheFlushed: flushed, pressureWarningSent: warned) })
             }
         }
     }

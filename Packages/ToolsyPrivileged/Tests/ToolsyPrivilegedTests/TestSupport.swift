@@ -167,7 +167,7 @@ final class InProcessHelper {
     let bundledHelper: URL
     let plist: URL
 
-    init(clientRequirement: String?, clientUID: uid_t = getuid(), idleInterval: TimeInterval = 3600) throws {
+    init(clientRequirement: String?, clientUID: uid_t = getuid(), idleInterval: TimeInterval = 3600, memoryTools: MemoryTools = .production) throws {
         directory = try TemporaryDirectory()
         store = try makeStore(in: directory)
         installedHelper = try directory.write("helper binary", to: "installed/helper")
@@ -177,7 +177,7 @@ final class InProcessHelper {
         let removedJob = removedJob
         let exited = exited
         server = HelperServer(
-            service: HelperService(store: store, installedFiles: [plist, installedHelper]),
+            service: HelperService(store: store, installedFiles: [plist, installedHelper], memoryTools: memoryTools),
             clientUID: clientUID,
             idleInterval: idleInterval,
             removeLaunchdJob: { removedJob.withLock { $0 += 1 } },

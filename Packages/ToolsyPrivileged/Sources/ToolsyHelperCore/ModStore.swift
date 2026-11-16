@@ -10,12 +10,15 @@ public enum HelperError: LocalizedError, Equatable, Sendable {
     case notApproved
     /// A command of the mod is running; its snapshot cannot be replaced or removed meanwhile.
     case busy
+    /// Another memory reclaim is running.
+    case reclaimingMemory
 
     public var errorDescription: String? {
         switch self {
         case .failed(let message): message
         case .notApproved: "the mod is not approved"
         case .busy: "a command of the mod is still running"
+        case .reclaimingMemory: "memory is already being reclaimed"
         }
     }
 

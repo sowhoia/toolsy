@@ -113,6 +113,32 @@ import ToolsyShared
         #expect(try launchctl("print", service).output.contains("last exit code = 1"))
     }
 
+    /// The installed daemon's memory reclaim, through launchd, runs the real system tools. As the
+    /// current user they are refused by the kernel, so this proves the wiring and changes nothing.
+    @Test func daemonReclaimsMemoryWithTheSystemTools() async throws {
+        let daemon = productsDirectory.appending(path: "ToolsyHelperTestDaemon")
+        let directory = try TemporaryDirectory()
+        let store = directory.path("store")
+        let plist = directory.path("\(label).plist")
+        let log = directory.path("daemon.log")
+        defer { _ = try? launchctl("bootout", service) }
+        try prepareStore(store, requirement: try ownRequirement())
+        try writeJob(plist: plist, daemon: daemon, store: store, log: log)
+        try #require(try launchctl("bootstrap", "gui/\(uid)", plist.path(percentEncoded: false)).status == 0)
+
+        let label = label
+        let client = HelperClient(configuration: HelperClient.Configuration(
+            installedHelper: daemon, launchdPlist: plist, bundledHelper: daemon,
+            connect: { NSXPCConnection(machServiceName: label, options: []) },
+            installLayout: .production,
+            runAsAdministrator: { _ in Issue.record("unexpected administrator prompt") },
+            timeouts: HelperClient.Timeouts()
+        ))
+        let started = ContinuousClock.now
+        #expect(try await client.reclaimMemory() == MemoryReclaimReport(diskCacheFlushed: false, pressureWarningSent: false))
+        #expect(ContinuousClock.now - started < .seconds(10))
+    }
+
     @Test func productionHelperRefusesToRunAsAUser() throws {
         let process = Process()
         process.executableURL = productsDirectory.appending(path: "ToolsyHelper")

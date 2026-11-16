@@ -94,6 +94,13 @@ private final class HelperConnection: NSObject, HelperXPCProtocol, Sendable {
         }
     }
 
+    func reclaimMemory(reply: @escaping @Sendable (Bool, Bool, NSError?) -> Void) {
+        perform("reclaimMemory", fail: { reply(false, false, $0) }) { service in
+            let report = try await service.reclaimMemory()
+            reply(report.diskCacheFlushed, report.pressureWarningSent, nil)
+        }
+    }
+
     func uninstall(reply: @escaping @Sendable (NSError?) -> Void) {
         guard let current = NSXPCConnection.current() else {
             reply(HelperFailure.rejected.error("uninstall must be called over XPC"))
@@ -148,7 +155,7 @@ private final class HelperConnection: NSObject, HelperXPCProtocol, Sendable {
     private static func failure(for error: any Error) -> NSError {
         switch error {
         case HelperError.notApproved: HelperFailure.notApproved.error("the mod is not approved")
-        case HelperError.busy: HelperFailure.busy.error("a command of the mod is still running")
+        case HelperError.busy, HelperError.reclaimingMemory: HelperFailure.busy.error(error.localizedDescription)
         default: HelperFailure.rejected.error(error.localizedDescription)
         }
     }

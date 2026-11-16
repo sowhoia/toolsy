@@ -84,9 +84,18 @@ it starts anything, so a crash never leaves a second copy of a service behind.
                                                       privileged commands
 ```
 
-The helper is a launchd daemon started on demand and exiting when idle. It offers five
+The helper is a launchd daemon started on demand and exiting when idle. It offers six
 operations over XPC: list approved mods, approve (store a snapshot), revoke, run a privileged
-command of an approved mod, and uninstall itself.
+command of an approved mod, reclaim memory, and uninstall itself.
+
+Reclaiming memory is the one operation not tied to an approved mod. It runs `/usr/sbin/purge`
+(flushes the disk cache), then `/usr/bin/memory_pressure -S -l warn -s 3`, which holds the system
+at the *warn* memory-pressure level for three seconds: every process gets the standard warning, on
+which the allocator returns free pages and apps drop caches they can rebuild. Nothing is terminated;
+the *critical* level, on which apps may discard work in use, is never used. `memory_pressure` sets the
+level back itself only when its sleep ends, so whenever it does not exit successfully the helper runs
+`memory_pressure -S -l normal -s 0`. Only the helper itself dying within those seconds would leave the
+level at *warn*, until the next reclaim or restart.
 
 Threat model: code running as the logged-in user must not be able to become root through
 Toolsy without the user's consent.
@@ -116,12 +125,22 @@ Toolsy without the user's consent.
   with privileged commands. That cleanup takes the approval only: whether a mod's folder exists
   is in the hands of every program of the user, and must not be enough to make root delete the
   mod's data.
+- **Reclaiming memory takes nothing from the client.** The request has no parameters: the two
+  programs, their absolute paths, argument lists, environment (`PATH` only), working directory and
+  timeouts are constants in the helper, and their output only reaches the helper's log when a
+  step fails. A client can only decide
+  when it runs, and only one runs at a time (a second request is answered "busy"). The worst a
+  hostile or buggy client that passed the checks above can do is run it repeatedly: a cold disk
+  cache and apps rebuilding caches slow the Mac down, but no data is changed and no process is
+  stopped.
 - **What the app passes at run time is data.** The command input goes to the program's stdin
   and to `TOOLSY_*` variables, never into a command line. Privileged programs validate it.
 - **A privileged command that has started runs to its end** (or its own timeout) even if the app
   quits or crashes meanwhile: a root program is never killed halfway through changing the system
   because its client went away. Requests that would pull its files from under it (removing the
-  helper, replacing or revoking the mod's approval) are answered "busy" until it has finished.
+  helper, replacing or revoking the mod's approval) are answered "busy" until it has finished. The
+  same holds for a memory reclaim: the helper does not exit and cannot be removed in the middle of
+  one.
 - **The app is hardened.** It is signed with the hardened runtime and without
   `get-task-allow`, so other user processes cannot inject code into it to borrow its identity.
 - Consent is the confirmation shown when a mod is installed, which lists the commands that will

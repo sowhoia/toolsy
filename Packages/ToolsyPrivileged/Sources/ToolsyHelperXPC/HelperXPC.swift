@@ -12,7 +12,7 @@ public enum HelperConstants {
     /// The helper inside the app bundle, relative to `Contents`.
     public static let bundledHelperPath = "Helpers/ToolsyHelper"
     /// Bump whenever `HelperXPCProtocol` changes, so the app notices an incompatible helper.
-    public static let protocolVersion = 1
+    public static let protocolVersion = 2
 }
 
 /// The helper's XPC interface. Every reply is delivered exactly once; failures arrive as an `NSError`
@@ -37,6 +37,10 @@ public enum HelperConstants {
         modID: String, command: String, input: Data,
         reply: @escaping @Sendable (_ exitCode: Int32, _ stdout: Data, _ stderr: Data, _ timedOut: Bool, _ error: NSError?) -> Void
     )
+
+    /// Runs the system's fixed memory-reclaim steps (see `SystemMaintaining`); takes nothing from the
+    /// client. Each flag says whether that step succeeded.
+    func reclaimMemory(reply: @escaping @Sendable (_ diskCacheFlushed: Bool, _ pressureWarningSent: Bool, _ error: NSError?) -> Void)
 
     /// Deletes the store, the launchd plist and the helper binary, replies, then unloads the job.
     func uninstall(reply: @escaping @Sendable (_ error: NSError?) -> Void)
@@ -70,7 +74,7 @@ public enum HelperFailure: Int, Sendable {
     case rejected = 1
     /// The mod has no approved snapshot.
     case notApproved = 2
-    /// A command is running, and the request cannot be carried out until it has finished.
+    /// A command or a memory reclaim is running, and the request cannot be carried out until it has finished.
     case busy = 3
 
     public func error(_ message: String) -> NSError {

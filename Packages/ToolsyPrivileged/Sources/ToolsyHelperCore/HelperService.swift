@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Synchronization
 import ToolsyHelperXPC
 import ToolsyShared
 
@@ -12,12 +13,16 @@ final class HelperService: Sendable {
     let store: ModStore
     /// Deleted on uninstall besides the store: the launchd plist and the helper binary.
     let installedFiles: [URL]
+    let memoryTools: MemoryTools
     private let locks = ModLocks()
+    /// True while `reclaimMemory` runs; a second request is refused rather than queued.
+    private let isReclaimingMemory = Mutex(false)
     private let logger = Logger(subsystem: HelperConstants.label, category: "operations")
 
-    init(store: ModStore, installedFiles: [URL]) {
+    init(store: ModStore, installedFiles: [URL], memoryTools: MemoryTools = .production) {
         self.store = store
         self.installedFiles = installedFiles
+        self.memoryTools = memoryTools
     }
 
     func approvedMods() throws -> [String: String] {
@@ -92,6 +97,55 @@ final class HelperService: Sendable {
             logger.notice("ran \(modID, privacy: .public)/\(name, privacy: .public): exit \(result.exitCode)\(result.timedOut ? ", timed out" : "", privacy: .public)")
             return result
         }
+    }
+
+    /// Runs the fixed steps of `memoryTools` one after the other; a step that fails does not stop the next.
+    func reclaimMemory() async throws -> MemoryReclaimReport {
+        let started = isReclaimingMemory.withLock { running in
+            defer { running = true }
+            return !running
+        }
+        guard started else { throw HelperError.reclaimingMemory }
+        defer { isReclaimingMemory.withLock { $0 = false } }
+
+        let tools = memoryTools
+        let flushed = await runTool(tools.purge, [], timeout: tools.purgeTimeout)
+        let warned = await runTool(tools.memoryPressure, MemoryTools.warnArguments, timeout: tools.pressureTimeout)
+        if !warned {
+            // `memory_pressure -S` puts the level back to normal only after its sleep and installs no
+            // signal handler, so one that was killed by the timeout or failed after setting the level
+            // leaves the system at "warn". Setting "normal" the same way it does ends every path there.
+            // Its exit status 0 means it reset the level itself, so a successful run needs no extra step.
+            if !(await runTool(tools.memoryPressure, MemoryTools.normalArguments, timeout: tools.restoreTimeout)) {
+                logger.fault("the memory-pressure level could not be set back to normal")
+            }
+        }
+        let report = MemoryReclaimReport(diskCacheFlushed: flushed, pressureWarningSent: warned)
+        logger.notice("reclaimed memory: disk cache \(flushed ? "flushed" : "not flushed", privacy: .public), pressure warning \(warned ? "sent" : "not sent", privacy: .public)")
+        return report
+    }
+
+    /// Runs one tool with a fixed environment and no input; true when it exited with status 0 in time.
+    private func runTool(_ tool: URL, _ arguments: [String], timeout: TimeInterval) async -> Bool {
+        let name = tool.lastPathComponent
+        let result: CommandResult
+        do {
+            result = try await ProcessRunner.run(ProcessRunner.Request(
+                executable: tool, arguments: arguments, environment: MemoryTools.environment,
+                currentDirectory: URL(filePath: "/", directoryHint: .isDirectory), timeout: timeout,
+                // Kept only for the log of a failure.
+                outputLimit: 4096
+            ))
+        } catch {
+            logger.error("cannot run \(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        guard result.succeeded else {
+            let stderr = String(decoding: result.stderr, as: UTF8.self)
+            logger.error("\(name, privacy: .public) \(arguments, privacy: .public) failed: exit \(result.exitCode)\(result.timedOut ? ", timed out" : "", privacy: .public): \(stderr, privacy: .public)")
+            return false
+        }
+        return true
     }
 
     /// Deletes the whole store, the plist and the binary. The caller has drained every other operation.

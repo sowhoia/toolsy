@@ -255,6 +255,7 @@ final class SilentHelper: NSObject, HelperXPCProtocol, Sendable {
     func approve(modID: String, files: [String: Data], executables: [String], reply: @escaping @Sendable (NSError?) -> Void) { keep(reply) }
     func revoke(modID: String, keepingData: Bool, reply: @escaping @Sendable (NSError?) -> Void) { keep(reply) }
     func run(modID: String, command: String, input: Data, reply: @escaping @Sendable (Int32, Data, Data, Bool, NSError?) -> Void) { keep(reply) }
+    func reclaimMemory(reply: @escaping @Sendable (Bool, Bool, NSError?) -> Void) { keep(reply) }
     func uninstall(reply: @escaping @Sendable (NSError?) -> Void) { keep(reply) }
 
     private func keep(_ reply: any Sendable) {
@@ -269,6 +270,7 @@ final class HangingUpHelper: NSObject, HelperXPCProtocol, Sendable {
     func approve(modID: String, files: [String: Data], executables: [String], reply: @escaping @Sendable (NSError?) -> Void) { hangUp() }
     func revoke(modID: String, keepingData: Bool, reply: @escaping @Sendable (NSError?) -> Void) { hangUp() }
     func run(modID: String, command: String, input: Data, reply: @escaping @Sendable (Int32, Data, Data, Bool, NSError?) -> Void) { hangUp() }
+    func reclaimMemory(reply: @escaping @Sendable (Bool, Bool, NSError?) -> Void) { hangUp() }
     func uninstall(reply: @escaping @Sendable (NSError?) -> Void) { hangUp() }
 
     private func hangUp() {
