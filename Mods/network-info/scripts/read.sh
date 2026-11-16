@@ -118,6 +118,7 @@ printf '%s' "$report" | jq -c -f "${0%/*}/patch.jq" \
     --arg router "$router" --arg router6 "$router6" --arg ipv6 "$ipv6" --arg linkLocal "$linklocal" \
     --arg servers "$servers" --arg domains "$domains" --arg method "$method" --arg mac "$mac" \
     --arg mtu "$mtu" --arg wifiProblem "$problem" \
-    --arg offline "$(say "Not connected" "Нет подключения")" --arg none "$(say "None" "Нет")" \
+    --arg offline "$(say "Not connected" "Нет подключения")" --arg offlineShort "$(say "Offline" "Нет сети")" \
+    --arg none "$(say "None" "Нет")" \
     --arg temporary "$(say "Temporary" "Временный")" --arg stable "$(say "Stable" "Постоянный")" \
     --arg assigned "$(say "Assigned" "Назначенный")"

@@ -238,7 +238,7 @@ expect '.interface == "en0" and .kind == "Wi-Fi" and .address == "192.0.2.10" an
     and .configMethod == "DHCP" and .mac == "00:00:5e:00:53:01" and .mtu == 1500
     and .channel == "36" and .band == "5" and .width == "80" and .phyMode == "802.11ax" and .txRate == 1200
     and .signal == -58 and .noise == -92 and .signalLevel == "ok" and .security == "WPA3 Personal"
-    and .wifiProblem == null and .status == "Wi-Fi · 192.0.2.10" and .level == "ok"' read $(on wifi) TOOLSY_EVENT=refresh
+    and .wifiProblem == null and .status == "Wi-Fi · 192.0.2.10" and .level == "ok" and .headline == "192.0.2.10"' read $(on wifi) TOOLSY_EVENT=refresh
 keys=$($jq -c keys "$data/out")
 expect '.ipv6All[0].subtitle == "Временный" and .ipv6All[1].subtitle == "Постоянный"' read $(on wifi) TOOLSY_EVENT=network TOOLSY_LOCALE=ru-ru
 expect '.channel == "6" and .band == "2" and .width == "20" and .signalLevel == "error" and .security == "None"' read $(on weak) TOOLSY_EVENT=wake
@@ -250,9 +250,10 @@ expect '.interface == "en7" and .kind == "Desk \"LAN\" \\ 🙂" and .ipv4 == nul
     and .channel == null and .wifiProblem == null and .status == "Desk \"LAN\" \\ 🙂 · 2001:db8::7"' read $(on ipv6)
 expect '.configMethod == "Вручную"' read $(on ipv6) TOOLSY_LOCALE=ru
 expect '.interface == "utun4" and .kind == "VPN" and .address == "192.0.2.66" and .mask == "255.255.255.255" and .mac == null and .configMethod == null' read $(on vpn)
-expect '.interface == null and .address == null and .dns == null and .signal == null and .status == "Not connected" and .level == "off"' read $(on offline)
+expect '.interface == null and .address == null and .dns == null and .signal == null and .status == "Not connected" and .level == "off"
+    and .headline == "Offline"' read $(on offline)
 [ "$($jq -c keys "$data/out")" = "$keys" ] || problem "offline: reports other keys than online, so stale values would stay: $($jq -c keys "$data/out")"
-expect '.status == "Нет подключения"' read $(on offline) TOOLSY_LOCALE=ru
+expect '.status == "Нет подключения" and .headline == "Нет сети"' read $(on offline) TOOLSY_LOCALE=ru
 expect '.status == "Not connected"' read $(on offline) TOOLSY_LOCALE="$(printf 'Ли "Ко" \\ \001 🙂')"
 expect_failure read $(on vanished)
 expect_failure read $(on strange)

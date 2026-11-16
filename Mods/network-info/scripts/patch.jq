@@ -41,3 +41,6 @@ def wifi:
 | . + (if $report == null then {} else ($report | wifi) end)
 | .status = (if .interface then [.kind, .address] | map(select(.)) | join(" · ") else $offline end)
 | .level = (if .interface then "ok" else "off" end)
+# What the dashboard tile shows. It is null only until the first report, so the tile can tell
+# "not read yet" from "offline".
+| .headline = (.address // (if .interface then .kind else $offlineShort end))
