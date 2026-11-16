@@ -1,8 +1,9 @@
 # Toolsy architecture
 
-Toolsy is a macOS menu bar app. Its panel shows a summary of the Mac and a list of *mods*:
-small features users install from a file and switch on and off. The format of a mod is
-specified in [MOD_FORMAT.md](MOD_FORMAT.md).
+Toolsy is a macOS menu bar app. Its panel shows a dashboard of widgets the user arranges (readings
+of the Mac and tiles of mods) and a list of *mods*: small features users install from a file and
+switch on and off. The format of a mod is specified in [MOD_FORMAT.md](MOD_FORMAT.md), and for AI
+models that write mods in [MOD_AUTHORING_FOR_AI.md](MOD_AUTHORING_FOR_AI.md).
 
 ## Why it is built this way
 
@@ -20,7 +21,9 @@ specified in [MOD_FORMAT.md](MOD_FORMAT.md).
 
 ```
 Package.swift            the app (executable target Toolsy)
-Sources/Toolsy/          app shell, design system, panel, system monitor
+Sources/Toolsy/          App/ (shell, panel, system events, notifications), DesignSystem/,
+                         Dashboard/, System/ (readings, processes, memory optimiser), Mods/
+                         (pages, controls, developer mode), Settings/, Debug/ (scripted runs)
 Packages/
   ToolsyShared/          the contract: mod format, command protocol, process runner,
                          PrivilegedExecuting. Foundation only.
@@ -28,9 +31,10 @@ Packages/
                          the observable model the UI renders; the toolsy-mod tool. No UI.
   ToolsyPrivileged/      the root helper daemon, its XPC interface, and the client + installer
                          the app uses.
-Mods/                    mods maintained in this repository (vpn-protector, showcase)
+Mods/                    mods maintained in this repository (keep-awake, timer, network-info,
+                         showcase, vpn-protector), each with a test.sh and a build.sh
 scripts/                 building the .app, packing mods
-docs/
+docs/                    MOD_FORMAT.md, MOD_AUTHORING_FOR_AI.md, ARCHITECTURE.md
 ```
 
 Dependencies point one way: `Toolsy → ToolsyEngine, ToolsyHelperClient → ToolsyShared`, and
@@ -54,18 +58,36 @@ control changes / switch flips / timer fires
 ```
 
 A mod's `service` is the one long-lived process: the engine keeps it alive while the mod is on
-and applies each line it prints as a patch. `refresh` commands are scheduled only while the
-panel is open unless the mod asks for background refresh. With the panel closed and no service
-running, Toolsy has no timers.
+and applies each line it prints as a patch. It runs beside the queue, not in it. `refresh` commands
+are scheduled only while the panel is open unless the mod asks for background refresh. With the
+panel closed and no service running, Toolsy has no timers.
+
+Each `Mod` keeps the history of every chart-bound key (as many samples as the largest chart showing
+it) and its last 20 runs (`recentRuns`: command, cause, duration, outcome, the end of standard error;
+never state or standard output, which can hold user data), each in a property of its own so that
+recording one re-renders nothing else. Templates and expressions are parsed once per source text and
+cached; a patch that changes nothing writes nothing.
+
+`ModStore` is created with the user's preferred languages. It loads every manifest through its first
+matching `localizations` table (`ModManifest.localized(for:)`), so pages, tiles and the installation
+confirmation are shown translated, and tells commands the first language as `TOOLSY_LOCALE`. State
+keys, commands and settings are never translated.
 
 System events reach mods through `SystemEventMonitor` in the app, which observes only the events
 some installed mod declares (`ModStore.observedEvents`) and follows that set as mods come and go:
 wake from `NSWorkspace.didWakeNotification`, power from `IOPSCreateLimitedPowerNotification` (posted
 only when the providing source actually changes), network from the dynamic store keys of the
 primary interface and of the interfaces' addresses, link-local IPv6 excluded and a burst settled
-into one event after two quiet seconds. A mod's `notify` goes through the store's rate limit to
-`ModNotifier`, which asks for permission the first time one arrives and opens the mod's page when a
-notification is clicked. A debug run on scratch data prints notifications instead of posting them.
+into one event after two quiet seconds. Power and network are posted only for real changes: each
+source reports its condition (the providing power source; the primary interface, its router and
+every interface's addresses) and an event is posted when it differs from the last one; a wake is an
+event every time. Nothing is replayed after sleep.
+
+A mod's `notify` goes through the store's rate limit (one per mod every 5 seconds, no repeat within
+a minute) to `ModNotifier`, which asks for permission the first time one arrives, drops them while
+permission is refused, posts each as a banner without sound grouped by mod (`threadIdentifier`), and
+opens the panel on the mod's page when one is clicked. A debug run on scratch data prints
+notifications instead of posting them.
 
 On disk, per user (`~/Library/Application Support/Toolsy/`):
 
@@ -74,11 +96,77 @@ Mods/<id>/        the unpacked mod, exactly as installed
 State/<id>.json   {"enabled": …, "settings": {…}}
 Data/<id>/        the mod's writable folder (TOOLSY_DATA_DIR)
 Run/<id>.json     pid and start time of the mod's running service
+Dashboard.json    the dashboard's layout (see below)
+DeveloperMode     an empty marker file, present while developer mode is on
 ```
 
 Services are children of the app, each in its own process group. Quitting stops them. Should the
 app die without doing so, the next launch reads `Run/` and stops whatever is still running before
 it starts anything, so a crash never leaves a second copy of a service behind.
+
+Installing a mod whose id is installed replaces it in place: the old instance is closed (its service
+stopped, no hook run), the new files are moved in, and the new instance starts from the saved
+settings and switch position, its first command waiting for the old one's last. `ModsModel` puts the
+mod's widgets on the dashboard only when no folder with that id existed before, so an update leaves
+the user's arrangement alone; removing a mod takes them off.
+
+### Developer mode
+
+A switch in Settings, saved as the marker file `DeveloperMode` in the data root, so a debug run on
+scratch data never sees the user's choice. While it is on, `ModStore` watches the mods folder with
+FSEvents and acts once changes have settled for 0.3 s: a changed `mod.json` (compared by digest)
+reloads the mod, keeping its settings and switch position; changes to its other files restart its
+running service, at most once a second, so a mod writing into its own folder cannot restart itself
+as fast as it writes; a folder that appears is loaded and one that disappears is dropped, keeping
+its saved settings. A folder that does not load is listed with its error on its page and comes back
+once fixed. Each mod's page then ends with a Reload button, its folder and its recent runs. Nothing is
+approved this way: a privileged mod edited in place loses its administrator access as always.
+
+## The dashboard
+
+`DashboardStore` owns the layout: whether the device line is shown, and the widgets in reading order,
+each a `PlacedWidget` (its `WidgetID` and the options the user chose: size, chart style, network rate
+unit; an option left unset follows the widget's own default, for a mod widget its manifest, so an
+update can change it). A built-in widget's id is its metric (`cpu`, `memory`, `battery`, `network`,
+`storage`, `gpu`, `disk`), a mod's is `mod:<mod id>/<widget id>`. The layout is saved to
+`Dashboard.json` (`{"version": 1, "showsDeviceLine", "widgets"}`) after every change. Loading never
+fails: a missing, unreadable, damaged or newer file gives the standard layout and is left alone until
+the user changes something; ids that cannot be shown (a mod that is not installed) are kept in place,
+so the layout survives a mod being reinstalled.
+
+Packing the grid is a pure function of the widgets and their sizes: rows of three columns fill in
+order, and the last tile of a row that is not full stretches, so the grid has no holes. In edit mode
+tiles are dragged, selected for their options and removed, and added back from a list.
+
+A mod's widget is drawn from its manifest and the mod's state on every change, like a page: the
+caption, the rendered `value`, a sparkline from `Mod.history(of:)` or a level bar, in the mod's tint,
+dimmed while a mod with a switch is off. Expanding it lays out its `detail` controls with the same
+views as the mod's page, followed by a row that opens the page; without `detail` the tile opens the
+page.
+
+## Readings of the Mac
+
+`SystemMonitor` samples about once a second, only while the panel is visible, and only the metrics
+of the widgets on the dashboard (`shownMetrics`, set by the dashboard): a metric that is not placed
+costs nothing. Rates (CPU, network, disk) take a fresh baseline whenever sampling starts; slow
+readings are taken less often (battery every 5 seconds, storage every 30, the primary interface's
+name and address every 10 and only while something shows them). GPU utilisation and disk activity
+come from the I/O Registry; the dashboard offers only the metrics this Mac reports.
+
+`ProcessMonitor` lists the user's apps by memory and CPU for the memory and CPU details. It is
+demand-driven like the system monitor: views that show a list start and stop it (counted, so several
+can want it), and it samples only while one wants it and the panel is visible, every 2.5 seconds, off
+the main thread, with libproc. It groups processes the way a person thinks of apps: everything inside
+one outermost `.app` bundle, XPC services with the app macOS holds responsible for them, and every
+other process on its own. Memory is the physical footprint (Activity Monitor's Memory column), CPU is
+per core. It can ask a regular app (not Toolsy or Finder) to quit the normal way, after a
+confirmation in the panel.
+
+`MemoryOptimizer` drives the memory detail's **Free Up Memory** button. With the helper ready it asks
+it to reclaim memory (below); with the helper missing or outdated it first asks in the panel and
+installs it through `ModStore`, so the mods' access is refreshed too, and a dismissed password prompt
+is an answer, not an error. The result is measured: free memory before and a second after, never
+negative, the change of memory used, and the helper's report of which steps it carried out.
 
 ## Privileged execution
 
@@ -167,7 +255,8 @@ Removing it (from Settings) needs no password: the helper deletes its own files.
 ## Performance rules
 
 - No polling while the panel is closed, except what an enabled mod explicitly declares.
-- System metrics are sampled only while the panel is visible.
+- System metrics are sampled only while the panel is visible, and only those a widget on the
+  dashboard shows; processes only while a list of them is on screen.
 - Charts are drawn with paths; no charting framework is loaded.
 - Nothing that changes by itself animates in SwiftUI. A reading that ticks every second replaces
   its text at once (`tickingValue()`), and the motion that is worth seeing, a chart sliding by one
