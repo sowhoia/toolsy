@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "id": "keep-awake",
+  "name": "Keep Awake",
+  "version": "1.0.0",
+  "author": "Toolsy",
+  "summary": "Keeps the Mac awake for a while or until you switch it off",
+  "icon": "cup.and.saucer.fill",
+  "tint": "orange",
+  "settings": {
+    "duration": 60,
+    "display": false,
+    "until": 0
+  },
+  "commands": {
+    "start": { "exec": "scripts/keep-awake.sh", "args": ["start"] },
+    "stop": { "exec": "scripts/keep-awake.sh", "args": ["stop"] },
+    "retime": { "exec": "scripts/keep-awake.sh", "args": ["retime"] },
+    "status": { "exec": "scripts/keep-awake.sh", "args": ["status"] },
+    "hold": { "exec": "scripts/keep-awake.sh", "args": ["hold"] }
+  },
+  "lifecycle": {
+    "enable": "start",
+    "disable": "stop",
+    "service": "hold",
+    "refresh": { "command": "status", "every": 15 },
+    "events": { "wake": "status" }
+  },
+  "ui": [
+    { "type": "text", "text": "The Mac sleeps as usual. Switch Keep Awake on to stop it from going to sleep on its own.", "style": "caption", "when": "!enabled" },
+    {
+      "type": "row",
+      "when": "enabled",
+      "children": [
+        { "type": "stat", "label": "Ends", "icon": "clock", "value": "{{until|time}}", "when": "until > 0" },
+        { "type": "stat", "label": "Ends", "icon": "infinity", "value": "When switched off", "when": "until == 0" },
+        { "type": "stat", "label": "Display", "icon": "display", "value": "{{display|either:Stays on:Sleeps as usual}}" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Settings",
+      "footer": "A new duration chosen while Keep Awake is on counts from that moment. Closing the lid or choosing Sleep still puts the Mac to sleep.",
+      "children": [
+        {
+          "type": "picker", "label": "Keep awake for", "icon": "timer", "bind": "duration", "command": "retime",
+          "options": [
+            { "value": 30, "label": "30 min" },
+            { "value": 60, "label": "1 hour" },
+            { "value": 120, "label": "2 hours" },
+            { "value": 0, "label": "Indefinitely" }
+          ]
+        },
+        { "type": "toggle", "label": "Keep the display on", "icon": "display", "bind": "display", "help": "Without this the display may dim and sleep while the Mac stays awake." }
+      ]
+    }
+  ],
+  "widgets": [
+    {
+      "id": "status",
+      "value": "{{status|default:—}}",
+      "tint": "{{enabled|either:orange:off}}",
+      "detail": [
+        {
+          "type": "row",
+          "children": [
+            { "type": "button", "label": "Turn On", "icon": "power", "command": "start", "style": "prominent", "when": "!enabled" },
+            { "type": "button", "label": "Turn Off", "icon": "power", "command": "stop", "when": "enabled" }
+          ]
+        },
+        { "type": "stat", "label": "Ends", "icon": "clock", "value": "{{until|time}}", "when": "enabled && until > 0" },
+        {
+          "type": "picker", "label": "Keep awake for", "bind": "duration", "command": "retime", "style": "menu",
+          "options": [
+            { "value": 30, "label": "30 min" },
+            { "value": 60, "label": "1 hour" },
+            { "value": 120, "label": "2 hours" },
+            { "value": 0, "label": "Indefinitely" }
+          ]
+        },
+        { "type": "toggle", "label": "Keep the display on", "bind": "display" }
+      ]
+    }
+  ],
+  "localizations": {
+    "ru": {
+      "Keep Awake": "Не засыпать",
+      "Keeps the Mac awake for a while or until you switch it off": "Не даёт Mac уснуть на время или пока вы не выключите мод",
+      "The Mac sleeps as usual. Switch Keep Awake on to stop it from going to sleep on its own.": "Mac засыпает как обычно. Включите мод, чтобы он не уснул сам.",
+      "Ends": "Окончание",
+      "When switched off": "При выключении",
+      "Display": "Дисплей",
+      "{{display|either:Stays on:Sleeps as usual}}": "{{display|either:Не гаснет:Гаснет как обычно}}",
+      "Settings": "Настройки",
+      "A new duration chosen while Keep Awake is on counts from that moment. Closing the lid or choosing Sleep still puts the Mac to sleep.": "Новая длительность, выбранная во время работы, отсчитывается с этого момента. Если закрыть крышку или выбрать «Режим сна», Mac всё равно уснёт.",
+      "Keep awake for": "Длительность",
+      "30 min": "30 мин",
+      "1 hour": "1 час",
+      "2 hours": "2 часа",
+      "Indefinitely": "Бессрочно",
+      "Keep the display on": "Не выключать дисплей",
+      "Without this the display may dim and sleep while the Mac stays awake.": "Без этого дисплей может погаснуть, хотя Mac не уснёт.",
+      "Turn On": "Включить",
+      "Turn Off": "Выключить"
+    }
+  }
+}
