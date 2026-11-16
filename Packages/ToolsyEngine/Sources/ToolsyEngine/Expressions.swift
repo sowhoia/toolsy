@@ -117,7 +117,9 @@ extension ModExpression {
         /// Whether a `-` after this token subtracts rather than starting a negative number.
         var endsOperand: Bool {
             switch self {
-            case .word, .number, .string: true
+            // `contains` is an operator: what follows it is a value, a negative number included.
+            case .word(let word): word != "contains"
+            case .number, .string: true
             case .symbol(let symbol): symbol == ")"
             }
         }

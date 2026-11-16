@@ -178,6 +178,13 @@ private func syntaxError(_ expression: String) -> String? {
         #expect(try !evaluate("tags contains null", ["tags": [nil]]), "null is not a scalar")
     }
 
+    @Test func aNegativeNumberCanFollowIt() throws {
+        // `contains` ends no value, so the minus after it is a sign and not a subtraction.
+        #expect(try evaluate("offsets contains -1", ["offsets": [-1, 2]]))
+        #expect(try !evaluate("offsets contains -3", ["offsets": [-1, 2]]))
+        #expect(try evaluate("offsets contains 2 -1", ["offsets": [1]]), "after a value a minus still subtracts")
+    }
+
     @Test func isFalseForAnythingElseOnTheLeft() throws {
         #expect(try !evaluate("count contains 1", state))
         #expect(try !evaluate("missing contains 'a'", state))
