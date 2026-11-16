@@ -15,7 +15,7 @@ public struct ModNotification: Sendable, Equatable {
 
     /// Reads the `notify` value of a patch: text is the body, an object gives `title` and `body`.
     /// Nil when there is nothing to show (a blank or missing body) or the value has another shape.
-    init?(_ value: JSONValue, modID: String, modName: String) {
+    public init?(_ value: JSONValue, modID: String, modName: String) {
         let title: String?
         let body: String?
         switch value {

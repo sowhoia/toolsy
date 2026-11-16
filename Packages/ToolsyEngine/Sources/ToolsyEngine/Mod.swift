@@ -490,7 +490,7 @@ public final class Mod: Identifiable {
             record(.couldNotStart(error.localizedDescription))
             return nil
         }
-        let object = Self.patch(from: result.stdout)
+        let object = CommandOutput(result.stdout).patch
         let outcome: CommandRun.Outcome = result.timedOut ? .timedOut : result.succeeded ? .succeeded : .failed(exitCode: result.exitCode)
         record(outcome, standardError: result.stderr, outputWasPatch: command.capture == nil && object != nil)
         return apply(result, object: object, of: command, named: name, from: origin)
@@ -506,28 +506,14 @@ public final class Mod: Identifiable {
 
     /// How an unprivileged command or the service is started.
     private func request(for command: ModCommand, input: CommandInput) throws -> ProcessRunner.Request {
-        let dataDirectory = directories.data.appending(path: id, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
-        let invocation = command.invocation(modDirectory: folder)
-        return ProcessRunner.Request(
-            executable: invocation.executable,
-            arguments: invocation.arguments,
-            environment: CommandEnvironment.variables(
-                modID: id, modDirectory: folder, dataDirectory: dataDirectory, input: input, privileged: false
-            ),
-            currentDirectory: folder,
-            stdin: command.stdin ? try JSONEncoder().encode(input) : nil,
-            timeout: command.timeout
-        )
+        try command.request(modID: id, modDirectory: folder, dataDirectory: directories.data.appending(path: id, directoryHint: .isDirectory),
+                            input: input)
     }
 
     private func apply(_ result: CommandResult, object: ModState?, of command: ModCommand, named name: String, from source: ErrorSource) -> ModState? {
         guard result.succeeded else {
-            let reported = object?[ReservedStateKey.error]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
-            let detail = result.timedOut
-                ? "timed out after \(JSONValue.number(command.timeout).text) s"
-                : "exit status \(result.exitCode)"
-            fail(reported ?? lastNonEmptyLine(result.stderr) ?? "\"\(name)\" failed: \(detail).", command: name, detail: detail, from: source)
+            fail(result.failureMessage(command: name, timeout: command.timeout), command: name,
+                 detail: result.failureDetail(timeout: command.timeout), from: source)
             return nil
         }
         var patch: ModState
@@ -578,12 +564,6 @@ public final class Mod: Identifiable {
     private func fail(_ message: String, command: String, detail: String, from source: ErrorSource) {
         report(message, from: source)
         logger.error("mod \(self.id, privacy: .public): command \(command, privacy: .public) failed: \(detail, privacy: .public)")
-    }
-
-    /// A JSON object, or nil for empty output and anything else, which is ignored.
-    private static func patch(from output: Data) -> ModState? {
-        guard !output.allSatisfy({ $0 == 0x20 || $0 == 0x0A || $0 == 0x0D || $0 == 0x09 }) else { return nil }
-        return (try? JSONDecoder().decode(JSONValue.self, from: output))?.objectValue
     }
 
     // MARK: - State
@@ -748,7 +728,7 @@ public final class Mod: Identifiable {
     }
 
     private func serviceWrote(_ line: Data) {
-        guard phase == .active, var patch = Self.patch(from: line) else { return }
+        guard phase == .active, var patch = CommandOutput(line).patch else { return }
         settleError(in: &patch, reportedBy: .service)
         merge(patch, fromService: true)
     }
@@ -770,8 +750,7 @@ public final class Mod: Identifiable {
             await setEnabled(false)
             return
         }
-        let detail = "exit status \(status)"
-        serviceFailed(lastNonEmptyLine(errorTail) ?? "The service stopped unexpectedly (\(detail)).", detail: detail, ranFor: ranFor)
+        serviceFailed(CommandResult(exitCode: status, stderr: errorTail).serviceFailureMessage, detail: "exit status \(status)", ranFor: ranFor)
     }
 
     /// Shows why the service is down and restarts it after 1, 2, 4 … 60 s; a healthy run resets the delay.
