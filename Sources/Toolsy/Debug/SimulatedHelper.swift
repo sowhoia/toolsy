@@ -6,8 +6,9 @@ import ToolsyShared
 /// it reports "not installed" until `install()`, approves mods by digest, and runs their "privileged"
 /// commands as the current user from a snapshot of the approved files, as the real helper runs them
 /// as root. It never shows the administrator prompt. Its state lives in `store` (inside the scratch data
-/// root), so it survives a relaunch like the real helper does.
-actor SimulatedHelper: PrivilegedExecuting {
+/// root), so it survives a relaunch like the real helper does. Reclaiming memory only takes a moment
+/// and reports success; it never touches the system.
+actor SimulatedHelper: PrivilegedExecuting, SystemMaintaining {
     private struct State: Codable {
         var installed = false
         /// As after Toolsy was updated: approvals are kept, but nothing runs until `install()`.
@@ -21,6 +22,9 @@ actor SimulatedHelper: PrivilegedExecuting {
     }
     /// The next `install()` fails with this, as when the user dismisses the password prompt.
     private var nextInstallError: PrivilegedError?
+    /// What the next `reclaimMemory()` answers instead of success.
+    private var nextReclaim: Result<MemoryReclaimReport, PrivilegedError>?
+    private var isReclaiming = false
 
     init(store: URL) {
         self.store = store
@@ -51,6 +55,10 @@ actor SimulatedHelper: PrivilegedExecuting {
 
     func failNextInstall(with error: PrivilegedError) {
         nextInstallError = error
+    }
+
+    func setNextReclaim(_ outcome: Result<MemoryReclaimReport, PrivilegedError>) {
+        nextReclaim = outcome
     }
 
     func status() -> HelperStatus {
@@ -127,6 +135,19 @@ actor SimulatedHelper: PrivilegedExecuting {
             stdin: command.stdin ? try JSONEncoder().encode(input) : nil,
             timeout: command.timeout
         ))
+    }
+
+    func reclaimMemory() async throws -> MemoryReclaimReport {
+        guard installed else { throw PrivilegedError.helperUnavailable(status()) }
+        guard !isReclaiming else { throw PrivilegedError.busy }
+        isReclaiming = true
+        defer { isReclaiming = false }
+        // The real reclaim takes a few seconds.
+        try await Task.sleep(for: .seconds(1))
+        let outcome = nextReclaim ?? .success(MemoryReclaimReport(diskCacheFlushed: true, pressureWarningSent: true))
+        nextReclaim = nil
+        log("reclaimed memory: \(outcome)")
+        return try outcome.get()
     }
 
     private func snapshot(of modID: String) -> URL {

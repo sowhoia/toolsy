@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panelState = PanelState()
     let mods: ModsModel
     let loginItem: LoginItem
+    let processes: ProcessMonitor
+    let memoryOptimizer: MemoryOptimizer
 
     private let options: LaunchOptions
     private var statusItem: NSStatusItem?
@@ -32,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.options = options
         pendingStartPage = options.startPage
         let directories = options.directories
-        let privileged: any PrivilegedExecuting
+        let privileged: any PrivilegedExecuting & SystemMaintaining
         #if DEBUG
         // A run on scratch data never talks to the real helper, so it can never install it.
         if options.simulateHelper || options.dataRoot != nil {
@@ -45,7 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #else
         privileged = HelperClient()
         #endif
-        mods = ModsModel(store: ModStore(directories: directories, privileged: privileged), directories: directories, panel: panelState)
+        let store = ModStore(directories: directories, privileged: privileged)
+        mods = ModsModel(store: store, directories: directories, panel: panelState)
+        processes = ProcessMonitor(panel: panelState)
+        memoryOptimizer = MemoryOptimizer(helper: privileged, store: store, panel: panelState)
         loginItem = LoginItem(canChange: options.managesLoginItem)
         super.init()
         mods.presentPanel = { [weak self] in self?.openPanel(on: nil) }
@@ -173,7 +178,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makePanelController() -> PanelController {
-        let controller = PanelController(state: panelState, options: options, mods: mods, loginItem: loginItem)
+        let controller = PanelController(state: panelState, options: options, mods: mods, loginItem: loginItem,
+                                         processes: processes, memoryOptimizer: memoryOptimizer)
         panelController = controller
         return controller
     }

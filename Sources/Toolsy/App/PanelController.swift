@@ -16,7 +16,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// focus moving there must not close the panel.
     private var modalDepth = 0
 
-    init(state: PanelState, options: LaunchOptions, mods: ModsModel, loginItem: LoginItem) {
+    init(state: PanelState, options: LaunchOptions, mods: ModsModel, loginItem: LoginItem,
+         processes: ProcessMonitor, memoryOptimizer: MemoryOptimizer) {
         self.state = state
         keepOpen = options.keepOpen
         monitor = SystemMonitor(simulateNoBattery: options.simulateNoBattery)
@@ -43,6 +44,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             .environment(monitor)
             .environment(mods)
             .environment(loginItem)
+            .environment(processes)
+            .environment(memoryOptimizer)
         let hosting = PanelHostingView(rootView: root)
         // The window keeps the frame of its placement; the content never resizes it.
         hosting.sizingOptions = []

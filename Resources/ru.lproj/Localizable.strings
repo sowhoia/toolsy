@@ -228,3 +228,12 @@
 "The files of “%@” were changed" = "Файлы «%@» были изменены";
 "The files of “%@” were changed after it was installed, so its administrator commands are blocked. If you didn’t change them, remove the mod. To use it, install it again from its .toolsymod file." = "Файлы «%@» изменились после установки, поэтому его команды администратора заблокированы. Если вы их не меняли, удалите мод. Чтобы пользоваться им, установите его заново из файла .toolsymod.";
 "Mods that run commands as administrator will have to be installed again from their files, and macOS will ask for your password to install the helper again." = "Моды, которым нужны права администратора, придётся установить заново из их файлов, а macOS запросит пароль, чтобы снова установить помощник.";
+
+/* Memory optimisation */
+"Install Toolsy’s helper to free memory?" = "Установить помощник Toolsy, чтобы освободить память?";
+"Update Toolsy’s helper to free memory?" = "Обновить помощник Toolsy, чтобы освободить память?";
+"To free memory, Toolsy clears the disk cache and asks apps to give back memory they don’t need. This needs administrator rights. No app is closed, and nothing you’re working on is lost." = "Чтобы освободить память, Toolsy очищает дисковый кэш и просит приложения вернуть память, которая им не нужна. Для этого нужны права администратора. Ни одно приложение не закрывается, и ничего из того, над чем вы работаете, не теряется.";
+"Install…" = "Установить…";
+"Setting up Toolsy’s helper…" = "Настройка помощника Toolsy…";
+"Toolsy couldn’t read the memory usage." = "Toolsy не удалось прочитать данные об использовании памяти.";
+"Memory couldn’t be freed. Try again in a moment." = "Не удалось освободить память. Попробуйте ещё раз чуть позже.";

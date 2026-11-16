@@ -19,6 +19,7 @@ import ToolsyShared
 ///     set <mod> <key> <json> [command]                    run <mod> <command>
 ///     state <mod>     running <mod>  history <mod> <key>  access <mod>
 ///     helper cancel-next|needs-update (the next password prompt is dismissed; Toolsy "was updated")
+///     helper reclaim-fails|reclaim-partly (the next memory optimisation fails, or does one step only)
 ///     sh <shell command>
 ///     dropstatus on|off              droppanel on|off     capturedir <folder>
 ///     capture <name> [anchor]        print <text>         quit
@@ -261,7 +262,9 @@ private final class Runner {
             switch rest {
             case "cancel-next": await helper.failNextInstall(with: .cancelled)
             case "needs-update": await helper.simulateAppUpdate()
-            default: throw ScriptError("helper cancel-next|needs-update")
+            case "reclaim-fails": await helper.setNextReclaim(.failure(.rejected("simulated failure")))
+            case "reclaim-partly": await helper.setNextReclaim(.success(MemoryReclaimReport(diskCacheFlushed: true, pressureWarningSent: false)))
+            default: throw ScriptError("helper cancel-next|needs-update|reclaim-fails|reclaim-partly")
             }
         case "dropstatus":
             app.showDropTarget(rest == "on")
