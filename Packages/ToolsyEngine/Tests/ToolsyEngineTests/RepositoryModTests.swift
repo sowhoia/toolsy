@@ -53,7 +53,7 @@ import Testing
         #expect(manifest.localizations["ru"] != nil || Self.writtenInRussian.contains(name), "\(name) has no Russian translation")
 
         var texts: Set = [manifest.name]
-        manifest.summary.map { texts.insert($0) }
+        if let summary = manifest.summary { texts.insert(summary) }
         func collect(_ text: String) -> String {
             texts.insert(text)
             return text

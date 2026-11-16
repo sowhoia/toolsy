@@ -114,7 +114,9 @@ struct ValidationJSON: Decodable, Equatable {
     @Test func repositoryModsValidateAsBefore() async throws {
         let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        #expect(try await toolsyMod(["validate", "Mods/showcase"], in: repository) == (0, "OK showcase 1.0.0\n", ""))
+        // The showcase's version moves with the format; the line's shape and the silence are the contract.
+        let showcase = try ModManifest.load(from: Data(contentsOf: repository.appending(path: "Mods/showcase/mod.json")))
+        #expect(try await toolsyMod(["validate", "Mods/showcase"], in: repository) == (0, "OK showcase \(showcase.version)\n", ""))
         // A lone manifest has no files, so the program its command names is missing; that message is part of the contract.
         #expect(try await toolsyMod(["validate", "Mods/vpn-protector/mod.json"], in: repository)
             == (1, "", "commands.check: exec file \"bin/vpn-protector\" is not part of the mod\n"))
