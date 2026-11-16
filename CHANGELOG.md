@@ -78,7 +78,7 @@ The first public release: a menu bar app for macOS 26 with a dashboard of the Ma
 - The open, idle dashboard uses about 0.6 % of one core, and a mod's page with three gauges and two
   charts updated every second about 1 % (M4, release build, measured with `top` over 10 s): moving
   charts and gauges are animated by the system's render server, not by the app.
-- The app bundle is 4.8 MB.
+- The app bundle is 5.4 MB.
 
 ### Fixes
 
