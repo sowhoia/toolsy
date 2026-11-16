@@ -114,7 +114,7 @@ struct GalleryPage: View {
             StyledText(String(localized: "Caption text"), style: .caption)
             StyledText("~/Library/Application Support/Toolsy", style: .mono)
             StyledText(String(localized: "Tinted text"), tint: Tint.color("teal"))
-            ValueRow(String(localized: "Address"), value: "192.168.1.122", icon: "network", copyable: true)
+            ValueRow(String(localized: "Address"), value: "192.0.2.10", icon: "network", copyable: true)
             ValueRow(String(localized: "Status"), value: String(localized: "Connected"), icon: "checkmark.shield", tint: Tint.color("ok"))
             ValueRow(String(localized: "Long value"), value: "a-very-long-identifier-that-does-not-fit-0123456789", icon: "textformat")
             HStack(spacing: 14) {
@@ -147,7 +147,7 @@ struct GalleryPage: View {
 
     private var listSection: some View {
         SectionGroup(String(localized: "Lists")) {
-            ListRow("en0", subtitle: String(localized: "Wi-Fi"), value: "192.168.1.122", icon: "wifi", tint: .blue)
+            ListRow("en0", subtitle: String(localized: "Wi-Fi"), value: "192.0.2.10", icon: "wifi", tint: .blue)
             ListRow("utun4", subtitle: String(localized: "Tunnel"), value: String(localized: "up"), icon: "lock.shield", tint: .green) {}
             ListRow(String(localized: "Plain row"), value: "42")
             ListRow(String(localized: "Clickable row")) {}
