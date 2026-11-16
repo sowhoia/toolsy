@@ -8,17 +8,32 @@ enum Format {
 
     /// Memory sizes in binary units, as Activity Monitor shows them.
     static func memory(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .memory)
+        memoryFormatter.string(fromByteCount: Int64(clamping: bytes))
     }
 
     /// Disk sizes in decimal units, as Finder shows them.
     static func storage(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        fileFormatter.string(fromByteCount: bytes)
     }
 
     static func rate(_ bytesPerSecond: Double) -> String {
-        let amount = ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond.rounded()), countStyle: .file)
+        let amount = rateFormatter.string(fromByteCount: Int64(bytesPerSecond.rounded()))
         return String(localized: "\(amount)/s")
+    }
+
+    private static let memoryFormatter = byteCountFormatter(.memory)
+    private static let fileFormatter = byteCountFormatter(.file)
+    /// A rate is never counted in single bytes: below a kilobyte a second the digits only flicker.
+    private static let rateFormatter = byteCountFormatter(.file, units: [.useKB, .useMB, .useGB, .useTB])
+
+    private static func byteCountFormatter(_ style: ByteCountFormatter.CountStyle,
+                                           units: ByteCountFormatter.Units = .useAll) -> ByteCountFormatter {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = style
+        formatter.allowedUnits = units
+        // English would otherwise spell nothing out: "Zero KB".
+        formatter.allowsNonnumericFormatting = false
+        return formatter
     }
 
     /// Network speeds as providers state them: decimal bits per second.

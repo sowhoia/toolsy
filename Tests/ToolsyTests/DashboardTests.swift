@@ -376,4 +376,18 @@ struct GPUAndDiskReadingTests {
         #expect(Format.bitRate(150_000).contains(1.2.formatted(.number.precision(.fractionLength(1)))))
         #expect(Format.bitRate(0) != Format.rate(0))
     }
+
+    @Test func zeroIsWrittenAsADigit() {
+        // ByteCountFormatter spells zero out in English ("Zero KB") unless told not to.
+        let zero = 0.formatted()
+        for text in [Format.memory(0), Format.storage(0), Format.rate(0), Format.bitRate(0)] {
+            #expect(text.hasPrefix(zero), "\(text)")
+        }
+    }
+
+    @Test func ratesAreNeverCountedInSingleBytes() {
+        #expect(Format.rate(0) == Format.rate(300), "below half a kilobyte a second a rate reads as nothing")
+        #expect(Format.rate(700) == Format.rate(1_000))
+        #expect(Format.rate(1_000) != Format.rate(2_000))
+    }
 }
