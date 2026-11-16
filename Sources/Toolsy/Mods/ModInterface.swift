@@ -34,6 +34,18 @@ enum ModInterface {
         return (stepper.min ?? -.infinity)...(stepper.max ?? .infinity)
     }
 
+    /// A picker's options: the manifest's, or with `optionsFrom` those its state key holds right now.
+    /// A missing key or one that holds no array gives none.
+    static func options(of picker: ModControl.Picker, state: ModState) -> [ModControl.Picker.Option] {
+        picker.optionsFrom.map { ModControl.Picker.Option.options(from: state[$0]) } ?? picker.options
+    }
+
+    /// The `format` of a gauge or chart, which then formats its readouts instead of the number and `unit`.
+    static func valueFormat(_ chain: String?) -> ModValueFormat? {
+        // Checked at install and load like templates, so a chain in a loaded manifest always parses.
+        chain.flatMap { try? ModValueFormat($0) }
+    }
+
     // MARK: Page layout
 
     /// A tile of the page: a top-level `section`, or a run of other top-level controls shown as one
@@ -80,6 +92,64 @@ enum ModInterface {
         let arrays = chart.series.compactMap { state[$0.bind]?.arrayValue }
         guard arrays.count == chart.series.count else { return chart.points }
         return max(2, arrays.map(\.count).max() ?? 0)
+    }
+
+    // MARK: Recent runs
+
+    /// What started a run, in a few words.
+    static func text(for event: ModEvent) -> String {
+        switch event {
+        case .enable: String(localized: "Switched on")
+        case .disable: String(localized: "Switched off")
+        case .uninstall: String(localized: "Removal")
+        case .refresh: String(localized: "Status refresh")
+        case .service: String(localized: "Service")
+        case .command: String(localized: "A control")
+        case .launch: String(localized: "Toolsy started")
+        case .wake: String(localized: "Mac woke")
+        case .network: String(localized: "Network changed")
+        case .power: String(localized: "Power source changed")
+        }
+    }
+
+    /// How a run ended, in words.
+    static func text(for outcome: CommandRun.Outcome) -> String {
+        switch outcome {
+        case .succeeded: String(localized: "Succeeded")
+        case .failed(let code): String(localized: "Failed with code \(Int(code))")
+        case .timedOut: String(localized: "Timed out")
+        case .couldNotStart(let reason): String(localized: "Couldn’t start: \(reason)")
+        case .refused: String(localized: "Refused: no administrator access")
+        case .started: String(localized: "Service started")
+        case .restarted: String(localized: "Service restarted")
+        case .exited(let status): String(localized: "Service exited with code \(Int(status))")
+        }
+    }
+
+    /// Whether a run is something that went wrong, shown in red with its standard error. A service that
+    /// exits with status 0 switches its mod off, as the format intends.
+    static func isFailure(_ outcome: CommandRun.Outcome) -> Bool {
+        switch outcome {
+        case .succeeded, .started, .restarted: false
+        case .exited(let status): status != 0
+        case .failed, .timedOut, .couldNotStart, .refused: true
+        }
+    }
+
+    /// How long a run took, or nil for the start of a service, which takes no time worth showing.
+    static func durationText(of run: CommandRun) -> String? {
+        run.outcome == .started || run.outcome == .restarted ? nil : durationText(run.duration)
+    }
+
+    /// Milliseconds under a second, tenths of seconds under a minute, then the two largest units.
+    static func durationText(_ duration: Duration, locale: Locale = .autoupdatingCurrent) -> String {
+        if duration < .seconds(1) {
+            return duration.formatted(.units(allowed: [.milliseconds], width: .abbreviated).locale(locale))
+        }
+        if duration < .seconds(60) {
+            return duration.formatted(.units(allowed: [.seconds], width: .abbreviated, fractionalPart: .show(length: 1)).locale(locale))
+        }
+        return duration.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2).locale(locale))
     }
 
     // MARK: Commands

@@ -71,6 +71,7 @@ struct ModControlView: View {
         if mod.isVisible(control) {
             content
                 .disabled(control.disabled.map(mod.evaluate) ?? false)
+                .modifier(ControlHelp(text: control.help))
                 .debugAnchor("\(mod.id)/\(path.map(String.init).joined(separator: "."))")
         }
     }
@@ -79,13 +80,7 @@ struct ModControlView: View {
     private var content: some View {
         switch control.kind {
         case .section(let section):
-            if path.count == 1 {
-                SectionGroup(section.title.map(mod.render), footer: section.footer.map(mod.render)) {
-                    children(section.children)
-                }
-            } else {
-                NestedSection(mod: mod, section: section, path: path)
-            }
+            SectionControl(mod: mod, section: section, path: path)
         case .row(let row):
             EqualColumns(spacing: 8) {
                 ForEach(row.children.indices, id: \.self) { index in
@@ -104,8 +99,8 @@ struct ModControlView: View {
             ValueRow(mod.render(value.label), value: mod.render(value.value), icon: value.icon,
                      tint: Tint.resolve(value.tint.map(mod.render)), copyable: value.copyable)
         case .stat(let stat):
-            // Until the dedicated label-over-value view exists, a stat reads as a value line.
-            ValueRow(mod.render(stat.label), value: mod.render(stat.value), icon: stat.icon, tint: Tint.resolve(stat.tint.map(mod.render)))
+            StatView(mod.render(stat.label), value: mod.render(stat.value), icon: stat.icon,
+                     tint: Tint.resolve(stat.tint.map(mod.render)))
         case .text(let text):
             StyledText(mod.render(text.text), style: TextStyle(rawValue: text.style.rawValue) ?? .body,
                        tint: Tint.resolve(text.tint.map(mod.render)))
@@ -114,42 +109,97 @@ struct ModControlView: View {
         case .list(let list): ListControl(mod: mod, list: list)
         }
     }
+}
 
-    private func children(_ controls: [ModControl]) -> some View {
-        ForEach(controls.indices, id: \.self) { index in
-            ModControlView(mod: mod, control: controls[index], path: path + [index])
+/// A control's `help`: its tooltip, and the hint VoiceOver reads after its label.
+private struct ControlHelp: ViewModifier {
+    let text: String?
+
+    func body(content: Content) -> some View {
+        if let text, !text.isEmpty {
+            content
+                .help(text)
+                .accessibilityHint(text)
+        } else {
+            content
+        }
+    }
+}
+
+/// A section: a tile of its own at the top level, a captioned group of rows inside another section. A
+/// collapsible one folds by its title; folded, its controls are not rendered, so they cost nothing.
+private struct SectionControl: View {
+    let mod: Mod
+    let section: ModControl.Section
+    let path: [Int]
+    @Environment(ModsModel.self) private var model
+    @Environment(\.modControlPlace) private var place
+
+    var body: some View {
+        let title = section.title.map(mod.render)
+        let footer = section.footer.map(mod.render)
+        if path.count == 1 {
+            SectionGroup(title, footer: footer, isExpanded: isExpanded) { rows }
+        } else {
+            NestedSection(title: title, footer: footer, isExpanded: isExpanded) { rows }
+        }
+    }
+
+    private var isExpanded: Binding<Bool>? {
+        guard section.collapsible else { return nil }
+        let folds = model.sectionFolds
+        let key = SectionFolds.Key(modID: mod.id, place: place, path: path)
+        return Binding(get: { !folds.isFolded(key, section: section) }, set: { folds.setFolded(!$0, key) })
+    }
+
+    private var rows: some View {
+        ForEach(section.children.indices, id: \.self) { index in
+            ModControlView(mod: mod, control: section.children[index], path: path + [index])
         }
     }
 }
 
 /// A section inside a section: a caption title, its rows and its footer, on the enclosing tile.
-private struct NestedSection: View {
-    let mod: Mod
-    let section: ModControl.Section
-    let path: [Int]
+private struct NestedSection<Content: View>: View {
+    let title: String?
+    let footer: String?
+    let isExpanded: Binding<Bool>?
+    @ViewBuilder let content: Content
 
     var body: some View {
+        let title = title.flatMap { $0.isEmpty ? nil : $0 }
+        // As in `SectionGroup`: only a title can fold the section.
+        let expanded = title == nil || isExpanded?.wrappedValue != false
         VStack(alignment: .leading, spacing: 0) {
-            if let title = section.title.map(mod.render), !title.isEmpty {
-                Text(title)
-                    .font(.tileTitle)
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 2)
-                    .accessibilityAddTraits(.isHeader)
-            }
-            Group(subviews: ForEach(section.children.indices, id: \.self) { index in
-                ModControlView(mod: mod, control: section.children[index], path: path + [index])
-            }) { rows in
-                ForEach(rows) { row in
-                    if row.id != rows.first?.id { Hairline() }
-                    row.padding(.vertical, 7)
+            if let title {
+                Group {
+                    if let isExpanded {
+                        FoldableTitle(title, isExpanded: isExpanded)
+                    } else {
+                        Text(title)
+                            .font(.tileTitle)
+                            .foregroundStyle(.secondary)
+                            .accessibilityAddTraits(.isHeader)
+                    }
                 }
+                .padding(.bottom, expanded ? 2 : 0)
             }
-            if let footer = section.footer.map(mod.render), !footer.isEmpty {
-                Text(footer)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if expanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    Group(subviews: content) { rows in
+                        ForEach(rows) { row in
+                            if row.id != rows.first?.id { Hairline() }
+                            row.padding(.vertical, 7)
+                        }
+                    }
+                    if let footer, !footer.isEmpty {
+                        Text(footer)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .transition(.opacity)
             }
         }
     }
@@ -221,15 +271,19 @@ private struct PickerControl: View {
     @Environment(ModsModel.self) private var model
 
     var body: some View {
+        // With `optionsFrom` the list can change under the selection: a value no longer offered simply
+        // shows nothing selected until the user or a command picks one.
+        let options = ModInterface.options(of: picker, state: mod.state)
         PickerRow(
             picker.label.map(mod.render), icon: picker.icon,
             selection: Binding(
                 get: { mod.state[picker.bind] ?? .null },
                 set: { model.setValue($0, for: picker.bind, command: picker.command, of: mod) }
             ),
-            options: picker.options.map { PickerOption(value: $0.value, label: $0.label, icon: $0.icon) },
+            options: options.map { PickerOption(value: $0.value, label: $0.label, icon: $0.icon) },
             presentation: picker.style.flatMap { PickerPresentation(rawValue: $0.rawValue) } ?? .automatic
         )
+        .disabled(options.isEmpty)
     }
 }
 
@@ -253,13 +307,26 @@ private struct ButtonControl: View {
     let button: ModControl.Button
     @Environment(ModsModel.self) private var model
     @Environment(PanelState.self) private var panel
+    @State private var copied = CopyFeedback()
 
     var body: some View {
         let label = mod.render(button.label)
-        GlassButton(label, icon: button.icon, kind: ButtonKind(rawValue: button.style.rawValue) ?? .normal,
-                    tint: mod.tint, isBusy: button.command.map(mod.runningCommands.contains) ?? false,
-                    fillsWidth: true) {
-            press(label: label)
+        let kind = ButtonKind(rawValue: button.style.rawValue) ?? .normal
+        if let copy = button.copy {
+            let text = mod.render(copy)
+            // Confirms in place, like a copyable value row.
+            GlassButton(copied.isShowing ? String(localized: "Copied") : label, icon: copied.isShowing ? "checkmark" : button.icon,
+                        kind: kind, tint: mod.tint, fillsWidth: true) {
+                copied.copy(text)
+            }
+            // Nothing to copy yet: copying would only empty the pasteboard.
+            .disabled(text.isEmpty)
+            .animation(Motion.snappy, value: copied.isShowing)
+        } else {
+            GlassButton(label, icon: button.icon, kind: kind, tint: mod.tint,
+                        isBusy: button.command.map(mod.runningCommands.contains) ?? false, fillsWidth: true) {
+                press(label: label)
+            }
         }
     }
 
@@ -289,7 +356,8 @@ private struct GaugeControl: View {
 
     var body: some View {
         let value = mod.state[gauge.bind]?.numberValue
-        let text = value.map { formatNumber($0, unit: gauge.unit) } ?? "—"
+        let format = ModInterface.valueFormat(gauge.format)
+        let text = value.map { format?.string(for: $0) ?? formatNumber($0, unit: gauge.unit) } ?? "—"
         let tint = Tint.resolve(gauge.tint.map(mod.render)) ?? mod.tint
         let label = mod.render(gauge.label)
         switch gauge.style {
@@ -318,7 +386,8 @@ private struct ChartControl: View {
             },
             style: ChartStyle(rawValue: chart.style.rawValue) ?? .line,
             min: chart.min, max: chart.max, unit: chart.unit,
-            capacity: ModInterface.chartCapacity(chart, state: mod.state)
+            capacity: ModInterface.chartCapacity(chart, state: mod.state),
+            format: ModInterface.valueFormat(chart.format).map { format in format.string(for:) }
         )
     }
 }

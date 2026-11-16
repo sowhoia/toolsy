@@ -320,7 +320,8 @@ struct WidgetAvailabilityTests {
          ]}
         """.utf8).write(to: folder.appending(path: "mod.json"))
         let model = ModsModel(store: ModStore(directories: directories, privileged: SimulatedHelper(store: root.appending(path: "helper"))),
-                              directories: directories, panel: PanelState())
+                              directories: directories, panel: PanelState(),
+                              dashboard: DashboardStore(file: root.appending(path: "Dashboard.json"), hasBattery: false))
         model.start()
         await model.waitUntilStarted()
         #expect(model.store.loadProblems.isEmpty)

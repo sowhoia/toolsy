@@ -58,7 +58,8 @@ private final class Fixture {
             """#.utf8).write(to: folder.appending(path: "mod.json"))
         }
         mods = ModsModel(store: ModStore(directories: directories, privileged: SimulatedHelper(store: root.appending(path: "helper"))),
-                         directories: directories, panel: PanelState())
+                         directories: directories, panel: PanelState(),
+                         dashboard: DashboardStore(file: directories.root.appending(path: "Dashboard.json"), hasBattery: false))
         notifier = ModNotifier(center: center, mods: mods)
         notifier.openPanel = { [unowned self] page in opened.append(page) }
     }

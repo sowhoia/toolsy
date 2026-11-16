@@ -97,6 +97,75 @@ struct ModInterfaceTests {
         #expect(ModInterface.passwordNotice(for: .needsUpdate) != ModInterface.passwordNotice(for: .notInstalled))
     }
 
+    @Test func pickerOptionsComeFromTheManifestOrFromState() throws {
+        let pickers = try controls("""
+        [{"type": "picker", "bind": "p", "options": ["a", "b"]},
+         {"type": "picker", "bind": "q", "optionsFrom": "choices"}]
+        """).compactMap { if case .picker(let p) = $0.kind { p } else { nil } }
+        let fixed = pickers[0], fromState = pickers[1]
+        #expect(ModInterface.options(of: fixed, state: ["choices": ["x"]]).map(\.value) == ["a", "b"])
+        // Until the key holds an array the picker has no options.
+        #expect(ModInterface.options(of: fromState, state: [:]).isEmpty)
+        #expect(ModInterface.options(of: fromState, state: ["choices": "x"]).isEmpty)
+        // Elements of another shape are skipped.
+        let mixed = ModInterface.options(of: fromState, state: ["choices": [1, ["value": "v", "label": "V"], ["label": "no value"], "w"]])
+        #expect(mixed.map(\.value) == ["v", "w"])
+        #expect(mixed.map(\.label) == ["V", "w"])
+        // The list follows the state as it changes, up to 32 options.
+        let many = JSONValue.array((0..<40).map { .string("o\($0)") })
+        #expect(ModInterface.options(of: fromState, state: ["choices": many]).count == 32)
+    }
+
+    @Test func runsAreDescribedInWords() {
+        #expect(ModInterface.text(for: .failed(exitCode: 3)) == "Failed with code 3")
+        #expect(ModInterface.text(for: .exited(status: 1)) == "Service exited with code 1")
+        #expect(ModInterface.text(for: .couldNotStart("no such file")) == "Couldn’t start: no such file")
+        #expect(ModInterface.text(for: .succeeded) == "Succeeded")
+        let failures: [CommandRun.Outcome] = [.failed(exitCode: 1), .timedOut, .couldNotStart(""), .refused, .exited(status: 1)]
+        #expect(failures.allSatisfy(ModInterface.isFailure))
+        // A service ending with status 0 switches its mod off on purpose.
+        #expect(![CommandRun.Outcome.succeeded, .started, .restarted, .exited(status: 0)].contains(where: ModInterface.isFailure))
+        let events: [ModEvent] = [.enable, .disable, .uninstall, .refresh, .service, .command, .launch, .wake, .network, .power]
+        #expect(Set(events.map(ModInterface.text(for:))).count == events.count)
+    }
+
+    @Test func durationsReadAtTheirScale() {
+        let english = Locale(identifier: "en_US")
+        #expect(ModInterface.durationText(.milliseconds(3), locale: english) == "3 ms")
+        #expect(ModInterface.durationText(.milliseconds(450), locale: english) == "450 ms")
+        #expect(ModInterface.durationText(.milliseconds(1_234), locale: english) == "1.2 sec")
+        #expect(ModInterface.durationText(.seconds(75), locale: english) == "1 min, 15 sec")
+        #expect(ModInterface.durationText(.seconds(3_725), locale: english) == "1 hr, 2 min")
+    }
+
+    @Test func foldedSectionsFollowTheManifestUntilTheUserChooses() throws {
+        let sections = try controls("""
+        [{"type": "section", "title": "A", "collapsible": true, "collapsed": true, "children": []},
+         {"type": "section", "title": "B", "collapsible": true, "children": []},
+         {"type": "section", "title": "C", "children": []}]
+        """).compactMap { if case .section(let s) = $0.kind { s } else { nil } }
+        let folds = SectionFolds()
+        func key(_ index: Int, mod: String = "m", place: ModControlPlace = .page) -> SectionFolds.Key {
+            SectionFolds.Key(modID: mod, place: place, path: [index])
+        }
+        #expect(folds.isFolded(key(0), section: sections[0]))
+        #expect(!folds.isFolded(key(1), section: sections[1]))
+        #expect(!folds.isFolded(key(2), section: sections[2]))
+
+        folds.setFolded(false, key(0))
+        folds.setFolded(true, key(1))
+        #expect(!folds.isFolded(key(0), section: sections[0]))
+        #expect(folds.isFolded(key(1), section: sections[1]))
+        // The same path in a widget's detail, or in another mod, is another section.
+        #expect(!folds.isFolded(key(1, place: .widgetDetail("w")), section: sections[1]))
+        #expect(!folds.isFolded(key(1, mod: "other"), section: sections[1]))
+
+        // A removed mod's sections start over as the manifest says.
+        folds.forget(modID: "m")
+        #expect(folds.isFolded(key(0), section: sections[0]))
+        #expect(!folds.isFolded(key(1), section: sections[1]))
+    }
+
     @Test func eachMissingAccessHasOneRemedy() {
         #expect(ModInterface.remedy(for: .granted) == nil)
         #expect(ModInterface.remedy(for: .notNeeded) == nil)
@@ -156,6 +225,7 @@ private final class Fixture {
     let root: URL
     let panel = PanelState()
     let helper: FakeHelper
+    let dashboard: DashboardStore
     let model: ModsModel
     var directories: ToolsyDirectories { model.directories }
 
@@ -170,7 +240,9 @@ private final class Fixture {
             helper = FakeHelper()
         }
         let directories = ToolsyDirectories(root: root.appending(path: "data", directoryHint: .isDirectory))
-        model = ModsModel(store: ModStore(directories: directories, privileged: helper), directories: directories, panel: panel)
+        dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"), hasBattery: false)
+        model = ModsModel(store: ModStore(directories: directories, privileged: helper), directories: directories, panel: panel,
+                          dashboard: dashboard)
         panel.setVisible(true)
         model.start()
     }
@@ -190,6 +262,16 @@ private final class Fixture {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data(manifest.utf8).write(to: folder.appending(path: "mod.json"))
         return folder
+    }
+
+    /// Installs a folder made with `modFolder`, confirming it, and returns the installed mod.
+    @discardableResult
+    func installConfirmed(_ folder: URL, id: String) async throws -> Mod {
+        model.install([folder])
+        _ = try await waitForDialog()
+        panel.dismissDialog(confirmed: true)
+        try await waitUntil("the install to finish") { !model.isInstalling && model.mod(id: id) != nil }
+        return try #require(model.mod(id: id))
     }
 
     func waitForDialog() async throws -> ConfirmationRequest {
@@ -379,6 +461,125 @@ struct AdministratorAccessTests {
         try await fixture.waitUntil("the mod to be on") { mod.isEnabled }
         #expect(mod.access == .granted)
         #expect(await fixture.helper.calls == ["install", "run on"])
+        await fixture.cleanUp()
+    }
+}
+
+@MainActor
+struct ModWidgetsOnDashboardTests {
+    private static func widgetMod(version: String, widgets: [String]) -> String {
+        let list = widgets.map { #"{"id": "\#($0)", "value": "{{n|default:0}}"}"# }.joined(separator: ", ")
+        return #"{"schema": 1, "id": "w", "name": "Widgets", "version": "\#(version)", "widgets": [\#(list)]}"#
+    }
+
+    @Test func aFirstInstallPutsTheWidgetsOnTheDashboardAndAnUpdateKeepsTheUsersChoice() async throws {
+        let fixture = try Fixture()
+        let a = WidgetID.mod("w", widget: "a"), b = WidgetID.mod("w", widget: "b"), c = WidgetID.mod("w", widget: "c")
+        let standard = fixture.dashboard.layout.widgets.map(\.id)
+
+        try await fixture.installConfirmed(try fixture.modFolder("v1", Self.widgetMod(version: "1", widgets: ["a", "b"])), id: "w")
+        #expect(fixture.dashboard.layout.widgets.map(\.id) == standard + [a, b])
+
+        // The user takes one off; an update neither brings it back nor adds the widgets it introduces.
+        fixture.dashboard.remove(a)
+        try await fixture.installConfirmed(try fixture.modFolder("v2", Self.widgetMod(version: "2", widgets: ["a", "b", "c"])), id: "w")
+        try await fixture.waitUntil("version 2") { fixture.model.mod(id: "w")?.manifest.version == "2" }
+        #expect(fixture.dashboard.layout.widgets.map(\.id) == standard + [b])
+        #expect(!fixture.dashboard.contains(c))
+
+        // Removing the mod takes its widgets off.
+        fixture.model.remove(try #require(fixture.model.mod(id: "w")))
+        _ = try await fixture.waitForDialog()
+        fixture.panel.dismissDialog(confirmed: true)
+        try await fixture.waitUntil("the removal") { fixture.model.mod(id: "w") == nil }
+        #expect(fixture.dashboard.layout.widgets.map(\.id) == standard)
+
+        // Installed again, it is new to this Mac again.
+        try await fixture.installConfirmed(try fixture.modFolder("v1", Self.widgetMod(version: "1", widgets: ["a", "b"])), id: "w")
+        #expect(fixture.dashboard.layout.widgets.map(\.id) == standard + [a, b])
+        await fixture.cleanUp()
+    }
+
+    @Test func removingABrokenModTakesItsWidgetsOff() async throws {
+        let fixture = try Fixture()
+        try await fixture.installConfirmed(try fixture.modFolder("v1", Self.widgetMod(version: "1", widgets: ["a"])), id: "w")
+        await fixture.quit()
+        try Data("{".utf8).write(to: fixture.directories.mods.appending(path: "w/mod.json"))
+
+        let relaunched = try Fixture(relaunching: fixture)
+        await relaunched.model.waitUntilStarted()
+        let problem = try #require(relaunched.model.store.loadProblems.first { $0.folder == "w" })
+        #expect(relaunched.dashboard.contains(.mod("w", widget: "a")))
+        relaunched.model.removeBrokenMod(problem)
+        _ = try await relaunched.waitForDialog()
+        relaunched.panel.dismissDialog(confirmed: true)
+        try await relaunched.waitUntil("the removal") { relaunched.model.store.loadProblems.isEmpty }
+        #expect(!relaunched.dashboard.contains(.mod("w", widget: "a")))
+        await relaunched.cleanUp()
+    }
+}
+
+@MainActor
+struct DeveloperModeTests {
+    @Test func theChoiceIsRememberedInTheDataRoot() async throws {
+        let first = try Fixture()
+        await first.model.waitUntilStarted()
+        #expect(!first.model.developerMode)
+        first.model.developerMode = true
+        #expect(first.model.store.developerMode)
+        // Quitting stops the store's watching; that is not the user switching it off.
+        await first.quit()
+
+        let second = try Fixture(relaunching: first)
+        await second.model.waitUntilStarted()
+        #expect(second.model.developerMode)
+        second.model.developerMode = false
+        await second.quit()
+
+        let third = try Fixture(relaunching: second)
+        await third.model.waitUntilStarted()
+        #expect(!third.model.developerMode)
+        await third.cleanUp()
+    }
+
+    @Test func reloadingReadsTheFolderAgainAndABrokenOneComesBackWhenFixed() async throws {
+        let fixture = try Fixture()
+        let mod = try await fixture.installConfirmed(try fixture.modFolder("tool", plainManifest("tool")), id: "tool")
+        let manifestFile = fixture.directories.mods.appending(path: "tool/mod.json")
+
+        try Data(plainManifest("tool", version: "2.0").utf8).write(to: manifestFile)
+        fixture.model.reload(mod)
+        try await fixture.waitUntil("version 2") { fixture.model.mod(id: "tool")?.manifest.version == "2.0" }
+        #expect(!fixture.model.reloading.contains("tool"))
+
+        // A mistake: the failure is shown, and the folder is listed with the load problems.
+        try Data(#"{"schema": 1, "id": "tool"}"#.utf8).write(to: manifestFile)
+        fixture.model.reload(try #require(fixture.model.mod(id: "tool")))
+        let failure = try await fixture.waitForDialog()
+        #expect(failure.title == String(localized: "Couldn’t reload “Mod tool”"))
+        #expect(failure.cancelTitle == nil)
+        fixture.panel.dismissDialog(confirmed: true)
+        #expect(fixture.model.mod(id: "tool") == nil)
+        #expect(fixture.model.store.loadProblems.map(\.folder) == ["tool"])
+
+        // Fixed, it loads again (here through developer mode, as an author editing it would see).
+        fixture.model.developerMode = true
+        try Data(plainManifest("tool", version: "3.0").utf8).write(to: manifestFile)
+        try await fixture.waitUntil("version 3") { fixture.model.mod(id: "tool")?.manifest.version == "3.0" }
+        #expect(fixture.model.store.loadProblems.isEmpty)
+        fixture.model.developerMode = false
+        await fixture.cleanUp()
+    }
+
+    @Test func aFolderThatIsGoneCannotBeReloaded() async throws {
+        let fixture = try Fixture()
+        let mod = try await fixture.installConfirmed(try fixture.modFolder("gone", plainManifest("gone")), id: "gone")
+        try FileManager.default.removeItem(at: fixture.directories.mods.appending(path: "gone"))
+        fixture.model.reload(mod)
+        let failure = try await fixture.waitForDialog()
+        #expect(failure.message == "The mods folder has no folder \"gone\".")
+        fixture.panel.dismissDialog(confirmed: true)
+        #expect(fixture.model.mod(id: "gone") == nil)
         await fixture.cleanUp()
     }
 }

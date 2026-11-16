@@ -52,12 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         privileged = HelperClient()
         #endif
         let store = ModStore(directories: directories, privileged: privileged)
-        mods = ModsModel(store: store, directories: directories, panel: panelState)
+        dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"),
+                                   hasBattery: !options.simulateNoBattery && BatteryReader.isPresent)
+        mods = ModsModel(store: store, directories: directories, panel: panelState, dashboard: dashboard)
         processes = ProcessMonitor(panel: panelState)
         memoryOptimizer = MemoryOptimizer(helper: privileged, store: store, panel: panelState)
         loginItem = LoginItem(canChange: options.managesLoginItem)
-        dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"),
-                                   hasBattery: !options.simulateNoBattery && BatteryReader.isPresent)
         systemEvents = SystemEventMonitor(observing: { store.observedEvents }, post: { store.post($0) })
         notifier = ModNotifier(center: ModNotifier.center(for: options), mods: mods)
         super.init()

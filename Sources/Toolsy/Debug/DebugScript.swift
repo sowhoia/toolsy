@@ -28,10 +28,11 @@ import ToolsyShared
 ///               size <widget> small|medium|wide|style <widget> line|area|bar|unit <widget> bytes|bits
 ///               deviceline on|off
 ///     event launch|wake|network|power                     notifications
+///     developer on|off               (developer mode, as the switch in Settings sets it)
 ///
 /// Pages are root, settings, gallery and mod:<id>. Anchors are the names given with `debugAnchor`
 /// (`tile:<id>`, `widget:<widget>`, `widget-remove:<widget>`, `gallery:<widget>`, `edit-widgets`, `edit-done`,
-/// `option-size`, …; a widget is `cpu`, `gpu`, … or `mod:<mod>/<widget>`); a mod's control is `<id>/<index path>` or found by a field,
+/// `option-size`, `fold:<section title>`, `widget-switch:<widget>`, `mod-reload`, `recent-runs`, …; a widget is `cpu`, `gpu`, … or `mod:<mod>/<widget>`); a mod's control is `<id>/<index path>` or found by a field,
 /// `<id>:bind=<key>`, `<id>:command=<name>`, `<id>:label=<text>`. `clickat` takes fractions of the
 /// anchor's width and height from its top left; `drag` positions are fractions of its width along
 /// its bottom edge (where a slider's track is). `press` holds the mouse button down at a point given
@@ -311,6 +312,10 @@ private final class Runner {
             for request in log.shown {
                 say("NOTIFIED \(request.content.threadIdentifier) “\(request.content.title)” “\(request.content.body)”")
             }
+        case "developer":
+            guard rest == "on" || rest == "off" else { throw ScriptError("developer on|off") }
+            mods.developerMode = rest == "on"
+            try await Task.sleep(for: .milliseconds(300))
         case "print":
             say(rest)
         case "quit":

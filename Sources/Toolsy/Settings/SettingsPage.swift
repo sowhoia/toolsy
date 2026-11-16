@@ -3,7 +3,8 @@ import os
 import SwiftUI
 import ToolsyShared
 
-/// Settings: starting at login, the administrator helper, the mods folder, the version and quitting.
+/// Settings: starting at login, the administrator helper, developer mode, the mods folder, the version
+/// and quitting.
 struct SettingsPage: View {
     @Environment(PanelState.self) private var panel
     @Environment(ModsModel.self) private var model
@@ -13,6 +14,13 @@ struct SettingsPage: View {
         PageScaffold(String(localized: "Settings")) {
             loginSection
             helperSection
+            SectionGroup(footer: String(localized: "Mods reload when their files change, and each mod’s page shows its recent runs.")) {
+                SwitchRow(String(localized: "Developer Mode"), icon: "hammer", isOn: Binding(
+                    get: { model.developerMode },
+                    set: { model.developerMode = $0 }
+                ))
+                .debugAnchor("developer-mode")
+            }
             SectionGroup {
                 ListRow(String(localized: "Show Mods Folder in Finder"), icon: "folder.fill", tint: .blue) { showModsFolder() }
                 ValueRow(String(localized: "Version"), value: Self.version, icon: "info.circle", copyable: true)

@@ -22,20 +22,26 @@ final class ModsModel {
     private(set) var isChangingHelper = false
     /// A file of the install queue is being unpacked, checked or installed.
     private(set) var isInstalling = false
+    /// Mods being read from their folders again (developer mode).
+    private(set) var reloading: Set<String> = []
+    /// Which collapsible sections the user folded, for as long as the app runs.
+    let sectionFolds = SectionFolds()
 
     /// Shows the panel; set by the app delegate. Installing from outside the panel (the menu bar
     /// icon, Finder) needs it on screen for its confirmation.
     @ObservationIgnored var presentPanel: () -> Void = {}
     @ObservationIgnored private let panel: PanelState
+    @ObservationIgnored private let dashboard: DashboardStore
     @ObservationIgnored private var pendingInstalls: [URL] = []
     @ObservationIgnored private var installLoop: Task<Void, Never>?
     @ObservationIgnored private var isStarted = false
     @ObservationIgnored private var startTask: Task<Void, Never>?
 
-    init(store: ModStore, directories: ToolsyDirectories, panel: PanelState) {
+    init(store: ModStore, directories: ToolsyDirectories, panel: PanelState, dashboard: DashboardStore) {
         self.store = store
         self.directories = directories
         self.panel = panel
+        self.dashboard = dashboard
         panel.addVisibilityHandler { [weak self] visible in
             self?.store.isPanelVisible = visible
             // Closing the panel answers the open confirmation with Cancel; the rest of the queue goes too.
@@ -50,6 +56,8 @@ final class ModsModel {
         guard startTask == nil else { return }
         startTask = Task {
             await store.start()
+            // Watching begins once the mods are loaded, so loading them is not taken for an edit.
+            store.developerMode = FileManager.default.fileExists(atPath: developerModeFile.path(percentEncoded: false))
             isStarted = true
             startInstallLoop()
         }
@@ -85,7 +93,7 @@ final class ModsModel {
     }
 
     func mod(id: String) -> Mod? {
-        store.mods.first { $0.id == id }
+        store.mod(id: id)
     }
 
     // MARK: Installing
@@ -151,6 +159,13 @@ final class ModsModel {
         do {
             let mod = try await panel.holdingOpen { try await store.commitInstall(prepared) }
             if privileged { panel.dismissProgress() }
+            // A mod's widgets go on the dashboard when it is installed for the first time, so they are seen
+            // without a trip to the editor. An update leaves the dashboard as the user arranged it.
+            if !prepared.replacesInstalledMod {
+                for widget in mod.manifest.widgets {
+                    dashboard.add(.mod(mod.id, widget: widget.id))
+                }
+            }
             if panel.isVisible { panel.push(.mod(mod.id)) }
         } catch {
             if privileged { panel.dismissProgress() }
@@ -294,6 +309,8 @@ final class ModsModel {
             // Hooks the mod runs on the way out may be privileged and need the helper's prompt.
             try await panel.holdingOpen { try await store.uninstall(mod, force: force) }
             removing.remove(mod.id)
+            dashboard.removeWidgets(ofMod: mod.id)
+            sectionFolds.forget(modID: mod.id)
             if panel.currentPage == .mod(mod.id) { panel.pop() }
         } catch {
             removing.remove(mod.id)
@@ -324,8 +341,54 @@ final class ModsModel {
             guard confirmed else { return }
             do {
                 try await store.removeBrokenMod(problem)
+                // The folder is named by the mod's id; its widgets may be on the dashboard from before it broke.
+                dashboard.removeWidgets(ofMod: problem.folder)
+                sectionFolds.forget(modID: problem.folder)
             } catch {
                 await notify(String(localized: "Couldn’t remove “\(problem.folder)”"), error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: Developer mode
+
+    /// For mod authors: mods reload when their files change, and each mod's page shows its recent runs.
+    /// Saved as a marker file in the data root rather than in user defaults, so a debug run on scratch
+    /// data neither sees nor changes the user's choice.
+    var developerMode: Bool {
+        get { store.developerMode }
+        set {
+            store.developerMode = newValue
+            let path = developerModeFile.path(percentEncoded: false)
+            do {
+                if newValue {
+                    try FileManager.default.createDirectory(at: directories.root, withIntermediateDirectories: true)
+                    try Data().write(to: developerModeFile)
+                } else if FileManager.default.fileExists(atPath: path) {
+                    try FileManager.default.removeItem(at: developerModeFile)
+                }
+            } catch {
+                // On for this run all the same; only the next launch would not know.
+                logger.error("developer mode could not be saved to \(path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    private var developerModeFile: URL {
+        directories.root.appending(path: "DeveloperMode")
+    }
+
+    /// Reads a mod from its folder again. A folder that no longer loads is listed with the load problems.
+    func reload(_ mod: Mod) {
+        guard reloading.insert(mod.id).inserted else { return }
+        let name = mod.manifest.name
+        Task {
+            do {
+                try await store.reload(mod.id)
+                reloading.remove(mod.id)
+            } catch {
+                reloading.remove(mod.id)
+                await notify(String(localized: "Couldn’t reload “\(name)”"), ModInterface.message(for: error, modName: name))
             }
         }
     }

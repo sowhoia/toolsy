@@ -72,5 +72,6 @@ struct ModWidgetDetail: View {
                     .debugAnchor("widget-open:\(mod.id)")
             }
         }
+        .environment(\.modControlPlace, .widgetDetail(widget.id))
     }
 }

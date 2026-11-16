@@ -15,6 +15,15 @@ struct ModPage: View {
     var body: some View {
         if let mod = model.mod(id: id) {
             ModPageContent(mod: mod)
+        } else if let problem = model.store.loadProblems.first(where: { $0.folder == id }) {
+            // Its folder stopped loading, as when a mod being edited has a mistake; fixed, the mod comes back here.
+            PageScaffold(id) {
+                Tile {
+                    EmptyState(String(localized: "This mod couldn’t be loaded"), symbol: "exclamationmark.triangle",
+                               message: problem.message)
+                        .textSelection(.enabled)
+                }
+            }
         } else {
             // Removed (or replaced by a version that failed to load) while its page was open.
             PageScaffold(String(localized: "Mod")) {
@@ -28,6 +37,7 @@ struct ModPage: View {
 
 private struct ModPageContent: View {
     let mod: Mod
+    @Environment(ModsModel.self) private var model
 
     var body: some View {
         let manifest = mod.manifest
@@ -42,7 +52,14 @@ private struct ModPageContent: View {
             } else {
                 ModControls(mod: mod)
             }
+            if !manifest.widgets.isEmpty {
+                ModWidgetsSection(mod: mod)
+            }
             AboutMod(mod: mod)
+            if model.developerMode {
+                DeveloperSection(mod: mod)
+            }
+            RemoveModButton(mod: mod)
         } accessory: {
             if mod.hasSwitch {
                 ModSwitch(mod: mod)
@@ -110,10 +127,42 @@ private struct PlainModTile: View {
     }
 }
 
-/// Summary, website and removal.
+/// The mod's dashboard widgets, each with its current value and a switch that puts it on the dashboard
+/// or takes it off.
+private struct ModWidgetsSection: View {
+    let mod: Mod
+    @Environment(DashboardStore.self) private var dashboard
+
+    var body: some View {
+        SectionGroup(String(localized: "Widgets")) {
+            ForEach(mod.manifest.widgets, id: \.id) { widget in
+                let info = WidgetInfo(id: .mod(mod.id, widget: widget.id), content: .mod(mod, widget))
+                HStack(spacing: 10) {
+                    IconBadge(info.symbol, tint: info.tint, size: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(info.name).font(.rowLabel).lineLimit(1)
+                        Text(mod.render(widget.value))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .contentTransition(.identity)
+                    }
+                    Spacer(minLength: 8)
+                    GlassSwitch(isOn: Binding(get: { dashboard.contains(info.id) },
+                                              set: { $0 ? dashboard.add(info.id) : dashboard.remove(info.id) }),
+                                label: String(localized: "Show “\(info.name)” on the dashboard"))
+                        .debugAnchor("widget-switch:\(info.id.rawValue)")
+                }
+                .frame(minHeight: Metrics.rowMinHeight)
+            }
+        }
+        .debugAnchor("mod-widgets")
+    }
+}
+
+/// Summary and website.
 private struct AboutMod: View {
     let mod: Mod
-    @Environment(ModsModel.self) private var model
 
     var body: some View {
         let manifest = mod.manifest
@@ -132,6 +181,14 @@ private struct AboutMod: View {
                 }
             }
         }
+    }
+}
+
+private struct RemoveModButton: View {
+    let mod: Mod
+    @Environment(ModsModel.self) private var model
+
+    var body: some View {
         GlassButton(String(localized: "Remove Mod…"), icon: "trash", kind: .destructive,
                     isBusy: model.removing.contains(mod.id), fillsWidth: true) {
             model.remove(mod)
