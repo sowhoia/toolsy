@@ -34,11 +34,22 @@ sign() {
     codesign --force --options runtime --timestamp=none --sign "$identity" "$@"
 }
 
+# A release binary carries its whole symbol table, more than half of its size, and nothing reads it
+# at run time. Stripping breaks the linker's ad hoc signature, which is removed first so that strip
+# does not warn about it; the real signature comes afterwards.
+slim() {
+    codesign --remove-signature "$1"
+    strip -rSTx "$1"
+}
+
 binary=$(build_product "$root" Toolsy "$configuration")
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 cp "$binary" "$app/Contents/MacOS/Toolsy"
+if [ "$configuration" = release ]; then
+    slim "$app/Contents/MacOS/Toolsy"
+fi
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 cp -R "$root"/Resources/*.lproj "$app/Contents/Resources/"
 if [ -f "$root/Resources/AppIcon.icns" ]; then
@@ -48,10 +59,12 @@ fi
 if [ "$app_only" = false ]; then
     helper=$(build_product "$root/Packages/ToolsyPrivileged" ToolsyHelper release)
     cp "$helper" "$app/Contents/Helpers/ToolsyHelper"
+    slim "$app/Contents/Helpers/ToolsyHelper"
     sign --identifier app.toolsy.helper "$app/Contents/Helpers/ToolsyHelper"
 
     mod_tool=$(build_product "$root/Packages/ToolsyEngine" toolsy-mod release)
     cp "$mod_tool" "$app/Contents/Helpers/toolsy-mod"
+    slim "$app/Contents/Helpers/toolsy-mod"
     sign --identifier app.toolsy.mod-tool "$app/Contents/Helpers/toolsy-mod"
 fi
 
