@@ -46,6 +46,8 @@ func terminateProcessGroup(ledBy leader: Int32, grace: Duration) async {
 /// Delays the engine waits on. Tests compress them with `scale`; the app uses the specified values.
 struct EngineTiming: Sendable {
     var scale: Double = 1
+    /// The clock rate limits are measured with; tests substitute one they advance by hand.
+    var now: @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
 
     func duration(_ seconds: Double) -> Duration {
         .seconds(seconds * scale)
@@ -59,4 +61,13 @@ struct EngineTiming: Sendable {
     var settingsDebounce: Duration { duration(0.3) }
     /// How long a change to a mod's approval waits for a privileged command of the mod to finish.
     var busyPatience: Duration { duration(5) }
+    /// A mod notifies at most once per this interval; later notifications within it are dropped.
+    var notificationInterval: Duration { duration(5) }
+    /// The same notification again within this window is dropped.
+    var repeatedNotificationWindow: Duration { duration(60) }
+    /// Developer mode: changes in the mods folder are acted on once they have settled this long.
+    var folderSettle: Duration { duration(0.3) }
+    /// Developer mode: a service restarts for changed files at most once per this interval, so a mod
+    /// that writes into its own folder cannot restart itself as fast as it writes.
+    var fileRestartInterval: Duration { duration(1) }
 }

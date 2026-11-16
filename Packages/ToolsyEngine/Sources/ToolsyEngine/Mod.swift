@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 import ToolsyShared
@@ -29,6 +30,9 @@ public final class Mod: Identifiable {
     /// From a call to `setEnabled` until its hooks have finished. The switch should be inert meanwhile.
     public private(set) var isSwitching = false
     public private(set) var access: AdministratorAccess
+    /// The newest runs of the mod's commands and the starts and exits of its service, oldest first; at most
+    /// 20. A property of its own, so recording a run does not re-render what reads `state`.
+    public private(set) var recentRuns: [CommandRun] = []
 
     public nonisolated var id: String { manifest.id }
 
@@ -64,12 +68,14 @@ public final class Mod: Identifiable {
         /// The automatic refresh.
         case refresh
         case service
+        /// A command started by a system event (`lifecycle.events`).
+        case event
     }
 
     private struct Job {
         var work: Work
-        /// Automatic refreshes skip silently when access is missing instead of raising an error.
-        var automatic = false
+        /// Commands the user did not start skip silently when access is missing instead of raising an error.
+        var origin = ErrorSource.user
         var waiters: [CheckedContinuation<Bool, Never>] = []
 
         var commandName: String? {
@@ -87,11 +93,18 @@ public final class Mod: Identifiable {
     /// every change of state; nil marks text that does not parse.
     @ObservationIgnored private var templates: [String: ModTemplate?] = [:]
     @ObservationIgnored private var expressions: [String: ModExpression?] = [:]
+    @ObservationIgnored private var runCount = 0
 
+    /// SHA-256 of the `mod.json` bytes this instance was loaded from.
+    let manifestDigest: SHA256.Digest
     @ObservationIgnored private let directories: ToolsyDirectories
     @ObservationIgnored private let privileged: any PrivilegedExecuting
     @ObservationIgnored private let timing: EngineTiming
     @ObservationIgnored private let accessMayHaveChanged: @MainActor () -> Void
+    @ObservationIgnored private let notify: @MainActor (ModNotification) -> Void
+    /// The commands of the instance this one replaced. They may still be finishing (a privileged command
+    /// cannot be stopped), and commands of a mod never overlap, so this instance's first command waits.
+    @ObservationIgnored private var predecessorWork: Task<Void, Never>?
     /// Chart-bound key → the largest `points` among the charts showing it.
     @ObservationIgnored private let historyLimits: [String: Int]
     /// `(key, command)` of live sliders, whose pending runs collapse to the latest value.
@@ -108,22 +121,30 @@ public final class Mod: Identifiable {
     @ObservationIgnored private var nextBackoff: Double = 1
     /// Delays (unscaled seconds) of the recent crash restarts, newest last; lets tests observe the backoff.
     @ObservationIgnored private(set) var restartDelays: [Double] = []
+    /// When the last restart for changed files happened or is scheduled to happen.
+    @ObservationIgnored private var lastFileRestart: ContinuousClock.Instant?
 
     init(
         manifest: ModManifest,
+        manifestDigest: SHA256.Digest,
         folder: URL,
         saved: PersistedState,
         directories: ToolsyDirectories,
         privileged: any PrivilegedExecuting,
         timing: EngineTiming,
-        accessMayHaveChanged: @escaping @MainActor () -> Void
+        after predecessorWork: Task<Void, Never>? = nil,
+        accessMayHaveChanged: @escaping @MainActor () -> Void,
+        notify: @escaping @MainActor (ModNotification) -> Void
     ) {
         self.manifest = manifest
+        self.manifestDigest = manifestDigest
         self.folder = folder
         self.directories = directories
         self.privileged = privileged
         self.timing = timing
+        self.predecessorWork = predecessorWork
         self.accessMayHaveChanged = accessMayHaveChanged
+        self.notify = notify
         var state = saved.settings
         state[ReservedStateKey.enabled] = .bool(saved.enabled)
         self.state = state
@@ -224,6 +245,34 @@ public final class Mod: Identifiable {
         isPanelVisible = panelVisible
         reconcile()
     }
+
+    /// Queues the command the mod runs for `event`, if it has one and is on (a mod without a switch always
+    /// is; one whose switch is changing is neither). A run of that command already waiting is enough; a
+    /// privileged one is skipped silently while administrator access is missing.
+    func handle(_ event: ModSystemEvent) {
+        guard phase == .active, !hasSwitch || (isEnabled && !isSwitching), let name = manifest.lifecycle.events[event] else { return }
+        if manifest.commands[name]?.privileged == true, missingAccess != nil { return }
+        guard !queue.contains(where: { $0.commandName == name }) else { return }
+        enqueue(Job(work: .command(name, event: event.commandEvent, key: nil, value: nil), origin: .event))
+    }
+
+    /// Developer mode saw files of the mod other than `mod.json` change: a running service restarts so it
+    /// runs the new code, at most once per `fileRestartInterval`.
+    func filesChanged() {
+        guard phase == .active, service != nil || pendingServiceStart != nil else { return }
+        let now = timing.now()
+        // A restart still to come starts the service after these changes too.
+        if let last = lastFileRestart, last > now { return }
+        let wait = lastFileRestart.map { max(.zero, timing.fileRestartInterval - $0.duration(to: now)) } ?? .zero
+        lastFileRestart = now + wait
+        restartService(after: wait)
+    }
+
+    /// Whether the mod is in normal operation: not being removed, not closed.
+    var isActive: Bool { phase == .active }
+
+    /// The commands still running or waiting, so a successor can wait for them; nil when there are none.
+    var unfinishedWork: Task<Void, Never>? { worker }
 
     func panelVisibilityChanged(_ visible: Bool) {
         isPanelVisible = visible
@@ -328,6 +377,10 @@ public final class Mod: Identifiable {
     }
 
     private func drain() async {
+        if let predecessorWork {
+            await predecessorWork.value
+            self.predecessorWork = nil
+        }
         while !queue.isEmpty, !Task.isCancelled {
             let job = queue.removeFirst()
             currentJob = job
@@ -344,7 +397,7 @@ public final class Mod: Identifiable {
     private func perform(_ job: Job) async -> Bool {
         switch job.work {
         case .command(let name, let event, let key, let value):
-            await execute(name, event: event, key: key, value: value, automatic: job.automatic) != nil
+            await execute(name, event: event, key: key, value: value, origin: job.origin) != nil
         case .switchOn:
             await switchOn()
         case .switchOff:
@@ -391,11 +444,19 @@ public final class Mod: Identifiable {
 
     // MARK: - Commands
 
-    /// Runs one command and applies its outcome. Returns the applied patch, or nil when it failed or did not run.
-    private func execute(_ name: String, event: ModEvent, key: String? = nil, value: JSONValue? = nil, automatic: Bool = false) async -> ModState? {
-        let source = automatic ? ErrorSource.refresh : .user
+    /// Runs one command, applies its outcome and records the run. Returns the applied patch, or nil when it
+    /// failed or did not run.
+    private func execute(_ name: String, event: ModEvent, key: String? = nil, value: JSONValue? = nil, origin: ErrorSource = .user) async -> ModState? {
+        let started = Date()
+        let clock = ContinuousClock.now
+        func record(_ outcome: CommandRun.Outcome, standardError: Data = Data(), outputWasPatch: Bool = false) {
+            recordRun(name, event: event, started: started, duration: clock.duration(to: .now), outcome: outcome,
+                      standardError: standardError, outputWasPatch: outputWasPatch)
+        }
         guard let command = manifest.commands[name] else {
-            fail("\(manifest.name) has no command \"\(name)\".", command: name, detail: "undefined command", from: source)
+            let message = "\(manifest.name) has no command \"\(name)\"."
+            fail(message, command: name, detail: "undefined command", from: origin)
+            record(.couldNotStart(message))
             return nil
         }
         let input = CommandInput(event: event, command: name, key: key, value: value, state: state)
@@ -403,9 +464,10 @@ public final class Mod: Identifiable {
         do {
             if command.privileged {
                 if let missing = missingAccess {
-                    if !automatic {
-                        fail(missing.localizedDescription, command: name, detail: "no administrator access", from: source)
+                    if origin == .user {
+                        fail(missing.localizedDescription, command: name, detail: "no administrator access", from: origin)
                     }
+                    record(.refused)
                     return nil
                 }
                 result = try await privileged.run(modID: id, command: name, input: input)
@@ -415,14 +477,19 @@ public final class Mod: Identifiable {
         } catch is CancellationError {
             return nil
         } catch let failure as PrivilegedError {
-            fail(failure.localizedDescription, command: name, detail: "administrator helper error", from: source)
+            fail(failure.localizedDescription, command: name, detail: "administrator helper error", from: origin)
+            record(.couldNotStart(failure.localizedDescription))
             accessMayHaveChanged()
             return nil
         } catch {
-            fail(error.localizedDescription, command: name, detail: "could not start", from: source)
+            fail(error.localizedDescription, command: name, detail: "could not start", from: origin)
+            record(.couldNotStart(error.localizedDescription))
             return nil
         }
-        return apply(result, of: command, named: name, from: source)
+        let object = Self.patch(from: result.stdout)
+        let outcome: CommandRun.Outcome = result.timedOut ? .timedOut : result.succeeded ? .succeeded : .failed(exitCode: result.exitCode)
+        record(outcome, standardError: result.stderr, outputWasPatch: command.capture == nil && object != nil)
+        return apply(result, object: object, of: command, named: name, from: origin)
     }
 
     private var missingAccess: PrivilegedError? {
@@ -450,8 +517,7 @@ public final class Mod: Identifiable {
         )
     }
 
-    private func apply(_ result: CommandResult, of command: ModCommand, named name: String, from source: ErrorSource) -> ModState? {
-        let object = Self.patch(from: result.stdout)
+    private func apply(_ result: CommandResult, object: ModState?, of command: ModCommand, named name: String, from source: ErrorSource) -> ModState? {
         guard result.succeeded else {
             let reported = object?[ReservedStateKey.error]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
             let detail = result.timedOut
@@ -474,6 +540,17 @@ public final class Mod: Identifiable {
     private func report(_ message: String, from source: ErrorSource) {
         setState(ReservedStateKey.error, to: .string(message))
         errorSource = source
+    }
+
+    /// Adds a run to `recentRuns`, dropping the oldest beyond `CommandRun.kept`.
+    private func recordRun(_ command: String, event: ModEvent, started: Date = Date(), duration: Duration = .zero,
+                           outcome: CommandRun.Outcome, standardError: Data = Data(), outputWasPatch: Bool = false) {
+        // A closed mod is no longer shown; its late results belong to nobody.
+        guard phase != .closed else { return }
+        runCount += 1
+        let run = CommandRun(id: runCount, command: command, event: event, started: started, duration: duration, outcome: outcome,
+                             standardError: standardError, outputWasPatch: outputWasPatch)
+        recentRuns = Array((recentRuns + [run]).suffix(CommandRun.kept))
     }
 
     /// A successful report decides what happens to the error: a patch that names `error` sets or clears
@@ -510,11 +587,14 @@ public final class Mod: Identifiable {
     /// Applies a patch. Keys whose value does not change are not written, so an identical patch leaves
     /// `state` untouched and re-renders nothing; chart histories still record its numbers.
     private func merge(_ patch: ModState, fromService: Bool = false) {
-        // A late result of a replaced mod must not overwrite the state file its successor uses.
+        // A late result of a replaced mod must not overwrite the state file its successor uses, nor notify.
         guard phase != .closed else { return }
+        if let request = patch[ReservedStateKey.notify] {
+            announce(request)
+        }
         let wasEnabled = isEnabled
         var settingsChanged = false
-        for (key, value) in patch where ModManifest.isValidKey(key) {
+        for (key, value) in patch where ModManifest.isValidKey(key) && key != ReservedStateKey.notify {
             // The switch position must stay a boolean.
             if key == ReservedStateKey.enabled, value.boolValue == nil { continue }
             // A text field committing an unchanged value must not restart the service.
@@ -542,6 +622,18 @@ public final class Mod: Identifiable {
         guard state[key] != value else { return false }
         state[key] = value
         return true
+    }
+
+    /// Hands a `notify` request to the store, which rate-limits and delivers it.
+    private func announce(_ request: JSONValue) {
+        guard let notification = ModNotification(request, modID: id, modName: manifest.name) else {
+            // Blank text asks for nothing; a value of another shape is the mod's mistake.
+            if request.stringValue == nil, request.objectValue == nil, request != .null {
+                logger.notice("mod \(self.id, privacy: .public): ignored a notify value that is neither text nor an object")
+            }
+            return
+        }
+        notify(notification)
     }
 
     private func record(_ value: JSONValue, for key: String) {
@@ -586,7 +678,7 @@ public final class Mod: Identifiable {
         // Without access the command cannot run; a schedule must not raise the same error every few seconds.
         if command.privileged, missingAccess != nil { return }
         guard currentJob?.commandName != name, !queue.contains(where: { $0.commandName == name }) else { return }
-        enqueue(Job(work: .command(name, event: .refresh, key: nil, value: nil), automatic: true))
+        enqueue(Job(work: .command(name, event: .refresh, key: nil, value: nil), origin: .refresh))
     }
 
     private func updateRefreshSchedule() {
@@ -621,7 +713,8 @@ public final class Mod: Identifiable {
         manifest.lifecycle.service != nil && phase == .active && isEnabled && !isSwitching
     }
 
-    private func startServiceIfNeeded() {
+    /// `restart`: Toolsy itself starts the service again (after a crash, or for changed settings or files).
+    private func startServiceIfNeeded(restart: Bool = false) {
         guard wantsService, service == nil, pendingServiceStart == nil,
               let name = manifest.lifecycle.service, let command = manifest.commands[name] else { return }
         let started = ContinuousClock.now
@@ -636,14 +729,16 @@ public final class Mod: Identifiable {
                     switch event {
                     case .line(let line):
                         self?.serviceWrote(line)
-                    case .exit(let status, let lastErrorLine):
-                        await self?.serviceExited(process, status: status, lastErrorLine: lastErrorLine)
+                    case .exit(let status, let errorTail):
+                        await self?.serviceExited(process, status: status, errorTail: errorTail)
                     }
                 }
             }
             service = (process, events, started)
             recordService(process)
+            recordRun(name, event: .service, outcome: restart ? .restarted : .started)
         } catch {
+            recordRun(name, event: .service, outcome: .couldNotStart(error.localizedDescription))
             serviceFailed(error.localizedDescription, detail: "could not start", ranFor: .zero)
         }
     }
@@ -654,10 +749,13 @@ public final class Mod: Identifiable {
         merge(patch, fromService: true)
     }
 
-    private func serviceExited(_ process: ServiceProcess, status: Int32, lastErrorLine: String?) async {
+    private func serviceExited(_ process: ServiceProcess, status: Int32, errorTail: Data) async {
         // A service stopped on purpose is no longer the current one.
-        guard let current = service, current.process === process else { return }
+        guard let current = service, current.process === process, let name = manifest.lifecycle.service else { return }
         service = nil
+        let ranFor = current.started.duration(to: .now)
+        recordRun(name, event: .service, started: Date(timeIntervalSinceNow: -(ranFor / .seconds(1))), duration: ranFor,
+                  outcome: .exited(status: status), standardError: errorTail)
         // Whatever it started dies with it.
         await process.terminateGroup(grace: timing.killGrace)
         forgetService(process)
@@ -669,8 +767,7 @@ public final class Mod: Identifiable {
             return
         }
         let detail = "exit status \(status)"
-        serviceFailed(lastErrorLine ?? "The service stopped unexpectedly (\(detail)).", detail: detail,
-                      ranFor: current.started.duration(to: .now))
+        serviceFailed(lastNonEmptyLine(errorTail) ?? "The service stopped unexpectedly (\(detail)).", detail: detail, ranFor: ranFor)
     }
 
     /// Shows why the service is down and restarts it after 1, 2, 4 … 60 s; a healthy run resets the delay.
@@ -691,18 +788,22 @@ public final class Mod: Identifiable {
                 return
             }
             self?.pendingServiceStart = nil
-            self?.startServiceIfNeeded()
+            self?.startServiceIfNeeded(restart: true)
         }
     }
 
     /// Settings changed: restart a running (or scheduled) service once the changes settle.
     private func restartServiceSoon() {
+        restartService(after: timing.settingsDebounce)
+    }
+
+    /// Restarts a running (or scheduled) service after `delay`, replacing any start already scheduled.
+    private func restartService(after delay: Duration) {
         guard service != nil || pendingServiceStart != nil else { return }
         pendingServiceStart?.cancel()
-        let debounce = timing.settingsDebounce
         pendingServiceStart = Task { [weak self] in
             do {
-                try await Task.sleep(for: debounce)
+                try await Task.sleep(for: delay)
             } catch {
                 return
             }
@@ -710,7 +811,7 @@ public final class Mod: Identifiable {
             // A stop requested meanwhile cancelled this restart.
             guard !Task.isCancelled else { return }
             self?.pendingServiceStart = nil
-            self?.startServiceIfNeeded()
+            self?.startServiceIfNeeded(restart: true)
         }
     }
 

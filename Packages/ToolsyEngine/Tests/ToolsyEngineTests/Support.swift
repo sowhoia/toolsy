@@ -67,6 +67,20 @@ func eventually(
     }
 }
 
+/// Waits until the fake helper has received `call`; fails the test after `timeout`.
+@MainActor
+func waitUntil(_ helper: FakeHelper, received call: String, timeout: Duration = .seconds(30),
+               sourceLocation: SourceLocation = #_sourceLocation) async throws {
+    let deadline = ContinuousClock.now + timeout
+    while await !helper.calls.contains(call) {
+        guard ContinuousClock.now < deadline else {
+            Issue.record("timed out waiting for the helper to receive \(call)", sourceLocation: sourceLocation)
+            throw TimedOut()
+        }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+}
+
 func isAlive(_ pid: Int32) -> Bool {
     kill(pid, 0) == 0
 }
@@ -90,6 +104,9 @@ actor FakeHelper: PrivilegedExecuting {
     var revokeDelays: [Duration] = []
     /// Runs inside `approve`, once the approval is recorded.
     var afterApprove: (@Sendable () async -> Void)?
+    /// How long the next calls of `run` take, one each. Like a root command they cannot be cancelled,
+    /// and they note "done <mod> <command>" when they end.
+    var runDelays: [Duration] = []
 
     init(status: HelperStatus = .notInstalled) {
         helperStatus = status
@@ -103,6 +120,8 @@ actor FakeHelper: PrivilegedExecuting {
     func set(revokeErrors: [PrivilegedError]) { self.revokeErrors = revokeErrors }
     func set(revokeDelays: [Duration]) { self.revokeDelays = revokeDelays }
     func set(afterApprove: (@Sendable () async -> Void)?) { self.afterApprove = afterApprove }
+    func set(runDelays: [Duration]) { self.runDelays = runDelays }
+    func set(result: CommandResult) { self.result = result }
 
     func status() async -> HelperStatus { helperStatus }
 
@@ -149,11 +168,29 @@ actor FakeHelper: PrivilegedExecuting {
     func run(modID: String, command: String, input: CommandInput) async throws -> CommandResult {
         calls.append("run \(modID) \(command)")
         inputs.append(input)
+        if !runDelays.isEmpty {
+            let delay = runDelays.removeFirst()
+            // A task of its own, so cancelling the caller does not cut the wait short.
+            await Task { try? await Task.sleep(for: delay) }.value
+            calls.append("done \(modID) \(command)")
+        }
         if let runError {
             self.runError = nil
             throw runError
         }
         return result
+    }
+}
+
+/// A clock the test advances by hand, for the engine's rate limits.
+final class ManualClock: Sendable {
+    private let origin = ContinuousClock.now
+    private let elapsed = Mutex(Duration.zero)
+
+    var now: ContinuousClock.Instant { origin + elapsed.withLock { $0 } }
+
+    func advance(by duration: Duration) {
+        elapsed.withLock { $0 += duration }
     }
 }
 
@@ -163,15 +200,19 @@ final class Harness {
     let temporary: TemporaryDirectory
     let directories: ToolsyDirectories
     let helper: FakeHelper
-    let scale: Double
+    let timing: EngineTiming
     private(set) var store: ModStore
 
-    init(scale: Double, helper: FakeHelper) throws {
+    init(scale: Double, helper: FakeHelper, clock: ManualClock? = nil) throws {
         temporary = try TemporaryDirectory()
         directories = ToolsyDirectories(root: temporary.url.appending(path: "Toolsy", directoryHint: .isDirectory))
         self.helper = helper
-        self.scale = scale
-        store = ModStore(directories: directories, privileged: helper, timing: EngineTiming(scale: scale))
+        var timing = EngineTiming(scale: scale)
+        if let clock {
+            timing.now = { clock.now }
+        }
+        self.timing = timing
+        store = ModStore(directories: directories, privileged: helper, timing: timing)
     }
 
     /// Writes a mod folder and installs it through prepare + commit.
@@ -184,7 +225,7 @@ final class Harness {
     /// Shuts the store down and starts a new one over the same directories, as an app relaunch does.
     func relaunch() async {
         await store.shutdown()
-        store = ModStore(directories: directories, privileged: helper, timing: EngineTiming(scale: scale))
+        store = ModStore(directories: directories, privileged: helper, timing: timing)
         await store.start()
     }
 
@@ -202,8 +243,10 @@ final class Harness {
 
 /// Runs `body` against a fresh started store and always shuts it down, so no test leaves processes behind.
 @MainActor
-func withHarness(scale: Double = 0.01, helper: FakeHelper = FakeHelper(), _ body: (Harness) async throws -> Void) async throws {
-    let harness = try Harness(scale: scale, helper: helper)
+func withHarness(
+    scale: Double = 0.01, helper: FakeHelper = FakeHelper(), clock: ManualClock? = nil, _ body: (Harness) async throws -> Void
+) async throws {
+    let harness = try Harness(scale: scale, helper: helper, clock: clock)
     await harness.store.start()
     do {
         try await body(harness)
@@ -233,5 +276,18 @@ final class Flag: Sendable {
 
     func raise() {
         raised.withLock { $0 = true }
+    }
+}
+
+/// Collects what `ModStore.notificationHandler` receives.
+@MainActor
+final class Inbox {
+    private(set) var notifications: [ModNotification] = []
+
+    /// Title and body of each notification.
+    var texts: [[String]] { notifications.map { [$0.title, $0.body] } }
+
+    init(_ store: ModStore) {
+        store.notificationHandler = { [weak self] in self?.notifications.append($0) }
     }
 }

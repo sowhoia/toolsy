@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 import ToolsyShared
@@ -22,6 +23,28 @@ public final class ModStore {
     public private(set) var helperStatus: HelperStatus = .notInstalled
     private var modsByID: [String: Mod] = [:]
 
+    /// The system events at least one loaded mod has a command for; post only these, and observe the
+    /// system only for them.
+    public var observedEvents: Set<ModSystemEvent> {
+        Set(mods.flatMap(\.manifest.lifecycle.events.keys))
+    }
+
+    /// Receives the notifications mods ask for in their patches, already rate-limited: at most one per mod
+    /// every 5 seconds, and none that repeats one the mod gave within the last minute.
+    public var notificationHandler: (@MainActor (ModNotification) -> Void)?
+
+    /// For mod authors: while on, the store watches the mods folder and, once changes have settled,
+    /// reloads a mod whose `mod.json` changed, loads a folder that appeared, drops a mod whose folder
+    /// disappeared (keeping its saved settings) and restarts the running service of a mod whose other
+    /// files changed. Off by default; while off nothing is watched. Nothing is ever approved this way: a
+    /// privileged mod edited in place loses its administrator access, as at any other time.
+    public var developerMode = false {
+        didSet {
+            guard developerMode != oldValue else { return }
+            developerMode ? watchModsFolder() : stopWatchingModsFolder()
+        }
+    }
+
     /// Set while the panel is on screen: opening it refreshes every mod, and refresh schedules without
     /// `background` run only while it is true.
     public var isPanelVisible = false {
@@ -39,6 +62,25 @@ public final class ModStore {
     /// Mods being installed. Their approval may be ahead of their folder (see `revokeOrphanedApprovals`),
     /// and a second installation of the same mod must not run beside the first.
     @ObservationIgnored private var installing: Set<String> = []
+    @ObservationIgnored private var notificationThrottle = NotificationThrottle()
+
+    // Developer mode.
+    @ObservationIgnored private var watcher: FolderWatcher?
+    /// Mod folders (names under `Mods/`) with changes not acted on yet → the changed paths relative to the
+    /// folder; an empty set when only the folder itself or `mod.json` may have changed.
+    @ObservationIgnored private var pendingFolderChanges: [String: Set<String>] = [:]
+    @ObservationIgnored private var folderSettle: Task<Void, Never>?
+    /// Acting on folder changes, one batch after another.
+    @ObservationIgnored private var folderChangeWork: Task<Void, Never>?
+    /// Per mod: file changes up to this time are accounted for. Files the store placed and loaded itself
+    /// are older, so an installation does not count as an edit.
+    @ObservationIgnored private var filesSeenUntil: [String: Date] = [:]
+    /// When developer mode was switched on; older changes are no edits it has to act on.
+    @ObservationIgnored private var watchingSince = Date.distantPast
+    /// FSEvents reported a change it could not itemise; every mod folder is looked at once things settle.
+    @ObservationIgnored private var rescanPending = false
+    /// Mods being reloaded; a second reload or an installation must not replace the instance meanwhile.
+    @ObservationIgnored private var reloading: Set<String> = []
 
     public convenience init(directories: ToolsyDirectories = .user, privileged: any PrivilegedExecuting) {
         self.init(directories: directories, privileged: privileged, timing: EngineTiming())
@@ -76,10 +118,14 @@ public final class ModStore {
         for mod in mods {
             mod.activate(panelVisible: isPanelVisible)
         }
+        post(.launch)
     }
 
     /// Stops every service and timer without running `disable`. Call when the app quits.
     public func shutdown() async {
+        developerMode = false
+        // A batch of folder changes being acted on must not load mods after this.
+        await folderChangeWork?.value
         await withTaskGroup { group in
             for mod in mods {
                 group.addTask { await mod.close() }
@@ -121,6 +167,9 @@ public final class ModStore {
         guard FileManager.default.fileExists(atPath: prepared.modDirectory.path(percentEncoded: false)) else {
             throw EngineError("This installation was already completed or discarded.")
         }
+        guard !reloading.contains(id) else {
+            throw EngineError("\(prepared.manifest.name) is being reloaded.")
+        }
         guard installing.insert(id).inserted else {
             throw EngineError("\(prepared.manifest.name) is already being installed.")
         }
@@ -142,7 +191,7 @@ public final class ModStore {
             ModPackage.remove(prepared.staging)
             // The previous version is untouched; bring it back. A failure to load it is listed in `loadProblems`.
             if previous != nil {
-                _ = try? await reload(id)
+                _ = try? await replace(id, after: previous)
             } else {
                 // The helper may have been installed on the way.
                 await refreshAccess()
@@ -150,7 +199,7 @@ public final class ModStore {
             throw error
         }
         ModPackage.remove(prepared.staging)
-        return try await reload(id)
+        return try await replace(id, after: previous)
     }
 
     /// Makes a request the helper refuses while a privileged command of the mod runs. Such a command may
@@ -323,47 +372,114 @@ public final class ModStore {
         modsByID[id]
     }
 
+    /// Tells the mods that something happened to the Mac. Every mod that is on (or has no switch) and
+    /// declares a command for `event` queues it with `TOOLSY_EVENT` naming the event, unless a run of that
+    /// command is already waiting. A privileged one is skipped while the mod lacks administrator access.
+    /// The store posts `launch` itself at the end of `start()`.
+    public func post(_ event: ModSystemEvent) {
+        for mod in mods {
+            mod.handle(event)
+        }
+    }
+
+    /// Reads a mod from its folder again and replaces the loaded instance, keeping its settings and switch
+    /// position, as installing does once the files are in place; also loads a folder that was added by
+    /// hand. A folder that does not load is listed in `loadProblems` and its error thrown. A folder that is
+    /// gone takes the loaded mod with it; its saved settings stay.
+    @discardableResult
+    public func reload(_ id: String) async throws -> Mod {
+        guard ModPayload.isSafeRelativePath(id), !id.contains("/") else {
+            throw EngineError("\"\(id)\" is not the name of a mod folder.")
+        }
+        let previous = mod(id: id)
+        let name = previous?.manifest.name ?? id
+        guard !installing.contains(id), reloading.insert(id).inserted else {
+            throw EngineError("\(name) is already being installed or reloaded.")
+        }
+        defer { reloading.remove(id) }
+        if let previous, !previous.isActive {
+            throw EngineError("\(name) is being removed.")
+        }
+        guard ModPackage.isDirectory(folder(of: id)) else {
+            await drop(id)
+            throw EngineError("The mods folder has no folder \"\(id)\".")
+        }
+        await previous?.close()
+        return try await replace(id, after: previous)
+    }
+
+    /// Rate-limits a notification of a mod and hands it to `notificationHandler`.
+    private func deliver(_ notification: ModNotification) {
+        guard let notificationHandler else { return }
+        switch notificationThrottle.admit(notification, timing: timing) {
+        case .deliver:
+            notificationHandler(notification)
+        case .tooSoon:
+            logger.notice("mod \(notification.modID, privacy: .public): notification dropped, the mod notified moments ago")
+        case .repeated:
+            logger.notice("mod \(notification.modID, privacy: .public): notification dropped, it repeats a recent one")
+        }
+    }
+
     // MARK: - Loading
 
     private func folder(of id: String) -> URL {
         directories.mods.appending(path: id, directoryHint: .isDirectory)
     }
 
-    private func load(_ folder: URL) throws -> Mod {
-        let manifest = try ModManifest.load(from: Data(contentsOf: folder.appending(path: ModManifest.fileName)))
+    private func load(_ folder: URL, after predecessorWork: Task<Void, Never>? = nil) throws -> Mod {
+        let data = try Data(contentsOf: folder.appending(path: ModManifest.fileName))
+        let manifest = try ModManifest.load(from: data)
         try manifest.validateTemplatesAndExpressions()
         guard manifest.id == folder.lastPathComponent else {
             throw EngineError("the folder name does not match the mod's id \"\(manifest.id)\"")
         }
         return Mod(
             manifest: manifest,
+            manifestDigest: SHA256.hash(data: data),
             folder: folder,
             saved: try PersistedState.load(for: manifest, from: directories),
             directories: directories,
             privileged: privileged,
             timing: timing,
+            after: predecessorWork,
             accessMayHaveChanged: { [weak self] in
                 Task { await self?.refreshAccess() }
+            },
+            notify: { [weak self] notification in
+                self?.deliver(notification)
             }
         )
     }
 
-    /// Replaces whatever the store holds for `id` with a fresh load from disk and starts it.
-    private func reload(_ id: String) async throws -> Mod {
+    /// Replaces whatever the store holds for `id` (closed already, if anything) with a fresh load from disk
+    /// and starts it. Its first command waits for the commands of `previous` to end.
+    private func replace(_ id: String, after previous: Mod?) async throws -> Mod {
         mods.removeAll { $0.id == id }
         loadProblems.removeAll { $0.folder == id }
         let mod: Mod
         do {
-            mod = try load(folder(of: id))
+            mod = try load(folder(of: id), after: previous?.unfinishedWork)
         } catch {
             loadProblems.append(LoadProblem(folder: id, message: error.localizedDescription))
             throw error
         }
         mods.append(mod)
         sortMods()
+        if developerMode {
+            filesSeenUntil[id] = Date()
+        }
         await refreshAccess()
         mod.activate(panelVisible: isPanelVisible)
         return mod
+    }
+
+    /// Forgets a mod whose folder is gone without running any hook; its saved settings stay.
+    private func drop(_ id: String) async {
+        loadProblems.removeAll { $0.folder == id }
+        guard let mod = mod(id: id), mod.isActive else { return }
+        await mod.close()
+        mods.removeAll { $0 === mod }
     }
 
     private func sortMods() {
@@ -374,5 +490,126 @@ public final class ModStore {
             case .orderedSame: left.id < right.id
             }
         }
+    }
+
+    // MARK: - Developer mode
+
+    private func watchModsFolder() {
+        do {
+            try FileManager.default.createDirectory(at: directories.mods, withIntermediateDirectories: true)
+            watchingSince = Date()
+            watcher = try FolderWatcher(directories.mods, latency: 0.05) { [weak self] paths in
+                self?.modsFolderChanged(paths)
+            }
+        } catch {
+            logger.error("developer mode cannot watch the mods folder: \(error.localizedDescription)")
+            developerMode = false
+        }
+    }
+
+    private func stopWatchingModsFolder() {
+        watcher = nil
+        folderSettle?.cancel()
+        folderSettle = nil
+        pendingFolderChanges = [:]
+        rescanPending = false
+        filesSeenUntil = [:]
+    }
+
+    /// Collects changed paths (relative to the mods folder) until they settle.
+    private func modsFolderChanged(_ paths: [String]) {
+        for path in paths {
+            let components = path.split(separator: "/", maxSplits: 1).map(String.init)
+            guard let name = components.first else {
+                // The mods folder itself, or changes FSEvents could not itemise: every mod folder is looked at.
+                rescanPending = true
+                continue
+            }
+            // Hidden entries are not mods, as at launch.
+            guard !name.hasPrefix(".") else { continue }
+            var changed = pendingFolderChanges[name, default: []]
+            // `mod.json` is compared by digest, and Finder's metadata is not part of a mod.
+            if components.count == 2, components[1] != ModManifest.fileName, !components[1].hasSuffix(".DS_Store") {
+                changed.insert(components[1])
+            }
+            pendingFolderChanges[name] = changed
+        }
+        folderSettle?.cancel()
+        folderSettle = Task { [weak self, settle = timing.folderSettle] in
+            do {
+                try await Task.sleep(for: settle)
+            } catch {
+                return
+            }
+            self?.actOnFolderChanges()
+        }
+    }
+
+    private func actOnFolderChanges() {
+        var changes = pendingFolderChanges
+        pendingFolderChanges = [:]
+        if rescanPending {
+            rescanPending = false
+            let present = (try? FileManager.default.contentsOfDirectory(atPath: directories.mods.path(percentEncoded: false))) ?? []
+            for name in present.filter({ !$0.hasPrefix(".") }) + mods.map(\.id) + loadProblems.map(\.folder) where changes[name] == nil {
+                changes[name] = []
+            }
+        }
+        // One batch after another: acting on a change awaits closing and loading mods.
+        let previous = folderChangeWork
+        folderChangeWork = Task {
+            await previous?.value
+            for (name, paths) in changes.sorted(by: { $0.key < $1.key }) where developerMode {
+                await folderChanged(name, paths: paths)
+            }
+        }
+    }
+
+    /// Acts on changes inside the mod folder `name`; `paths` are the changed files other than `mod.json`.
+    private func folderChanged(_ name: String, paths: Set<String>) async {
+        // The store's own installation and reloads see to these themselves.
+        guard !installing.contains(name), !reloading.contains(name) else { return }
+        let loaded = mod(id: name)
+        let folder = folder(of: name)
+        do {
+            if !ModPackage.isDirectory(folder) {
+                await drop(name)
+            } else if let loaded {
+                let manifest = try? Data(contentsOf: folder.appending(path: ModManifest.fileName))
+                if manifest.map({ SHA256.hash(data: $0) }) != loaded.manifestDigest {
+                    try await reload(name)
+                } else if filesChanged(paths, in: folder, of: name) {
+                    loaded.filesChanged()
+                }
+            } else {
+                try await reload(name)
+            }
+        } catch {
+            // A folder that does not load is listed in `loadProblems` by `reload`.
+            logger.error("developer mode: \(name, privacy: .public) was not reloaded: \(error.localizedDescription)")
+        }
+    }
+
+    /// Whether any of `paths` (relative to `folder`) is gone or was changed after the store last accounted
+    /// for the files of mod `id`; advances that mark.
+    private func filesChanged(_ paths: Set<String>, in folder: URL, of id: String) -> Bool {
+        let seenUntil = max(filesSeenUntil[id] ?? .distantPast, watchingSince)
+        var latest = seenUntil
+        var changed = false
+        for path in paths {
+            var info = stat()
+            guard lstat(folder.appending(path: path).path(percentEncoded: false), &info) == 0 else {
+                // Removed or renamed away.
+                changed = true
+                continue
+            }
+            let time = Date(timeIntervalSince1970: TimeInterval(info.st_ctimespec.tv_sec) + TimeInterval(info.st_ctimespec.tv_nsec) / 1e9)
+            if time > seenUntil {
+                changed = true
+                latest = max(latest, time)
+            }
+        }
+        filesSeenUntil[id] = latest
+        return changed
     }
 }

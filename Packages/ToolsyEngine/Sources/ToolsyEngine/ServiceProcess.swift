@@ -7,13 +7,14 @@ import ToolsyShared
 final class ServiceProcess: Sendable {
     enum Event: Sendable {
         case line(Data)
-        /// Exit status (128 + signal number when killed) and the last non-empty line of standard error.
-        case exit(status: Int32, lastErrorLine: String?)
+        /// Exit status (128 + signal number when killed) and the end of standard error.
+        case exit(status: Int32, errorTail: Data)
     }
 
     /// A patch longer than this is not a patch but a runaway program; the line is dropped.
     static let maxLineLength = 256 * 1024
-    static let errorTailLength = 4 * 1024
+    /// Enough for the 2 000 characters a `CommandRun` keeps, even when each takes four bytes.
+    static let errorTailLength = 8 * 1024
 
     let events: AsyncStream<Event>
     private let continuation: AsyncStream<Event>.Continuation
@@ -54,7 +55,7 @@ final class ServiceProcess: Sendable {
             closeStreams()
             process.terminationHandler = nil
             let status = process.terminationReason == .uncaughtSignal ? 128 + process.terminationStatus : process.terminationStatus
-            continuation.yield(.exit(status: status, lastErrorLine: output.withLock { lastNonEmptyLine($0.errorTail) }))
+            continuation.yield(.exit(status: status, errorTail: output.withLock(\.errorTail)))
             continuation.finish()
         }
         do {
