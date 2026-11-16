@@ -51,6 +51,8 @@ struct DashboardView: View {
         .onChange(of: expanded) { _, id in
             monitor.wantsInterfaceUpdates = id == .builtIn(.network)
         }
+        // Another page takes this view's place and its `expanded` with it.
+        .onDisappear { monitor.wantsInterfaceUpdates = false }
         .onChange(of: store.isEditing) {
             expanded = nil
             selected = nil

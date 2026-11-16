@@ -190,9 +190,22 @@ final class NetworkSource: SystemEventSource {
             if key.hasPrefix("State:/Network/Global/") {
                 return "\(key) \(value["PrimaryInterface"] ?? "") \(value["Router"] ?? "")"
             }
-            let addresses = (value["Addresses"] as? [String] ?? []).filter { !$0.lowercased().hasPrefix("fe80:") }
+            let addresses = Self.lastingAddresses(value)
             return addresses.isEmpty ? nil : "\(key) \(addresses.sorted().joined(separator: " "))"
         }.sorted().joined(separator: "\n")
+    }
+
+    /// The addresses of an interface's entry that say something about the network it is on. Link-local
+    /// ones exist on every interface (AirDrop's come and go), and temporary IPv6 addresses are replaced by
+    /// the system about once a day (RFC 4941), on the same network.
+    nonisolated static func lastingAddresses(_ entry: [String: Any]) -> [String] {
+        let addresses = entry["Addresses"] as? [String] ?? []
+        // IPv6 entries carry the flags of each address beside it; IPv4 entries have none.
+        let flags = entry["Flags"] as? [Int] ?? []
+        return addresses.enumerated().compactMap { index, address in
+            let isTemporary = index < flags.count && flags[index] & Int(IN6_IFF_TEMPORARY) != 0
+            return address.lowercased().hasPrefix("fe80:") || isTemporary ? nil : address
+        }
     }
 }
 

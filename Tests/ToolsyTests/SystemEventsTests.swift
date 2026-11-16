@@ -219,6 +219,26 @@ struct SystemEventsOnTheStoreTests {
 // MARK: - The Mac's own sources
 
 @MainActor
+struct NetworkAddressesTests {
+    @Test func linkLocalAndTemporaryAddressesSayNothingAboutTheNetwork() {
+        // An interface's IPv6 entry in the dynamic store: the flags of each address beside it.
+        let temporary = Int(IN6_IFF_TEMPORARY), secured = Int(IN6_IFF_SECURED)
+        let entry: [String: Any] = [
+            "Addresses": ["fe80::1c2b:3aff:fe4d:5e6f", "2001:db8::10", "2001:db8::a1b2:c3d4", "2001:db8::20"],
+            "Flags": [0, secured, temporary | secured, 0],
+            "PrefixLength": [64, 64, 64, 64],
+        ]
+        #expect(NetworkSource.lastingAddresses(entry) == ["2001:db8::10", "2001:db8::20"])
+        // The system replaces a temporary address about once a day on the same network: no event for that.
+        var rotated = entry
+        rotated["Addresses"] = ["fe80::1c2b:3aff:fe4d:5e6f", "2001:db8::10", "2001:db8::ffff:eeee", "2001:db8::20"]
+        #expect(NetworkSource.lastingAddresses(rotated) == NetworkSource.lastingAddresses(entry))
+        // IPv4 entries carry no flags.
+        #expect(NetworkSource.lastingAddresses(["Addresses": ["192.0.2.10"], "SubnetMasks": ["255.255.255.0"]]) == ["192.0.2.10"])
+        #expect(NetworkSource.lastingAddresses([:]).isEmpty)
+    }
+}
+
 struct SystemSourcesOnThisMacTests {
     @Test func theSourcesStartWithTheirConditionAndStop() async throws {
         #expect(SystemEventMonitor.systemSource(for: .launch) == nil)

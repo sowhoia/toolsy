@@ -317,7 +317,7 @@ private struct ButtonControl: View {
             // Confirms in place, like a copyable value row.
             GlassButton(copied.isShowing ? String(localized: "Copied") : label, icon: copied.isShowing ? "checkmark" : button.icon,
                         kind: kind, tint: mod.tint, fillsWidth: true) {
-                copied.copy(text)
+                perform({ copied.copy(text) }, label: label)
             }
             // Nothing to copy yet: copying would only empty the pasteboard.
             .disabled(text.isEmpty)
@@ -333,17 +333,21 @@ private struct ButtonControl: View {
     private func press(label: String) {
         if let open = button.open {
             // Checked at install: an http(s) URL.
-            if let url = URL(string: open) { NSWorkspace.shared.open(url) }
-            return
+            guard let url = URL(string: open) else { return }
+            perform({ NSWorkspace.shared.open(url) }, label: label)
+        } else if let command = button.command {
+            perform({ model.run(command, value: button.value, of: mod) }, label: label)
         }
-        guard let command = button.command else { return }
-        let run = { model.run(command, value: button.value, of: mod) }
-        guard let question = button.confirm else { return run() }
+    }
+
+    /// What the button does, after its `confirm` question when it has one, whichever of the three it does.
+    private func perform(_ action: @escaping () -> Void, label: String) {
+        guard let question = button.confirm else { return action() }
         panel.confirm(ConfirmationRequest(
             title: question,
             confirmTitle: label,
             isDestructive: button.style == .destructive,
-            onConfirm: run
+            onConfirm: action
         ))
     }
 }
