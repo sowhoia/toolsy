@@ -2,10 +2,33 @@ import Foundation
 import ToolsyShared
 
 extension ModManifest {
-    /// The install-time checks ToolsyShared leaves to the engine: every template and expression must parse.
-    /// Messages name the control path in the style of `ManifestError`, e.g. `ui[2].children[0].when: …`.
+    /// The install-time checks ToolsyShared leaves to the engine: every template, expression and value
+    /// format must parse, in the manifest as written and in each of its translations. Messages name the path
+    /// in the style of `ManifestError`, e.g. `ui[2].children[0].when: …`, `localizations.ru: widgets[0].value: …`.
     func validateTemplatesAndExpressions() throws(ManifestError) {
+        try checkTemplatesAndExpressions()
+        for code in localizations.keys.sorted() {
+            do {
+                try localized(for: [code]).checkTemplatesAndExpressions()
+            } catch {
+                throw ManifestError("localizations.\(code): \(error.message)")
+            }
+        }
+    }
+
+    private func checkTemplatesAndExpressions() throws(ManifestError) {
         try Self.check(ui, path: "ui")
+        for (index, widget) in widgets.enumerated() {
+            let path = "widgets[\(index)]"
+            if let when = widget.when {
+                try Self.located("\(path).when") { () throws(SyntaxError) in _ = try ModExpression(when) }
+            }
+            for (field, template) in [("title", widget.title), ("value", widget.value), ("tint", widget.tint)] {
+                guard let template else { continue }
+                try Self.located("\(path).\(field)") { () throws(SyntaxError) in _ = try ModTemplate(template) }
+            }
+            try Self.check(widget.detail, path: "\(path).detail")
+        }
     }
 
     /// Checks that every `exec` program is a file of the mod with its executable bit set.
@@ -41,6 +64,9 @@ extension ModManifest {
             for (field, template) in control.templateFields {
                 try located("\(path).\(field)") { () throws(SyntaxError) in _ = try ModTemplate(template) }
             }
+            if let format = control.valueFormat {
+                try located("\(path).format") { () throws(SyntaxError) in _ = try ModValueFormat(format) }
+            }
             try check(control.children, path: "\(path).children")
         }
     }
@@ -72,13 +98,23 @@ extension ModControl {
         case .stepper(let stepper): [("label", stepper.label)]
         case .picker(let picker): [("label", picker.label)]
         case .input(let input): [("label", input.label)]
-        case .button(let button): [("label", button.label)]
+        case .button(let button): [("label", button.label), ("copy", button.copy)]
         case .value(let value): [("label", value.label), ("value", value.value), ("tint", value.tint)]
+        case .stat(let stat): [("label", stat.label), ("value", stat.value), ("tint", stat.tint)]
         case .text(let text): [("text", text.text), ("tint", text.tint)]
         case .gauge(let gauge): [("label", gauge.label), ("tint", gauge.tint)]
         case .chart(let chart): [("label", chart.label)]
         case .row, .list, .divider: []
         }
         return fields.compactMap { field, template in template.map { (field, $0) } }
+    }
+
+    /// The `format` of a gauge or chart: a filter chain applied to its readouts.
+    var valueFormat: String? {
+        switch kind {
+        case .gauge(let gauge): gauge.format
+        case .chart(let chart): chart.format
+        default: nil
+        }
     }
 }

@@ -3,6 +3,7 @@ import Foundation
 extension ModManifest {
     static let maxControls = 200
     static let maxNesting = 4
+    static let maxWidgets = 8
 
     /// Checks everything decoding cannot: identifiers, cross-references, ranges and paths.
     /// The helper relies on it as well, so a manifest that passes is safe to snapshot and run.
@@ -36,6 +37,8 @@ extension ModManifest {
         try validateLifecycle()
         var count = 0
         try validate(ui, path: "ui", depth: 1, count: &count)
+        try validateWidgets(count: &count)
+        try validateLocalizations()
     }
 
     public static func isValidID(_ id: String) -> Bool {
@@ -77,8 +80,8 @@ extension ModManifest {
             throw ManifestError("\(path): timeout must be between 0 and \(Int(ModCommand.maxTimeout)) seconds")
         }
         if let capture = command.capture {
-            // A captured string under `enabled` would be truthy even for the text "false".
-            guard Self.isValidKey(capture), capture != ReservedStateKey.enabled else {
+            // A captured string under `enabled` would be truthy even for the text "false"; `notify` is never stored.
+            guard Self.isValidKey(capture), capture != ReservedStateKey.enabled, capture != ReservedStateKey.notify else {
                 throw ManifestError("\(path): capture \"\(capture)\" is not a usable state key")
             }
         }
@@ -91,6 +94,15 @@ extension ModManifest {
         ]
         for (hook, name) in hooks {
             if let name { try requireCommand(name, at: "lifecycle.\(hook)") }
+        }
+        for event in ModSystemEvent.allCases {
+            guard let name = lifecycle.events[event] else { continue }
+            let path = "lifecycle.events.\(event.rawValue)"
+            try requireCommand(name, at: path)
+            // The service runs until it is stopped; as an event command it would be killed by its timeout.
+            guard name != lifecycle.service else {
+                throw ManifestError("\(path): the service command cannot also be an event command")
+            }
         }
         if let name = lifecycle.service, let service = commands[name] {
             // The helper runs one-shot commands only and exits when idle; it cannot own a daemon.
@@ -117,9 +129,13 @@ extension ModManifest {
         }
     }
 
-    private func requireKey(_ key: String, at path: String) throws {
+    /// A key a control reads. `notify` is never stored, so reading it would always find nothing.
+    private func requireKey(_ key: String, field: String = "bind", at path: String) throws {
         guard Self.isValidKey(key) else {
-            throw ManifestError("\(path): bind \"\(key)\" is not a valid key")
+            throw ManifestError("\(path): \(field) \"\(key)\" is not a valid key")
+        }
+        guard key != ReservedStateKey.notify else {
+            throw ManifestError("\(path): \(field) \"\(key)\" is not state: a patch's notify is shown, never stored")
         }
     }
 
@@ -139,7 +155,9 @@ extension ModManifest {
         for (index, control) in controls.enumerated() {
             count += 1
             guard count <= Self.maxControls else {
-                throw ManifestError("ui: more than \(Self.maxControls) controls")
+                throw ManifestError(path.hasPrefix("ui")
+                    ? "ui: more than \(Self.maxControls) controls"
+                    : "\(path): more than \(Self.maxControls) controls in ui and the widgets' details together")
             }
             try validate(control, path: "\(path)[\(index)]", depth: depth, count: &count)
         }
@@ -151,6 +169,13 @@ extension ModManifest {
         }
         switch control.kind {
         case .section(let section):
+            if section.collapsible {
+                guard section.title != nil else { throw ManifestError("\(path): a collapsible section needs a title") }
+            } else {
+                guard !section.collapsed else {
+                    throw ManifestError("\(path): collapsed needs \"collapsible\": true")
+                }
+            }
             try validate(section.children, path: "\(path).children", depth: depth + 1, count: &count)
         case .row(let row):
             guard (1...4).contains(row.children.count) else {
@@ -183,8 +208,12 @@ extension ModManifest {
         case .picker(let picker):
             try requireEditableKey(picker.bind, at: path)
             try command(picker.command)
-            guard (1...32).contains(picker.options.count) else {
-                throw ManifestError("\(path): a picker needs 1–32 options")
+            if let source = picker.optionsFrom {
+                try requireKey(source, field: "optionsFrom", at: path)
+            } else {
+                guard (1...ModControl.Picker.maxOptions).contains(picker.options.count) else {
+                    throw ManifestError("\(path): a picker needs 1–\(ModControl.Picker.maxOptions) options")
+                }
             }
             guard picker.options.allSatisfy(\.value.isScalar) else {
                 throw ManifestError("\(path): option values must be strings, numbers or booleans")
@@ -194,8 +223,8 @@ extension ModManifest {
             try command(input.command)
         case .button(let button):
             try command(button.command)
-            guard (button.command == nil) != (button.open == nil) else {
-                throw ManifestError("\(path): a button needs exactly one of \"command\" and \"open\"")
+            guard [button.command, button.open, button.copy].count(where: { $0 != nil }) == 1 else {
+                throw ManifestError("\(path): a button needs exactly one of \"command\", \"open\" and \"copy\"")
             }
             if let open = button.open {
                 guard Self.isWebURL(open) else { throw ManifestError("\(path): open must be an http or https URL") }
@@ -207,9 +236,7 @@ extension ModManifest {
             guard (1...6).contains(chart.series.count) else {
                 throw ManifestError("\(path): a chart needs 1–6 series")
             }
-            for series in chart.series {
-                try requireKey(series.bind, at: path)
-            }
+            try chart.series.forEach { try requireKey($0.bind, at: path) }
             guard (2...600).contains(chart.points) else {
                 throw ManifestError("\(path): points must be between 2 and 600")
             }
@@ -222,8 +249,75 @@ extension ModManifest {
             if let limit = list.limit {
                 guard limit > 0 else { throw ManifestError("\(path): limit must be positive") }
             }
-        case .value, .text, .divider:
+        case .value, .stat, .text, .divider:
             break
+        }
+    }
+
+    public static func isValidWidgetID(_ id: String) -> Bool {
+        id.wholeMatch(of: /[a-z0-9][a-z0-9_-]{0,31}/) != nil
+    }
+
+    private func validateWidgets(count: inout Int) throws {
+        guard widgets.count <= Self.maxWidgets else {
+            throw ManifestError("widgets: a mod offers at most \(Self.maxWidgets) widgets")
+        }
+        var ids: Set<String> = []
+        for (index, widget) in widgets.enumerated() {
+            let path = "widgets[\(index)]"
+            guard Self.isValidWidgetID(widget.id) else {
+                throw ManifestError("\(path).id: \"\(widget.id)\" is invalid: use 1–32 lowercase letters, digits, \"_\" or \"-\", starting with a letter or digit")
+            }
+            guard ids.insert(widget.id).inserted else {
+                throw ManifestError("\(path).id: \"\(widget.id)\" is used by another widget")
+            }
+            guard !widget.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ManifestError("\(path).value: must not be empty")
+            }
+            guard widget.chart == nil || widget.gauge == nil else {
+                throw ManifestError("\(path): a widget shows at most one of \"chart\" and \"gauge\"")
+            }
+            if let chart = widget.chart {
+                let path = "\(path).chart"
+                guard (1...3).contains(chart.series.count) else {
+                    throw ManifestError("\(path): a chart needs 1–3 series")
+                }
+                try chart.series.forEach { try requireKey($0.bind, at: path) }
+                guard (2...120).contains(chart.points) else {
+                    throw ManifestError("\(path): points must be between 2 and 120")
+                }
+                if let min = chart.min, let max = chart.max {
+                    guard min < max else { throw ManifestError("\(path): min must be less than max") }
+                }
+            }
+            if let gauge = widget.gauge {
+                try requireKey(gauge.bind, at: "\(path).gauge")
+                guard gauge.min < gauge.max else { throw ManifestError("\(path).gauge: min must be less than max") }
+            }
+            // The detail is laid out like the children of a top-level section.
+            try validate(widget.detail, path: "\(path).detail", depth: 2, count: &count)
+        }
+    }
+
+    private func validateLocalizations() throws {
+        guard localizations.count <= Self.maxLanguages else {
+            throw ManifestError("localizations: at most \(Self.maxLanguages) languages")
+        }
+        for (code, table) in localizations.sorted(by: { $0.key < $1.key }) {
+            guard Self.isValidLanguageCode(code) else {
+                throw ManifestError("localizations: \"\(code)\" is not a language code: use a lowercase BCP 47 language, optionally with a region, such as \"ru\" or \"pt-br\"")
+            }
+            guard table.count <= Self.maxTranslations else {
+                throw ManifestError("localizations.\(code): at most \(Self.maxTranslations) entries")
+            }
+            // A translation can break what the source satisfied, such as the length of the name.
+            var translated = localized(for: [code])
+            translated.localizations = [:]
+            do {
+                try translated.validate()
+            } catch let error as ManifestError {
+                throw ManifestError("localizations.\(code): \(error.message)")
+            }
         }
     }
 }

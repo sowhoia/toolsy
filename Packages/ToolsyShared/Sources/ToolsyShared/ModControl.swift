@@ -12,6 +12,7 @@ public struct ModControl: Decodable, Sendable, Equatable {
         case input(Input)
         case button(Button)
         case value(Value)
+        case stat(Stat)
         case text(Text)
         case gauge(Gauge)
         case chart(Chart)
@@ -24,9 +25,11 @@ public struct ModControl: Decodable, Sendable, Equatable {
     public var when: String?
     /// Expression; the control is inert while it is truthy.
     public var disabled: String?
+    /// Plain text shown as a tooltip.
+    public var help: String?
 
     private enum CodingKeys: String, CodingKey {
-        case type, when, disabled
+        case type, when, disabled, help
     }
 
     public init(from decoder: any Decoder) throws {
@@ -34,6 +37,7 @@ public struct ModControl: Decodable, Sendable, Equatable {
         let type = try container.decode(String.self, forKey: .type)
         when = try container.decodeIfPresent(String.self, forKey: .when)
         disabled = try container.decodeIfPresent(String.self, forKey: .disabled)
+        help = try container.decodeIfPresent(String.self, forKey: .help)
         switch type {
         case "section": kind = .section(try Section(from: decoder))
         case "row": kind = .row(try Row(from: decoder))
@@ -44,6 +48,7 @@ public struct ModControl: Decodable, Sendable, Equatable {
         case "input": kind = .input(try Input(from: decoder))
         case "button": kind = .button(try Button(from: decoder))
         case "value": kind = .value(try Value(from: decoder))
+        case "stat": kind = .stat(try Stat(from: decoder))
         case "text": kind = .text(try Text(from: decoder))
         case "gauge": kind = .gauge(try Gauge(from: decoder))
         case "chart": kind = .chart(try Chart(from: decoder))
@@ -66,6 +71,23 @@ extension ModControl {
         /// Template.
         public var footer: String?
         public var children: [ModControl]
+        /// The user can fold the section. Needs a `title` to fold it by.
+        public var collapsible: Bool
+        /// A collapsible section starts folded.
+        public var collapsed: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case title, footer, children, collapsible, collapsed
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            title = try container.decodeIfPresent(String.self, forKey: .title)
+            footer = try container.decodeIfPresent(String.self, forKey: .footer)
+            children = try container.decode([ModControl].self, forKey: .children)
+            collapsible = try container.decodeIfPresent(Bool.self, forKey: .collapsible) ?? false
+            collapsed = try container.decodeIfPresent(Bool.self, forKey: .collapsed) ?? false
+        }
     }
 
     /// Leaf controls laid out side by side with equal widths.
@@ -157,6 +179,12 @@ extension ModControl {
                 case value, label, icon
             }
 
+            public init(value: JSONValue, label: String, icon: String? = nil) {
+                self.value = value
+                self.label = label
+                self.icon = icon
+            }
+
             /// Accepts `{"value": …, "label": …}` or a bare string that is both value and label.
             public init(from decoder: any Decoder) throws {
                 if let shorthand = try? decoder.singleValueContainer().decode(String.self) {
@@ -169,16 +197,62 @@ extension ModControl {
                 label = try container.decodeIfPresent(String.self, forKey: .label) ?? value.text
                 icon = try container.decodeIfPresent(String.self, forKey: .icon)
             }
+
+            /// The options a picker with `optionsFrom` offers: the elements of that state array that have the
+            /// shape of an `options` element (a string, or an object with a scalar `value` and optional
+            /// string `label` and `icon`), at most `Picker.maxOptions`. Anything else is skipped.
+            public static func options(from value: JSONValue?) -> [Option] {
+                let options = (value?.arrayValue ?? []).compactMap { element -> Option? in
+                    if let shorthand = element.stringValue {
+                        return Option(value: element, label: shorthand)
+                    }
+                    guard let object = element.objectValue, let value = object["value"], value.isScalar else {
+                        return nil
+                    }
+                    let label = object["label"], icon = object["icon"]
+                    guard label == nil || label?.stringValue != nil, icon == nil || icon?.stringValue != nil else {
+                        return nil
+                    }
+                    return Option(value: value, label: label?.stringValue ?? value.text, icon: icon?.stringValue)
+                }
+                return Array(options.prefix(Picker.maxOptions))
+            }
         }
+
+        public static let maxOptions = 32
 
         /// Template.
         public var label: String?
         public var icon: String?
         public var bind: String
+        /// Fixed options; empty when the picker reads them from `optionsFrom`.
         public var options: [Option]
+        /// State key holding the options as an array; see `Option.options(from:)`.
+        public var optionsFrom: String?
         /// Unset: segmented for up to four options, a menu beyond that.
         public var style: Style?
         public var command: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case label, icon, bind, options, optionsFrom, style, command
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            guard container.contains(.options) != container.contains(.optionsFrom) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: container.codingPath,
+                    debugDescription: "a picker needs exactly one of \"options\" and \"optionsFrom\""
+                ))
+            }
+            label = try container.decodeIfPresent(String.self, forKey: .label)
+            icon = try container.decodeIfPresent(String.self, forKey: .icon)
+            bind = try container.decode(String.self, forKey: .bind)
+            options = try container.decodeIfPresent([Option].self, forKey: .options) ?? []
+            optionsFrom = try container.decodeIfPresent(String.self, forKey: .optionsFrom)
+            style = try container.decodeIfPresent(Style.self, forKey: .style)
+            command = try container.decodeIfPresent(String.self, forKey: .command)
+        }
     }
 
     /// A single-line text field. The value is committed on Return or when focus leaves.
@@ -200,10 +274,12 @@ extension ModControl {
         /// Template.
         public var label: String
         public var icon: String?
-        /// Command to run. A button has either this or `open`.
+        /// Command to run. A button has exactly one of `command`, `open` and `copy`.
         public var command: String?
         /// `http(s)` URL to open in the browser.
         public var open: String?
+        /// Template. Clicking copies the rendered text.
+        public var copy: String?
         /// Passed to the command as its value.
         public var value: JSONValue?
         public var style: Style
@@ -211,7 +287,7 @@ extension ModControl {
         public var confirm: String?
 
         private enum CodingKeys: String, CodingKey {
-            case label, icon, command, open, value, style, confirm
+            case label, icon, command, open, copy, value, style, confirm
         }
 
         public init(from decoder: any Decoder) throws {
@@ -220,6 +296,7 @@ extension ModControl {
             icon = try container.decodeIfPresent(String.self, forKey: .icon)
             command = try container.decodeIfPresent(String.self, forKey: .command)
             open = try container.decodeIfPresent(String.self, forKey: .open)
+            copy = try container.decodeIfPresent(String.self, forKey: .copy)
             value = try container.decodeIfPresent(JSONValue.self, forKey: .value)
             style = try container.decodeIfPresent(Style.self, forKey: .style) ?? .normal
             confirm = try container.decodeIfPresent(String.self, forKey: .confirm)
@@ -250,6 +327,17 @@ extension ModControl {
             tint = try container.decodeIfPresent(String.self, forKey: .tint)
             copyable = try container.decodeIfPresent(Bool.self, forKey: .copyable) ?? false
         }
+    }
+
+    /// A compact label-over-value fact, meant for rows.
+    public struct Stat: Decodable, Sendable, Equatable {
+        /// Template.
+        public var label: String
+        /// Template.
+        public var value: String
+        public var icon: String?
+        /// Template resolving to a colour or level name.
+        public var tint: String?
     }
 
     /// Free-standing text.
@@ -289,12 +377,15 @@ extension ModControl {
         public var min: Double
         public var max: Double
         public var unit: String?
+        /// Filter chain as after `|` in a template (`"bytes"`, `"div:1000|fixed:1"`); formats the readout
+        /// instead of the number plus `unit`.
+        public var format: String?
         public var style: Style
         /// Template resolving to a colour or level name.
         public var tint: String?
 
         private enum CodingKeys: String, CodingKey {
-            case label, icon, bind, min, max, unit, style, tint
+            case label, icon, bind, min, max, unit, format, style, tint
         }
 
         public init(from decoder: any Decoder) throws {
@@ -305,6 +396,7 @@ extension ModControl {
             min = try container.decodeIfPresent(Double.self, forKey: .min) ?? 0
             max = try container.decodeIfPresent(Double.self, forKey: .max) ?? 100
             unit = try container.decodeIfPresent(String.self, forKey: .unit)
+            format = try container.decodeIfPresent(String.self, forKey: .format)
             style = try container.decodeIfPresent(Style.self, forKey: .style) ?? .bar
             tint = try container.decodeIfPresent(String.self, forKey: .tint)
         }
@@ -336,9 +428,11 @@ extension ModControl {
         /// Fixed upper bound of the value axis; fitted to the data when unset.
         public var max: Double?
         public var unit: String?
+        /// Filter chain as after `|` in a template; formats the readouts instead of the number plus `unit`.
+        public var format: String?
 
         private enum CodingKeys: String, CodingKey {
-            case label, series, style, points, min, max, unit
+            case label, series, style, points, min, max, unit, format
         }
 
         public init(from decoder: any Decoder) throws {
@@ -350,6 +444,7 @@ extension ModControl {
             min = try container.decodeIfPresent(Double.self, forKey: .min)
             max = try container.decodeIfPresent(Double.self, forKey: .max)
             unit = try container.decodeIfPresent(String.self, forKey: .unit)
+            format = try container.decodeIfPresent(String.self, forKey: .format)
         }
     }
 

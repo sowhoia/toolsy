@@ -103,6 +103,9 @@ struct ModControlView: View {
         case .value(let value):
             ValueRow(mod.render(value.label), value: mod.render(value.value), icon: value.icon,
                      tint: Tint.resolve(value.tint.map(mod.render)), copyable: value.copyable)
+        case .stat(let stat):
+            // Until the dedicated label-over-value view exists, a stat reads as a value line.
+            ValueRow(mod.render(stat.label), value: mod.render(stat.value), icon: stat.icon, tint: Tint.resolve(stat.tint.map(mod.render)))
         case .text(let text):
             StyledText(mod.render(text.text), style: TextStyle(rawValue: text.style.rawValue) ?? .body,
                        tint: Tint.resolve(text.tint.map(mod.render)))

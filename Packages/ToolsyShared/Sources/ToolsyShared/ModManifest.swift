@@ -23,6 +23,9 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     public var ui: [ModControl]
     /// Tiles the mod offers for the dashboard.
     public var widgets: [ModWidget]
+    /// Language code (`ru`, `pt-br`) → source string, exactly as written in the manifest → translation.
+    /// Applied by `localized(for:)`.
+    public var localizations: [String: [String: String]]
 
     /// Whether any command runs as root, i.e. the mod needs the privileged helper and the user's approval.
     public var requiresPrivileges: Bool {
@@ -30,7 +33,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schema, id, name, version, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui, widgets
+        case schema, id, name, version, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui, widgets, localizations
     }
 
     public init(from decoder: any Decoder) throws {
@@ -49,6 +52,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
         lifecycle = try container.decodeIfPresent(ModLifecycle.self, forKey: .lifecycle) ?? ModLifecycle()
         ui = try container.decodeIfPresent([ModControl].self, forKey: .ui) ?? []
         widgets = try container.decodeIfPresent([ModWidget].self, forKey: .widgets) ?? []
+        localizations = try container.decodeIfPresent([String: [String: String]].self, forKey: .localizations) ?? [:]
     }
 
     /// Decodes and validates a manifest. Every failure is a `ManifestError` with a message meant for the mod author.
@@ -160,7 +164,16 @@ public struct ModLifecycle: Decodable, Sendable, Equatable {
         uninstall = try container.decodeIfPresent(String.self, forKey: .uninstall)
         service = try container.decodeIfPresent(String.self, forKey: .service)
         refresh = try container.decodeIfPresent(Refresh.self, forKey: .refresh)
-        events = try container.decodeIfPresent([ModSystemEvent: String].self, forKey: .events) ?? [:]
+        events = [:]
+        for (name, command) in try container.decodeIfPresent([String: String].self, forKey: .events) ?? [:] {
+            guard let event = ModSystemEvent(rawValue: name) else {
+                let known = ModSystemEvent.allCases.map { "\"\($0.rawValue)\"" }.joined(separator: ", ")
+                throw DecodingError.dataCorruptedError(
+                    forKey: .events, in: container, debugDescription: "unknown event \"\(name)\"; expected one of \(known)"
+                )
+            }
+            events[event] = command
+        }
     }
 
     /// Mods without any of these are passive widgets and get no main switch.
