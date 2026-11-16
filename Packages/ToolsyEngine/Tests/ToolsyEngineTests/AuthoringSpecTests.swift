@@ -108,12 +108,13 @@ import Testing
 
     // MARK: - Coverage
 
-    /// The line of a reference table whose first cell is `` `name` `` (followed by `|` or a space).
+    /// The line of a reference table whose first cell is, or starts with, `` `name` ``.
     private func row(_ name: String, in text: String) -> String? {
         text.split(separator: "\n").first { $0.hasPrefix("| `\(name)` ") || $0.hasPrefix("| `\(name)`,") }.map(String.init)
     }
 
-    /// The stored properties of a decoded value: for the format's types, its JSON field names.
+    /// The stored properties of a decoded value: for the format's types, its JSON field names. `Any`, since
+    /// Mirror reflects values of every type.
     private static func fields(of value: Any) -> [String] {
         Mirror(reflecting: value).children.compactMap(\.label)
     }
