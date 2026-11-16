@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let dashboard: DashboardStore
     let processes: ProcessMonitor
     let memoryOptimizer: MemoryOptimizer
+    /// Turns what happens to the Mac into the system events mods declare.
+    let systemEvents: SystemEventMonitor
 
     private let options: LaunchOptions
     private var statusItem: NSStatusItem?
@@ -55,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem = LoginItem(canChange: options.managesLoginItem)
         dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"),
                                    hasBattery: !options.simulateNoBattery && BatteryReader.isPresent)
+        systemEvents = SystemEventMonitor(observing: { store.observedEvents }, post: { store.post($0) })
         super.init()
         mods.presentPanel = { [weak self] in self?.openPanel(on: nil) }
         panelState.addVisibilityHandler { [dashboard] visible in
@@ -89,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         handleTerminationSignals()
         // Loading mods reads their folders and restarts services; the menu bar icon does not wait for it.
         mods.start()
+        systemEvents.start()
         loginItem.registerOnFirstLaunch()
         if options.openAtLaunch {
             // The menu bar places the new status item asynchronously; open once it has a frame.
@@ -116,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isTerminating else { return .terminateLater }
         isTerminating = true
+        systemEvents.stop()
         Task {
             await mods.shutdown(within: .seconds(4))
             NSApp.reply(toApplicationShouldTerminate: true)
