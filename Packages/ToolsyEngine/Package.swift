@@ -19,7 +19,10 @@ let package = Package(
             dependencies: [.product(name: "ToolsyShared", package: "ToolsyShared")]
         ),
         // Checks and packs mods; ships inside the app as Contents/Helpers/toolsy-mod.
-        .executableTarget(name: "toolsy-mod", dependencies: ["ToolsyEngine"]),
+        .executableTarget(
+            name: "toolsy-mod",
+            dependencies: ["ToolsyEngine", .product(name: "ToolsyShared", package: "ToolsyShared")]
+        ),
         .testTarget(
             name: "ToolsyEngineTests",
             dependencies: ["ToolsyEngine", "toolsy-mod", .product(name: "ToolsyShared", package: "ToolsyShared")]

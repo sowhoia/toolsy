@@ -45,7 +45,7 @@ extension ModManifest {
     }
 
     /// Every control of the page and of the widgets' details, depth first.
-    var allControls: [ModControl] {
+    public var allControls: [ModControl] {
         func flatten(_ controls: [ModControl]) -> [ModControl] {
             controls.flatMap { [$0] + flatten($0.children) }
         }
@@ -81,7 +81,8 @@ extension ModManifest {
 }
 
 extension ModControl {
-    var children: [ModControl] {
+    /// The controls inside a section or row; none for other controls.
+    public var children: [ModControl] {
         switch kind {
         case .section(let section): section.children
         case .row(let row): row.children

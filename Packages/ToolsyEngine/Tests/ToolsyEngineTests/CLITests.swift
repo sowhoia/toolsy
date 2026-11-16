@@ -8,7 +8,7 @@ private final class BundleMarker {}
 /// `toolsy-mod` is built next to the test bundle.
 private let tool = Bundle(for: BundleMarker.self).bundleURL.deletingLastPathComponent().appending(path: "toolsy-mod")
 
-private func toolsyMod(_ arguments: [String], in directory: URL? = nil) async throws -> (status: Int32, output: String, error: String) {
+func toolsyMod(_ arguments: [String], in directory: URL? = nil) async throws -> (status: Int32, output: String, error: String) {
     let result = try await ProcessRunner.run(ProcessRunner.Request(
         executable: tool, arguments: arguments, environment: ProcessInfo.processInfo.environment, currentDirectory: directory
     ))
