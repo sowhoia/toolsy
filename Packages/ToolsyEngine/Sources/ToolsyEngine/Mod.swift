@@ -99,6 +99,8 @@ public final class Mod: Identifiable {
     let manifestDigest: SHA256.Digest
     @ObservationIgnored private let directories: ToolsyDirectories
     @ObservationIgnored private let privileged: any PrivilegedExecuting
+    /// The user's first language, which commands are told as `TOOLSY_LOCALE`.
+    @ObservationIgnored private let locale: String?
     @ObservationIgnored private let timing: EngineTiming
     @ObservationIgnored private let accessMayHaveChanged: @MainActor () -> Void
     @ObservationIgnored private let notify: @MainActor (ModNotification) -> Void
@@ -131,6 +133,7 @@ public final class Mod: Identifiable {
         saved: PersistedState,
         directories: ToolsyDirectories,
         privileged: any PrivilegedExecuting,
+        locale: String? = nil,
         timing: EngineTiming,
         after predecessorWork: Task<Void, Never>? = nil,
         accessMayHaveChanged: @escaping @MainActor () -> Void,
@@ -141,6 +144,7 @@ public final class Mod: Identifiable {
         self.folder = folder
         self.directories = directories
         self.privileged = privileged
+        self.locale = locale
         self.timing = timing
         self.predecessorWork = predecessorWork
         self.accessMayHaveChanged = accessMayHaveChanged
@@ -459,7 +463,7 @@ public final class Mod: Identifiable {
             record(.couldNotStart(message))
             return nil
         }
-        let input = CommandInput(event: event, command: name, key: key, value: value, state: state)
+        let input = CommandInput(event: event, command: name, key: key, value: value, state: state, locale: locale)
         let result: CommandResult
         do {
             if command.privileged {
@@ -719,7 +723,7 @@ public final class Mod: Identifiable {
               let name = manifest.lifecycle.service, let command = manifest.commands[name] else { return }
         let started = ContinuousClock.now
         do {
-            let request = try request(for: command, input: CommandInput(event: .service, command: name, state: state))
+            let request = try request(for: command, input: CommandInput(event: .service, command: name, state: state, locale: locale))
             let process = try ServiceProcess(
                 executable: request.executable, arguments: request.arguments, environment: request.environment,
                 directory: folder, input: request.stdin

@@ -201,9 +201,10 @@ final class Harness {
     let directories: ToolsyDirectories
     let helper: FakeHelper
     let timing: EngineTiming
+    let languages: [String]
     private(set) var store: ModStore
 
-    init(scale: Double, helper: FakeHelper, clock: ManualClock? = nil) throws {
+    init(scale: Double, helper: FakeHelper, clock: ManualClock? = nil, languages: [String] = []) throws {
         temporary = try TemporaryDirectory()
         directories = ToolsyDirectories(root: temporary.url.appending(path: "Toolsy", directoryHint: .isDirectory))
         self.helper = helper
@@ -212,7 +213,8 @@ final class Harness {
             timing.now = { clock.now }
         }
         self.timing = timing
-        store = ModStore(directories: directories, privileged: helper, timing: timing)
+        self.languages = languages
+        store = ModStore(directories: directories, privileged: helper, languages: languages, timing: timing)
     }
 
     /// Writes a mod folder and installs it through prepare + commit.
@@ -225,7 +227,7 @@ final class Harness {
     /// Shuts the store down and starts a new one over the same directories, as an app relaunch does.
     func relaunch() async {
         await store.shutdown()
-        store = ModStore(directories: directories, privileged: helper, timing: timing)
+        store = ModStore(directories: directories, privileged: helper, languages: languages, timing: timing)
         await store.start()
     }
 
@@ -244,9 +246,10 @@ final class Harness {
 /// Runs `body` against a fresh started store and always shuts it down, so no test leaves processes behind.
 @MainActor
 func withHarness(
-    scale: Double = 0.01, helper: FakeHelper = FakeHelper(), clock: ManualClock? = nil, _ body: (Harness) async throws -> Void
+    scale: Double = 0.01, helper: FakeHelper = FakeHelper(), clock: ManualClock? = nil, languages: [String] = [],
+    _ body: (Harness) async throws -> Void
 ) async throws {
-    let harness = try Harness(scale: scale, helper: helper, clock: clock)
+    let harness = try Harness(scale: scale, helper: helper, clock: clock, languages: languages)
     await harness.store.start()
     do {
         try await body(harness)

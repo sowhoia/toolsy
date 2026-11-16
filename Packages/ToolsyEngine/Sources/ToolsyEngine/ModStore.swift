@@ -58,6 +58,7 @@ public final class ModStore {
 
     @ObservationIgnored private let directories: ToolsyDirectories
     @ObservationIgnored private let privileged: any PrivilegedExecuting
+    @ObservationIgnored private let languages: [String]
     @ObservationIgnored private let timing: EngineTiming
     /// Mods being installed. Their approval may be ahead of their folder (see `revokeOrphanedApprovals`),
     /// and a second installation of the same mod must not run beside the first.
@@ -82,13 +83,20 @@ public final class ModStore {
     /// Mods being reloaded; a second reload or an installation must not replace the instance meanwhile.
     @ObservationIgnored private var reloading: Set<String> = []
 
-    public convenience init(directories: ToolsyDirectories = .user, privileged: any PrivilegedExecuting) {
-        self.init(directories: directories, privileged: privileged, timing: EngineTiming())
+    /// `languages` are the user's languages, most preferred first (BCP 47, as in `Locale.preferredLanguages`):
+    /// a mod is shown in the first of them it has a translation for, and its commands are told the first
+    /// one as `TOOLSY_LOCALE`.
+    public convenience init(
+        directories: ToolsyDirectories = .user, privileged: any PrivilegedExecuting,
+        languages: [String] = Locale.preferredLanguages
+    ) {
+        self.init(directories: directories, privileged: privileged, languages: languages, timing: EngineTiming())
     }
 
-    init(directories: ToolsyDirectories, privileged: any PrivilegedExecuting, timing: EngineTiming) {
+    init(directories: ToolsyDirectories, privileged: any PrivilegedExecuting, languages: [String] = [], timing: EngineTiming) {
         self.directories = directories
         self.privileged = privileged
+        self.languages = languages
         self.timing = timing
     }
 
@@ -144,7 +152,8 @@ public final class ModStore {
     public func prepareInstall(from package: URL) async throws -> PreparedInstall {
         let (manifest, payload, staging) = try await ModPackage.stage(package, nextTo: directories.mods)
         return PreparedInstall(
-            manifest: manifest,
+            // What the confirmation shows is what the installed mod will be called.
+            manifest: manifest.localized(for: languages),
             replacesInstalledMod: FileManager.default.fileExists(atPath: folder(of: manifest.id).path(percentEncoded: false)),
             installedVersion: mod(id: manifest.id)?.manifest.version,
             staging: staging,
@@ -435,12 +444,13 @@ public final class ModStore {
             throw EngineError("the folder name does not match the mod's id \"\(manifest.id)\"")
         }
         return Mod(
-            manifest: manifest,
+            manifest: manifest.localized(for: languages),
             manifestDigest: SHA256.hash(data: data),
             folder: folder,
             saved: try PersistedState.load(for: manifest, from: directories),
             directories: directories,
             privileged: privileged,
+            locale: languages.first,
             timing: timing,
             after: predecessorWork,
             accessMayHaveChanged: { [weak self] in
