@@ -206,7 +206,6 @@ struct PageScaffold<Accessory: View, Content: View>: View {
     private let content: Content
 
     @Environment(PanelState.self) private var panel
-    @State private var contentHeight: CGFloat = 0
     @State private var edges = ScrollEdges()
 
     /// `subtitle` and `badge` give a page about one thing (a mod) its name, icon and details.
@@ -227,18 +226,37 @@ struct PageScaffold<Accessory: View, Content: View>: View {
             PageHeader(title: title, subtitle: subtitle, badge: badge, showsBack: !panel.path.isEmpty, onBack: panel.pop) {
                 accessory
             }
-            ScrollView {
-                VStack(spacing: Metrics.tileSpacing) { content }
-                    .padding(.vertical, edgeRoom)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+            ContentHeight(limit: max(0, panel.maxHeight - 2 * Metrics.panelPadding
+                                        - Metrics.headerHeight - Metrics.tileSpacing + edgeRoom)) {
+                ScrollView {
+                    VStack(spacing: Metrics.tileSpacing) { content }
+                        .padding(.vertical, edgeRoom)
+                }
+                .scrollIndicators(.automatic)
+                .debugAnchor("scroll")
+                .onScrollGeometryChange(for: ScrollEdges.self, of: ScrollEdges.init) { _, new in edges = new }
+                .mask { EdgeFadeMask(edges: edges) }
             }
-            .scrollIndicators(.automatic)
-            .debugAnchor("scroll")
-            .frame(height: min(contentHeight, max(0, panel.maxHeight - 2 * Metrics.panelPadding
-                                                         - Metrics.headerHeight - Metrics.tileSpacing + edgeRoom)))
-            .onScrollGeometryChange(for: ScrollEdges.self, of: ScrollEdges.init) { _, new in edges = new }
-            .mask { EdgeFadeMask(edges: edges) }
         }
+    }
+}
+
+/// Gives a scroll view the height of its content, up to a limit beyond which it scrolls. The height
+/// is part of the layout, so it changes in the same transaction as the content and animates with it.
+/// Measured into state instead, it arrived a frame late and unanimated: a page appeared at zero
+/// height, and a group that collapsed cut off everything below it until the rows had moved up.
+private struct ContentHeight: Layout {
+    let limit: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let scrollView = subviews.first else { return .zero }
+        // Without a proposed height a scroll view asks for all of its content.
+        let content = scrollView.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? content.width, height: min(content.height, limit))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }
 

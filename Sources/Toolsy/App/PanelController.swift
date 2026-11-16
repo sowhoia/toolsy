@@ -15,8 +15,6 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Greater than zero while the panel presents its own modal window (an `NSOpenPanel`);
     /// focus moving there must not close the panel.
     private var modalDepth = 0
-    private var contentHeight: CGFloat = 0
-    private var pendingShrink: Task<Void, Never>?
 
     init(state: PanelState, options: LaunchOptions, mods: ModsModel, loginItem: LoginItem) {
         self.state = state
@@ -30,13 +28,23 @@ final class PanelController: NSObject, NSWindowDelegate {
         state.addVisibilityHandler { [monitor] visible in
             visible ? monitor.start() : monitor.stop()
         }
-        let root = PanelRootView { [weak self] height in self?.contentHeightChanged(height) }
+        // A display that was unplugged or rearranged invalidates where an open panel was placed.
+        // The controller lives as long as the app, so the observer is never removed.
+        _ = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.window.isVisible else { return }
+                self.place()
+            }
+        }
+        let root = PanelRootView()
             .environment(state)
             .environment(monitor)
             .environment(mods)
             .environment(loginItem)
         let hosting = PanelHostingView(rootView: root)
-        // The window size is driven by `contentHeightChanged`, not by the hosting view.
+        // The window keeps the frame of its placement; the content never resizes it.
         hosting.sizingOptions = []
         window.contentView = hosting
     }
@@ -49,12 +57,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             window.makeKey()
             return
         }
-        pendingShrink?.cancel()
         self.anchor = anchor
-        updateMaximumHeight()
-        // Lay out once before the window appears so its first frame already has the right size.
-        window.contentView?.layoutSubtreeIfNeeded()
-        setWindowHeight(contentHeight)
+        place()
         window.orderFrontRegardless()
         window.makeKey()
         installDismissalMonitors()
@@ -62,7 +66,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         withAnimation(Motion.resolve(.spring(response: 0.3, dampingFraction: 0.82), reduceMotion: reduceMotion)) {
             state.isPresented = true
         }
+        #if DEBUG
+        // For captures of a scripted run by window number.
         FileHandle.standardOutput.write(Data("Toolsy panel window \(window.windowNumber)\n".utf8))
+        #endif
     }
 
     func hide() {
@@ -86,58 +93,17 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     // MARK: Geometry
 
-    /// The status item's window, if it is placed in a menu bar. Right after launch, or when the
-    /// item is hidden behind the notch, it is not, and the panel falls back to the top right.
-    private var anchorFrame: NSRect? {
-        guard let anchor, let screen = anchor.screen,
-              anchor.frame.minY >= screen.visibleFrame.maxY - 1 else { return nil }
-        return anchor.frame
-    }
-
-    private var screen: NSScreen? {
-        anchorFrame != nil ? anchor?.screen : NSScreen.main
-    }
-
-    /// Top edge of the panel: just under the menu bar.
-    private var panelTop: CGFloat {
-        guard let screen else { return 0 }
-        return min(anchorFrame?.minY ?? .infinity, screen.visibleFrame.maxY) - 2
-    }
-
-    private func updateMaximumHeight() {
-        guard let screen else { return }
-        let available = panelTop - screen.visibleFrame.minY - 2 * Metrics.panelInset
-        state.maxHeight = max(200, available)
-    }
-
-    private func contentHeightChanged(_ height: CGFloat) {
-        let grows = height >= contentHeight
-        contentHeight = height
-        pendingShrink?.cancel()
-        guard window.isVisible else { return }
-        if grows {
-            setWindowHeight(height)
-        } else {
-            // SwiftUI animates the content to its smaller size; shrinking the window at once
-            // would clip that animation, so wait for it to finish.
-            pendingShrink = Task { [weak self] in
-                do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
-                self?.setWindowHeight(height)
-            }
+    /// Puts the window where this presentation of the panel belongs. Called when the panel opens (and
+    /// when the displays change under it), never because its content changed; see `PanelPlacement`.
+    private func place() {
+        // The status item's own screen when the item sits in a menu bar, else the screen in use.
+        let item = anchor.flatMap { item in
+            item.screen.flatMap { PanelPlacement.isInMenuBar(item.frame, of: $0.frame) ? (frame: item.frame, screen: $0) : nil }
         }
-    }
-
-    private func setWindowHeight(_ contentHeight: CGFloat) {
-        guard let screen else { return }
-        let visible = screen.visibleFrame
-        let width = Metrics.panelWidth + 2 * Metrics.panelInset
-        let height = min(contentHeight, state.maxHeight) + 2 * Metrics.panelInset
-        // Like a menu, the panel's leading edge lines up with the status item, and it is kept
-        // on screen. The inset leaves room for the glass rim, so it may touch the screen edge.
-        let anchorX = anchorFrame?.minX ?? visible.maxX
-        let x = min(max(anchorX - Metrics.panelInset, visible.minX), visible.maxX - width)
-        let frame = NSRect(x: x, y: panelTop - height, width: width, height: height)
-        window.setFrame(frame, display: true)
+        guard let screen = item?.screen ?? NSScreen.main else { return }
+        let placement = PanelPlacement(anchor: item?.frame, visibleFrame: screen.visibleFrame)
+        state.maxHeight = placement.maxContentHeight
+        window.setFrame(placement.frame, display: true)
     }
 
     // MARK: Dismissal

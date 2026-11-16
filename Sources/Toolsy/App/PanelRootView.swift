@@ -1,10 +1,9 @@
 import SwiftUI
 
 /// The SwiftUI root of the panel: the current page, page transitions, the in-panel dialog and
-/// the open/close animation. Reports its height so the window can follow it.
+/// the open/close animation. The panel takes the height of its page at the top of a window that
+/// is as tall as the panel may get (see `PanelPlacement`).
 struct PanelRootView: View {
-    let onHeightChange: (CGFloat) -> Void
-
     @Environment(PanelState.self) private var panel
     @Environment(ModsModel.self) private var mods
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -52,7 +51,7 @@ struct PanelRootView: View {
         .clipShape(RoundedRectangle(cornerRadius: Metrics.panelRadius, style: .continuous))
         .panelGlass()
         .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeightChange)
+        .debugAnchor("panel")
         .padding(Metrics.panelInset)
         .scaleEffect(panel.isPresented || reduceMotion ? 1 : 0.96, anchor: .top)
         .offset(y: panel.isPresented || reduceMotion ? 0 : -6)
@@ -101,7 +100,8 @@ private struct DropTarget: View {
 
 /// Pages slide in from the trailing edge when pushed and from the leading edge when popped.
 /// The direction is read when the transition runs, not when the outgoing page last rendered,
-/// so the outgoing page always leaves the opposite way.
+/// so the outgoing page always leaves the opposite way. The page that leaves has faded before the
+/// one that arrives shows, so the text of one is never read through the other.
 private struct PageTransition: Transition {
     let panel: PanelState
     let reduceMotion: Bool
@@ -115,6 +115,8 @@ private struct PageTransition: Transition {
         }
         content
             .offset(x: reduceMotion ? 0 : offset)
-            .opacity(phase.isIdentity ? 1 : 0)
+            .animation(phase == .didDisappear ? .easeOut(duration: 0.1) : .easeIn(duration: 0.18).delay(0.06)) {
+                $0.opacity(phase.isIdentity ? 1 : 0)
+            }
     }
 }

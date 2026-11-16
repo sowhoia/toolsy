@@ -465,10 +465,17 @@ private final class Runner {
     /// does not), over a backdrop the size of the panel so nothing of the owner's screen is in it.
     func capture(_ name: String, anchor: String? = nil) async throws {
         guard let window else { throw ScriptError("the panel is not open") }
-        showBackdrop(behind: window)
+        let backdrop = try panelRegion(in: window)
+        showBackdrop(covering: backdrop, behind: window)
         try await Task.sleep(for: .seconds(0.7))
-        let region = try anchor.map { window.convertToScreen(try frame(of: $0)).insetBy(dx: -12, dy: -12) } ?? window.frame
-        try await screencapture(region.intersection(window.frame), to: name)
+        let region = try anchor.map { window.convertToScreen(try frame(of: $0)).insetBy(dx: -12, dy: -12) } ?? panelRegion(in: window)
+        try await screencapture(region.intersection(backdrop), to: name)
+    }
+
+    /// The part of its window the panel occupies right now: the glass and the inset around it. The
+    /// window itself is as tall as the panel may get and transparent below it.
+    func panelRegion(in window: NSWindow) throws -> NSRect {
+        window.convertToScreen(try frame(of: "panel")).insetBy(dx: -Metrics.panelInset, dy: -Metrics.panelInset)
     }
 
     /// Only the menu bar icon itself, none of its neighbours.
@@ -493,9 +500,9 @@ private final class Runner {
         say("CAPTURE \(file.path(percentEncoded: false))")
     }
 
-    func showBackdrop(behind panelWindow: NSWindow) {
+    func showBackdrop(covering region: NSRect, behind panelWindow: NSWindow) {
         let backdrop = self.backdrop ?? {
-            let made = NSWindow(contentRect: panelWindow.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            let made = NSWindow(contentRect: region, styleMask: .borderless, backing: .buffered, defer: false)
             made.isReleasedWhenClosed = false
             made.ignoresMouseEvents = true
             made.hasShadow = false
@@ -505,7 +512,7 @@ private final class Runner {
             self.backdrop = made
             return made
         }()
-        backdrop.setFrame(panelWindow.frame, display: true)
+        backdrop.setFrame(region, display: true)
         backdrop.contentView?.needsDisplay = true
         backdrop.orderFront(nil)
     }
