@@ -36,15 +36,69 @@ and 64 MB, paths must be relative and must not differ only by letter case. Execu
 preserved. Installing a mod with an `id` that is already installed replaces it and keeps its
 settings.
 
-Check and pack a mod with `toolsy-mod`, which ships inside the app
-(`Toolsy.app/Contents/Helpers/toolsy-mod`):
+Installed mods live in `~/Library/Application Support/Toolsy/Mods/<id>/`.
+
+### toolsy-mod
+
+`toolsy-mod` writes, checks, runs and packs mods without the app. It ships inside it
+(`Toolsy.app/Contents/Helpers/toolsy-mod`); `toolsy-mod help <command>` explains each command.
 
 ```sh
-toolsy-mod validate path/to/mod        # checks mod.json and every file it refers to
-toolsy-mod pack path/to/mod -o name.toolsymod
+toolsy-mod new my-mod --template widget        # a working mod to start from
+toolsy-mod validate my-mod                     # the checks installing runs, and likely mistakes
+toolsy-mod preview my-mod --state '{"percent": 42}'
+toolsy-mod run my-mod read                     # one command, run as Toolsy runs it
+toolsy-mod pack my-mod -o my-mod.toolsymod
 ```
 
-Installed mods live in `~/Library/Application Support/Toolsy/Mods/<id>/`.
+| Command | What it does |
+| --- | --- |
+| `new <id> [--template T] [--name N] [-o F]` | Writes a folder (`./<id>` unless `-o`; never over an existing one) holding a mod that validates and works as it is: `mod.json`, its script and a `README.md` saying how to try it. Templates: `basic` (a value kept fresh by `refresh`, a stepper setting, a button; the default), `switch` (`enable`/`disable` of a lasting effect, with `refresh` reporting `enabled`), `service` (a service feeding a chart and the status), `widget` (a dashboard widget with a gauge and `detail`, system events, a notification). |
+| `validate <mod> [--json]` | Takes a folder, a `.toolsymod` file or a lone manifest and runs every check installing runs. Prints `OK <id> <version>`, or the error naming the field on standard error. Then [warnings](#warnings), one per line on standard error after `warning: `. |
+| `run <folder> <command> [options]` | Validates the mod, runs one command exactly as Toolsy does and reports what Toolsy would make of it, see [Running a command](#running-a-command). |
+| `preview <folder> [--state J] [--language L]` | Prints what the page and the widgets show for a state, as an outline: each control with its rendered text and bound value, `[hidden]` when its `when` is false (or nothing inside a section or row is shown), `[disabled]`, a picker's options, a list's rows, each widget's title, value, gauge or chart and `detail`. `--language` shows the mod through its table for that language. Runs nothing. |
+| `pack <folder> [-o file.toolsymod]` | Validates the folder and writes it as a package (`./<id>.toolsymod` unless `-o`), without `.DS_Store` files. Prints `OK <id> <version> <file>`. |
+
+`--state` takes a JSON object merged over the state a mod starts with, its `settings` plus
+`"enabled": false`; `null` removes a key. Exit status: `0` success, `1` the mod or the run failed (a
+validation error, a command that exited with another status or timed out), `2` the tool was used
+wrongly (an unknown command or option, a missing or malformed argument).
+
+`validate --json` prints one object instead: `{"ok": true, "id", "version", "name", "commands",
+"privilegedCommands", "widgets", "languages", "warnings"}` (command names and languages sorted,
+widget ids in order), or `{"ok": false, "error"}` with the same message as without `--json`.
+
+#### Warnings
+
+A warning is something valid that almost always is a mistake. It never changes the exit status.
+
+| Warning | Why |
+| --- | --- |
+| A `shell` script starts with a path inside the mod (`scripts/run.sh`, `./run`) that is not a file of the mod, or not executable. | The shell cannot start it. |
+| A toggle, slider, stepper, picker or input is bound to a setting whose default it cannot show: not a boolean for a toggle, not a number or outside `min`…`max` for a slider or stepper, none of the options' values for a picker (`"1"` is not `1`), not text, a number or a boolean for an input. | The control shows something else than the setting holds. |
+| A localization entry's source text is the text of no translated field. | The entry is never used: the source was edited or misspelt after it was translated. |
+
+#### Running a command
+
+`run` starts the command with the mod's folder as working directory, the variables of
+[Commands](#commands), the [input](#input) on standard input when it asks for it, and its timeout.
+
+| Option | Meaning |
+| --- | --- |
+| `--state <json>` | The state the command sees. |
+| `--key <key>`, `--value <json>` | What a control sends: `TOOLSY_KEY` and `TOOLSY_VALUE`. When an input binds the key, the value is stored in the state first, as the control does. `--value` alone is a button's `value`. |
+| `--event <event>` | `TOOLSY_EVENT`; by default `service` for the service and `command` for every other command. |
+| `--locale <code>` | `TOOLSY_LOCALE`; by default the user's first language. |
+| `--data <folder>` | `TOOLSY_DATA_DIR`; by default a new temporary folder, removed afterwards. |
+| `--for <seconds>` | The service only: how long it runs before it is stopped as Toolsy stops it (default 5). Each line it printed is reported. |
+| `--as-user` | Runs a privileged command as the user, with root's environment. Without it a privileged command is refused: `toolsy-mod` never runs anything as root and never contacts the helper. |
+| `--json` | Prints the report as one JSON object. |
+
+The report gives the exit status and the duration; what standard output is to Toolsy — a patch
+(with the keys Toolsy reads itself, `status`, `level`, `error` and `enabled`, and the notification
+`notify` shows), the captured text, or why it is ignored (empty, not JSON, not an object); what
+Toolsy ignores in a patch (an invalid key, an `enabled` that is not a boolean, …); the `error`
+Toolsy shows for a failed run; and standard error.
 
 ## Manifest
 
