@@ -733,7 +733,9 @@ and optionally a small chart or a level bar, like the built-in CPU and memory ti
 Commands localise what they report (`status`, list rows, notifications) themselves with
 `TOOLSY_LOCALE`. Every translated text SHOULD have an entry in every table, also when the
 translation is identical (`"macOS": "macOS"`), so a missing entry is visibly a mistake.
-`toolsy-mod validate` warns about an entry whose source text no field has.
+`toolsy-mod validate` warns about an entry whose source text no field has. A mod added to the
+`Mods/` folder of Toolsy's own repository MUST have a `ru` table with an entry for every text that
+contains words, placeholders kept: the repository's tests check it.
 
 ### Templates
 
@@ -999,8 +1001,8 @@ fix it anyway.
 
 ### Language
 
-Write scripts in POSIX `sh` (`#!/bin/sh`; on macOS it is bash 3.2 in POSIX mode, so no arrays,
-no `[[ ]]`, no `local` you depend on, no `$'…'`). With `/usr/bin/jq` for JSON and
+Write scripts in POSIX `sh` (`#!/bin/sh`; on macOS it is bash 3.2 in POSIX mode: write portable
+`sh`, without arrays, `[[ ]]` or `$'…'`). With `/usr/bin/jq` for JSON and
 `/usr/bin/awk` for arithmetic on decimals, `sh` covers almost every mod.
 
 Another language is fine when the work needs it (heavy parsing, a system API):
