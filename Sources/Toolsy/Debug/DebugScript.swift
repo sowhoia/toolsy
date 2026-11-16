@@ -541,11 +541,49 @@ private final class Runner {
     /// does not), over a backdrop the size of the panel so nothing of the owner's screen is in it.
     func capture(_ name: String, anchor: String? = nil) async throws {
         guard let window else { throw ScriptError("the panel is not open") }
-        let backdrop = try panelRegion(in: window)
-        showBackdrop(covering: backdrop, behind: window)
-        try await Task.sleep(for: .seconds(0.7))
-        let region = try anchor.map { window.convertToScreen(try frame(of: $0)).insetBy(dx: -12, dy: -12) } ?? panelRegion(in: window)
-        try await screencapture(region.intersection(backdrop), to: name)
+        // The panel may still be on its way to a new height; the backdrop goes where it has come to rest.
+        var covered = try panelRegion(in: window)
+        for _ in 0..<4 {
+            showBackdrop(covering: covered, behind: window)
+            try await Task.sleep(for: .seconds(0.7))
+            let settled = try panelRegion(in: window)
+            if settled == covered { break }
+            covered = settled
+        }
+        let wanted = try anchor.map { window.convertToScreen(try frame(of: $0)).insetBy(dx: -12, dy: -12) } ?? covered
+        let region = wanted.intersection(covered)
+        guard !region.isEmpty else { throw ScriptError("\(anchor ?? "the panel") is not on the panel now") }
+        // Whatever another app shows in front of the backdrop would be in the picture. A notification
+        // banner, which appears right where the panel hangs, leaves by itself.
+        var patience = 20
+        while case let owners = foreignWindows(over: region), !owners.isEmpty {
+            guard patience > 0 else {
+                throw ScriptError("not captured: a window of \(owners.joined(separator: ", ")) is in front of the panel")
+            }
+            patience -= 1
+            try await Task.sleep(for: .seconds(0.5))
+        }
+        try await screencapture(region, to: name)
+    }
+
+    /// The apps whose windows are in front of the backdrop and reach into `region` (in screen coordinates).
+    func foreignWindows(over region: NSRect) -> [String] {
+        guard let backdrop, let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        // Quartz counts from the top left of the main display.
+        let screenHeight = NSScreen.screens.first?.frame.height ?? 0
+        let target = CGRect(x: region.minX, y: screenHeight - region.maxY, width: region.width, height: region.height)
+        var owners: [String] = []
+        // The list runs from the front to the back, so what comes after the backdrop is behind it.
+        for window in windows.prefix(while: { $0[kCGWindowNumber as String] as? Int != backdrop.windowNumber }) {
+            guard window[kCGWindowOwnerPID as String] as? pid_t != ProcessInfo.processInfo.processIdentifier,
+                  window[kCGWindowAlpha as String] as? Double != 0,
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  CGRect(dictionaryRepresentation: bounds)?.intersects(target) == true else { continue }
+            owners.append(window[kCGWindowOwnerName as String] as? String ?? "another app")
+        }
+        return owners
     }
 
     /// The part of its window the panel occupies right now: the glass and the inset around it. The
