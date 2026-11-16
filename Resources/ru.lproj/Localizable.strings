@@ -237,6 +237,7 @@
 "Setting up Toolsy’s helper…" = "Настройка помощника Toolsy…";
 "Toolsy couldn’t read the memory usage." = "Toolsy не удалось прочитать данные об использовании памяти.";
 "Memory couldn’t be freed. Try again in a moment." = "Не удалось освободить память. Попробуйте ещё раз чуть позже.";
+
 /* Dashboard: widgets and editing */
 "Edit Widgets" = "Изменить виджеты";
 "Done" = "Готово";
@@ -315,6 +316,7 @@
 "Service started" = "Служба запущена";
 "Service restarted" = "Служба перезапущена";
 "Service exited with code %lld" = "Служба завершилась с кодом %lld";
+
 /* Memory and CPU details: optimising memory, apps by memory and CPU */
 "Free Up Memory" = "Освободить память";
 "Clears caches and asks apps to return memory they don’t need. No app is closed." = "Очищает кэш и просит приложения вернуть ненужную им память. Ничего не закрывается.";
