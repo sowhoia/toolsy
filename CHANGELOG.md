@@ -19,8 +19,8 @@ The first public release: a menu bar app for macOS 26 with a dashboard of the Ma
   rate is shown in bytes or bits, remove tiles, add them back, hide the line about the Mac, or reset
   to the standard layout. The layout is kept across restarts.
 - Click a tile to unfold its details under its row. The CPU and Memory details list the apps that
-  use the most CPU or memory, counted the way Activity Monitor does, and can ask an app to quit
-  after a confirmation.
+  use the most CPU or memory, counted the way Activity Monitor does; the Memory list can ask an app
+  to quit, after a confirmation.
 - Mods can add their own widgets: a value with a small chart or level bar, and quick controls when
   unfolded. A mod's widgets appear on the dashboard when it is installed for the first time, and
   are switched on and off on its page.
