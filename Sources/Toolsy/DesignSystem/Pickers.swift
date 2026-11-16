@@ -292,16 +292,45 @@ struct PickerRow<Value: Hashable>: View {
         if isSegmented {
             VStack(alignment: .leading, spacing: 6) {
                 if let label { ControlLabel(label, icon: icon) }
-                SegmentedPicker(selection: $selection, options: options, label: label ?? "")
+                if options.isEmpty {
+                    NoOptions(label: label)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Metrics.controlHeight)
+                        .background { Capsule().fill(Color.primary.opacity(0.08)) }
+                } else {
+                    SegmentedPicker(selection: $selection, options: options, label: label ?? "")
+                }
             }
         } else {
             HStack(spacing: 8) {
                 if let label { ControlLabel(label, icon: icon) }
                 Spacer(minLength: 8)
-                MenuPicker(selection: $selection, options: options, label: label ?? "")
+                if options.isEmpty {
+                    NoOptions(label: label)
+                        .padding(.horizontal, 12)
+                        .frame(height: Metrics.controlHeight)
+                        .background { Capsule().fill(Color.primary.opacity(0.08)) }
+                } else {
+                    MenuPicker(selection: $selection, options: options, label: label ?? "")
+                }
             }
             .frame(minHeight: Metrics.rowMinHeight)
         }
+    }
+}
+
+/// What a picker shows in place of its choices while it has none (a mod's `optionsFrom` list that is
+/// empty or not there yet): plainly nothing to choose, and nothing to press.
+private struct NoOptions: View {
+    let label: String?
+
+    var body: some View {
+        Text("No options")
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label ?? "")
+            .accessibilityValue(String(localized: "No options"))
     }
 }
 

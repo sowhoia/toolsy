@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Text in one of the panel's styles: the `text` control of a mod.
@@ -68,13 +67,12 @@ struct ValueRow: View {
         self.copyable = copyable
     }
 
-    @State private var showsCopied = false
+    @State private var copied = CopyFeedback()
     @State private var isHovered = false
-    @State private var resetTask: Task<Void, Never>?
 
     var body: some View {
         if copyable {
-            Button(action: copy) { content }
+            Button { copied.copy(value) } label: { content }
                 .buttonStyle(.plain)
                 .onHover { isHovered = $0 }
                 .help(String(localized: "Click to copy"))
@@ -94,8 +92,8 @@ struct ValueRow: View {
                     .foregroundStyle(tint ?? .secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .opacity(showsCopied ? 0 : 1)
-                if showsCopied {
+                    .opacity(copied.isShowing ? 0 : 1)
+                if copied.isShowing {
                     Label(String(localized: "Copied"), systemImage: "checkmark")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.green)
@@ -106,25 +104,14 @@ struct ValueRow: View {
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
-                    .opacity(isHovered && !showsCopied ? 1 : 0)
+                    .opacity(isHovered && !copied.isShowing ? 1 : 0)
             }
         }
         .frame(minHeight: Metrics.rowMinHeight)
         .contentShape(.rect)
-        .animation(Motion.snappy, value: showsCopied)
+        .animation(Motion.snappy, value: copied.isShowing)
         .animation(Motion.fade, value: isHovered)
         .accessibilityElement(children: .combine)
-    }
-
-    private func copy() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-        showsCopied = true
-        resetTask?.cancel()
-        resetTask = Task {
-            do { try await Task.sleep(for: .seconds(1.4)) } catch { return }  // cancelled by a newer copy
-            showsCopied = false
-        }
     }
 }
 

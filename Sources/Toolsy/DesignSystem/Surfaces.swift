@@ -139,31 +139,57 @@ struct SectionBreak: View {
     }
 }
 
-/// A titled group of rows on one tile, separated by hairlines, with an optional footer.
+/// A titled group of rows on one tile, separated by hairlines, with an optional footer. With
+/// `isExpanded` the title folds the group: folded, only the title is shown and the rows are not rendered.
 struct SectionGroup<Content: View>: View {
     private let title: String?
     private let footer: String?
     private let tint: Color?
+    private let isExpanded: Binding<Bool>?
     private let content: Content
 
-    init(_ title: String? = nil, footer: String? = nil, tint: Color? = nil, @ViewBuilder content: () -> Content) {
+    init(_ title: String? = nil, footer: String? = nil, tint: Color? = nil, isExpanded: Binding<Bool>? = nil,
+         @ViewBuilder content: () -> Content) {
         self.title = title
         self.footer = footer
         self.tint = tint
+        self.isExpanded = isExpanded
         self.content = content()
     }
 
     var body: some View {
+        let title = title.flatMap { $0.isEmpty ? nil : $0 }
+        // Only a title can be clicked to fold the group.
+        let expanded = title == nil || isExpanded?.wrappedValue != false
         VStack(alignment: .leading, spacing: 0) {
-            if let title, !title.isEmpty {
-                Text(title)
-                    .font(.tileTitle)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, Metrics.tilePadding)
-                    .padding(.top, 12)
-                    .padding(.bottom, 2)
-                    .accessibilityAddTraits(.isHeader)
+            if let title {
+                if let isExpanded {
+                    // A row tall, its text where a plain title's is; folded, the tile is a header's height.
+                    FoldableTitle(title, isExpanded: isExpanded)
+                        .padding(.horizontal, Metrics.tilePadding)
+                        .padding(.top, 6)
+                        .padding(.bottom, expanded ? 0 : 6)
+                } else {
+                    Text(title)
+                        .font(.tileTitle)
+                        .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                        .padding(.horizontal, Metrics.tilePadding)
+                        .padding(.top, 12)
+                        .padding(.bottom, 2)
+                }
             }
+            if expanded {
+                rows
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .groupSurface(tint: tint)
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 Group(subviews: content) { rows in
                     // A section break draws its own separation, so the hairlines next to it are left out.
@@ -191,8 +217,6 @@ struct SectionGroup<Content: View>: View {
                     .padding(.bottom, 12)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .groupSurface(tint: tint)
     }
 }
 
