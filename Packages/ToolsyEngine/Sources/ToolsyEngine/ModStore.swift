@@ -40,7 +40,9 @@ public final class ModStore {
     /// privileged mod edited in place loses its administrator access, as at any other time.
     public var developerMode = false {
         didSet {
-            guard developerMode != oldValue else { return }
+            // Before `start()` has loaded the mods there is nothing to keep in step with the folder, and a
+            // change acted on meanwhile would load a mod that `start()` is about to load as well.
+            guard developerMode != oldValue, hasStarted else { return }
             developerMode ? watchModsFolder() : stopWatchingModsFolder()
         }
     }
@@ -71,6 +73,10 @@ public final class ModStore {
     /// folder; an empty set when only the folder itself or `mod.json` may have changed.
     @ObservationIgnored private var pendingFolderChanges: [String: Set<String>] = [:]
     @ObservationIgnored private var folderSettle: Task<Void, Never>?
+    /// When the first of the changes not acted on yet arrived.
+    @ObservationIgnored private var pendingSince: ContinuousClock.Instant?
+    /// Set once `start()` has loaded the mods; the folder is watched only from then on.
+    @ObservationIgnored private var hasStarted = false
     /// Acting on folder changes, one batch after another.
     @ObservationIgnored private var folderChangeWork: Task<Void, Never>?
     /// Per mod: file changes up to this time are accounted for. Files the store placed and loaded itself
@@ -82,6 +88,10 @@ public final class ModStore {
     @ObservationIgnored private var rescanPending = false
     /// Mods being reloaded; a second reload or an installation must not replace the instance meanwhile.
     @ObservationIgnored private var reloading: Set<String> = []
+    /// The commands of instances that were closed without a successor: a reload that failed, a folder that
+    /// went away, a removal. They may still be finishing (a privileged command cannot be stopped), and
+    /// commands of a mod never overlap, so the next instance with that id waits for them.
+    @ObservationIgnored private var orphanedWork: [String: Task<Void, Never>] = [:]
 
     /// `languages` are the user's languages, most preferred first (BCP 47, as in `Locale.preferredLanguages`):
     /// a mod is shown in the first of them it has a translation for, and its commands are told the first
@@ -125,6 +135,10 @@ public final class ModStore {
         await refreshAccess()
         for mod in mods {
             mod.activate(panelVisible: isPanelVisible)
+        }
+        hasStarted = true
+        if developerMode {
+            watchModsFolder()
         }
         post(.launch)
     }
@@ -253,6 +267,7 @@ public final class ModStore {
             }
         }
         await mod.close()
+        orphan(mod.unfinishedWork, of: mod.id)
         mods.removeAll { $0 === mod }
         try deleteFiles(of: mod.id)
     }
@@ -467,13 +482,16 @@ public final class ModStore {
     private func replace(_ id: String, after previous: Mod?) async throws -> Mod {
         mods.removeAll { $0.id == id }
         loadProblems.removeAll { $0.folder == id }
+        let predecessorWork = previous?.unfinishedWork ?? orphanedWork[id]
         let mod: Mod
         do {
-            mod = try load(folder(of: id), after: previous?.unfinishedWork)
+            mod = try load(folder(of: id), after: predecessorWork)
         } catch {
+            orphan(predecessorWork, of: id)
             loadProblems.append(LoadProblem(folder: id, message: error.localizedDescription))
             throw error
         }
+        orphanedWork[id] = nil
         mods.append(mod)
         sortMods()
         if developerMode {
@@ -489,7 +507,18 @@ public final class ModStore {
         loadProblems.removeAll { $0.folder == id }
         guard let mod = mod(id: id), mod.isActive else { return }
         await mod.close()
+        orphan(mod.unfinishedWork, of: id)
         mods.removeAll { $0 === mod }
+    }
+
+    /// Remembers work that outlives its instance until an instance with that id takes it over or it ends.
+    private func orphan(_ work: Task<Void, Never>?, of id: String) {
+        guard let work else { return }
+        orphanedWork[id] = work
+        Task {
+            await work.value
+            if orphanedWork[id] == work { orphanedWork[id] = nil }
+        }
     }
 
     private func sortMods() {
@@ -521,6 +550,7 @@ public final class ModStore {
         watcher = nil
         folderSettle?.cancel()
         folderSettle = nil
+        pendingSince = nil
         pendingFolderChanges = [:]
         rescanPending = false
         filesSeenUntil = [:]
@@ -544,10 +574,15 @@ public final class ModStore {
             }
             pendingFolderChanges[name] = changed
         }
+        let now = ContinuousClock.now
+        let first = pendingSince ?? now
+        pendingSince = first
+        // Usually the changes settle; a mod that keeps writing into its folder never lets them.
+        let wait = min(timing.folderSettle, max(.zero, timing.folderPatience - first.duration(to: now)))
         folderSettle?.cancel()
-        folderSettle = Task { [weak self, settle = timing.folderSettle] in
+        folderSettle = Task { [weak self] in
             do {
-                try await Task.sleep(for: settle)
+                try await Task.sleep(for: wait)
             } catch {
                 return
             }
@@ -556,6 +591,7 @@ public final class ModStore {
     }
 
     private func actOnFolderChanges() {
+        pendingSince = nil
         var changes = pendingFolderChanges
         pendingFolderChanges = [:]
         if rescanPending {

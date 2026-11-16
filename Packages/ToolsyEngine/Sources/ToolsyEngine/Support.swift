@@ -67,6 +67,9 @@ struct EngineTiming: Sendable {
     var repeatedNotificationWindow: Duration { duration(60) }
     /// Developer mode: changes in the mods folder are acted on once they have settled this long.
     var folderSettle: Duration { duration(0.3) }
+    /// Developer mode: changes are acted on this long after the first of them at the latest, so a mod
+    /// that keeps writing into its folder does not hold up the changes of the others.
+    var folderPatience: Duration { duration(1.5) }
     /// Developer mode: a service restarts for changed files at most once per this interval, so a mod
     /// that writes into its own folder cannot restart itself as fast as it writes.
     var fileRestartInterval: Duration { duration(1) }
