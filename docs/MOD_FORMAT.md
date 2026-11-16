@@ -314,7 +314,7 @@ effect persists on its own (a system setting, a firewall rule) reports the truth
 | --- | --- |
 | `launch` | Toolsy started, usually at login. |
 | `wake` | The Mac woke from sleep. |
-| `network` | The primary network interface or its router changed, or the addresses of any interface did (also one that is not primary, such as a VPN with a split tunnel); link-local addresses do not count. Posted about 2 seconds after the network has settled, so a burst of changes is one event. The daily rotation of temporary IPv6 addresses is an event too. |
+| `network` | The primary network interface or its router changed, or the addresses of any interface did (also one that is not primary, such as a VPN with a split tunnel); link-local addresses do not count. Posted about 2 seconds after the network has settled, so a burst of changes is one event. Temporary IPv6 addresses, which the system replaces about once a day on the same network, do not count either. |
 | `power` | The Mac switched between the power adapter and the battery (or a UPS). Changes of the charge are not events. |
 
 - An event command runs only while the mod is on (always, for a mod without a switch), with

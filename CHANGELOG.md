@@ -75,10 +75,10 @@ The first public release: a menu bar app for macOS 26 with a dashboard of the Ma
 
 - Toolsy idles at zero CPU with the panel closed: readings are taken only while the panel is open,
   only for the widgets on the dashboard, and processes only while a list of them is shown.
-- The open, idle dashboard uses 0.6 % of a core instead of 10.6 %, and a mod's page with three
-  gauges and two charts updated every second 1.0 % instead of 9.2 % (M4, release build, measured
-  with `top` over 10 s): moving charts and gauges are animated by the system's render server.
-- The app bundle is 4.8 MB instead of 9.7 MB.
+- The open, idle dashboard uses about 0.6 % of one core, and a mod's page with three gauges and two
+  charts updated every second about 1 % (M4, release build, measured with `top` over 10 s): moving
+  charts and gauges are animated by the system's render server, not by the app.
+- The app bundle is 4.8 MB.
 
 ### Fixes
 

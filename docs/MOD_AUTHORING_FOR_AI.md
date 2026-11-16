@@ -91,7 +91,8 @@ These rules prevent the mistakes that break a mod. Each is explained in the refe
     without root. A privileged command MUST validate every input against an allow-list and MUST NOT
     put text the user typed into a command line it runs as root. A service cannot be privileged.
 13. Write the manifest's text in English and translate it under `localizations`; scripts translate
-    what they report themselves with `TOOLSY_LOCALE`.
+    what they report themselves with `TOOLSY_LOCALE`, the language the mod is shown in. (A manifest
+    written in another language says so with `language`.)
 
 ## What a mod is
 
@@ -341,6 +342,7 @@ Rules for the contents (installing refuses a mod that breaks one):
 | `lifecycle` | object | no | Which commands Toolsy runs on its own. See [Lifecycle](#lifecycle). |
 | `ui` | array | no | The controls of the mod's page. See [Interface](#interface). |
 | `widgets` | array | no | Tiles for the dashboard. See [Widgets](#widgets). |
+| `language` | string | no | The language the manifest's own text is written in, a code like the keys of `localizations`. Default `"en"`. MUST NOT also be a key of `localizations`. See [Localization](#localization). |
 | `localizations` | object | no | Language → source text → translation. See [Localization](#localization). |
 
 Unknown fields are ignored, at the top level and in every object below it. A manifest that breaks a
@@ -413,7 +415,7 @@ else is inherited:
 | `TOOLSY_COMMAND` | The command's name. |
 | `TOOLSY_KEY` | The state key of the control that started the command: the bound key of a toggle, slider, stepper, picker or input, the `bind` of a list whose row was clicked. Absent otherwise (a button sets none). |
 | `TOOLSY_VALUE` | The control's new value, a button's `value`, or the clicked row's `id`, as text (`true`/`false`, `7`, `2.5`, the string itself). Absent when there is none. |
-| `TOOLSY_LOCALE` | The user's first preferred language, lowercase BCP 47: `ru`, `en-us`, `zh-hans-cn`, `ru-us`. Absent when it is not a well-formed code. Compare its first part: `${TOOLSY_LOCALE%%-*}`. |
+| `TOOLSY_LOCALE` | The language the mod is shown in, lowercase BCP 47: the first of the user's preferred languages the mod has text in, as the system names it (`ru`, `en-us`, `zh-hans-cn`, `ru-us`), or the manifest's `language` when it has text in none of them. Compare its first part, `${TOOLSY_LOCALE%%-*}`, so that what a command reports matches the page. |
 | `TOOLSY_STATE_<key>` | One per state key whose value is a string, number or boolean, as text: strings as they are, whole numbers without a decimal point (`3`, not `3.0`), `true`/`false`. Keys holding arrays, objects or `null` have no variable. `TOOLSY_STATE_enabled` is the switch. |
 | `PATH` | `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`; for privileged commands `/usr/bin:/bin:/usr/sbin:/sbin`. |
 | `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `SHELL` | The user's; for privileged commands root's (`HOME` is `/var/root`). |
@@ -570,7 +572,7 @@ Every value names a command of `commands`.
 | --- | --- |
 | `launch` | Toolsy started (usually at login) and loaded the mods. |
 | `wake` | The Mac woke from sleep. |
-| `network` | The primary interface or its router changed, or the addresses of any interface changed (also one that is not primary, such as a VPN with a split tunnel). Link-local addresses (`fe80::`) do not count. Posted about 2 seconds after the network has settled: a burst of changes is one event. The daily rotation of temporary IPv6 addresses is an event too. |
+| `network` | The primary interface or its router changed, or the addresses of any interface changed (also one that is not primary, such as a VPN with a split tunnel). Link-local addresses (`fe80::`) do not count. Posted about 2 seconds after the network has settled: a burst of changes is one event. Temporary IPv6 addresses, which the system replaces about once a day on the same network, do not count either. |
 | `power` | The Mac changed between the power adapter and the battery (or a UPS). Not on charge changes. |
 
 - An event command runs only while the mod is on (always, for a mod without a switch).
@@ -635,7 +637,8 @@ at most 200 controls in `ui` and all widgets' `detail` together.
   `value` (`label` defaults to the value as text; `icon` optional), or a bare string that is both
   value and label. The value `"1"` is not the value `1`.
 - With `optionsFrom`, the options are read from that state key, which a command fills with an array
-  of the same elements. Elements of another shape are skipped, and only the first 32 are used. Until
+  of the same elements. Elements of another shape are skipped, as is a value that already came
+  before it (an option is known by its value), and only the first 32 are used. Until
   the key holds an array with at least one option, the picker shows an inert "No options" capsule.
   When the bound value is none of the options, nothing is selected; the value is kept.
 
@@ -725,7 +728,8 @@ and optionally a small chart or a level bar, like the built-in CPU and memory ti
 | --- | --- |
 | Languages | Keys are lowercase language codes `[a-z]{2,3}`, optionally with one more subtag: `ru`, `de`, `pt-br`, `zh-hans`. At most 20 languages. |
 | Entries | Source text, exactly as written in the manifest (spaces, placeholders and filters included), → translation. At most 500 entries per language. Text without an entry stays as written. |
-| Choice | Toolsy uses the first of the user's preferred languages that has a table, the most specific first: for `pt-BR` it takes `pt-br`, otherwise `pt`; for `ru-RU`, `ru`. Without a match the manifest is shown as written. |
+| Choice | Toolsy goes through the user's preferred languages in order and stops at the first the mod has text in: the manifest's own `language` (`"en"` unless stated), for which the manifest is shown as written, or a table, the most specific first (for `pt-BR` it takes `pt-br`, otherwise `pt`; for `ru-RU`, `ru`). A user who prefers English and then Russian reads an English mod in English, whatever tables it has. Without a match the manifest is shown as written. |
+| The manifest's language | Write the manifest in English. When it must be written in another language, state it: `"language": "ru"`, and translate into English with an `en` table. A table for the manifest's own language is refused. |
 | Translated | `name`, `summary`, and in controls and widgets: `label`, `title`, `footer`, `text`, `value`, `placeholder`, `confirm`, `empty`, `unit`, `help`, `copy`, option labels, chart and series labels, widget `title` and `value`. |
 | Not translated | `id`, `author`, commands, `bind`s, keys, icons, tints, `format`, expressions, option values, a button's `value`, and anything a command reports. |
 | Templates | A template is translated as a whole string before it is rendered: `"{{ms}} ms"` → `"{{ms}} мс"`. The translation MUST keep the same placeholders and stay a valid template; each table is checked at install like the text it replaces. Texts inside filters (`default:`, `either:`, `join:`) are part of the source string and are translated with it. |
@@ -960,7 +964,7 @@ order), or `{"ok": false, "error"}`.
 | `--key <key>` | `TOOLSY_KEY`. Needs `--value`. When an input control binds the key, the value is stored in the state first, as the control does. |
 | `--value <json>` | `TOOLSY_VALUE`, as JSON: `7`, `true`, `'"some text"'`. Alone, it is a button's `value`. |
 | `--event <event>` | `TOOLSY_EVENT`: `enable`, `disable`, `uninstall`, `refresh`, `service`, `command`, `launch`, `wake`, `network`, `power`. Default: `service` for the service command, `command` otherwise. |
-| `--locale <code>` | `TOOLSY_LOCALE`, such as `ru` or `en-us`. Default: your first preferred language. |
+| `--locale <code>` | `TOOLSY_LOCALE`, such as `ru` or `en-us`. Default: the language Toolsy shows the mod in on this Mac. |
 | `--data <folder>` | `TOOLSY_DATA_DIR`. Default: a new temporary folder, removed after the run. |
 | `--for <seconds>` | The service only: how long it runs before it is stopped as Toolsy stops it (default 5). |
 | `--as-user` | Runs a privileged command as yourself with root's environment. Required for privileged commands; refused for others. |
@@ -1164,8 +1168,9 @@ invalid UTF-8 makes the whole patch invalid.
 ### Localising what scripts report
 
 Use `say ENGLISH RUSSIAN` (above) for every text a command reports: `status`, list rows, error
-messages, notifications. Add a branch for every language the manifest translates. `TOOLSY_LOCALE`
-may be absent or have a region (`ru-us`): compare `${TOOLSY_LOCALE%%-*}`. Numbers and dates the
+messages, notifications. Add a branch for every language the manifest translates, so that the page
+and what the commands report are in one language. `TOOLSY_LOCALE` may have a region (`ru-us`) and is
+absent only when a command is run without it: compare `${TOOLSY_LOCALE%%-*}`. Numbers and dates the
 template filters show are localised by Toolsy; a duration is not (`duration` prints `1h 05m` in
 every language), so format it in the script when it must read naturally.
 

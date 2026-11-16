@@ -191,8 +191,10 @@ at the *warn* memory-pressure level for three seconds: every process gets the st
 which the allocator returns free pages and apps drop caches they can rebuild. Nothing is terminated;
 the *critical* level, on which apps may discard work in use, is never used. `memory_pressure` sets the
 level back itself only when its sleep ends, so whenever it does not exit successfully the helper runs
-`memory_pressure -S -l normal -s 0`. Only the helper itself dying within those seconds would leave the
-level at *warn*, until the next reclaim or restart.
+`memory_pressure -S -l normal -s 0`. `memory_pressure` runs in a process group of its own, so the
+helper dying does not take it along: it finishes its sleep and resets the level. The level stays at
+*warn* (until the next reclaim or a restart) only if `memory_pressure` itself is killed after setting
+it by something other than the helper's timeout.
 
 Threat model: code running as the logged-in user must not be able to become root through
 Toolsy without the user's consent.
@@ -236,8 +238,9 @@ Toolsy without the user's consent.
   quits or crashes meanwhile: a root program is never killed halfway through changing the system
   because its client went away. Requests that would pull its files from under it (removing the
   helper, replacing or revoking the mod's approval) are answered "busy" until it has finished. The
-  same holds for a memory reclaim: the helper does not exit and cannot be removed in the middle of
-  one.
+  same holds for a memory reclaim: the helper does not go idle and refuses its own removal over XPC
+  in the middle of one. (Installing or updating the helper, which needs the administrator password,
+  replaces the running helper without asking it, as it always has for privileged commands.)
 - **The app is hardened.** It is signed with the hardened runtime and without
   `get-task-allow`, so other user processes cannot inject code into it to borrow its identity.
 - Consent is the confirmation shown when a mod is installed, which lists the commands that will
