@@ -83,6 +83,10 @@ public final class Mod: Identifiable {
     /// Recorded samples per chart-bound key; see `history(of:)`.
     private var histories: [String: [Double]] = [:]
     @ObservationIgnored private var errorSource: ErrorSource?
+    /// Templates and expressions of the manifest by source text, parsed on first use. Views render them on
+    /// every change of state; nil marks text that does not parse.
+    @ObservationIgnored private var templates: [String: ModTemplate?] = [:]
+    @ObservationIgnored private var expressions: [String: ModExpression?] = [:]
 
     @ObservationIgnored private let directories: ToolsyDirectories
     @ObservationIgnored private let privileged: any PrivilegedExecuting
@@ -178,20 +182,30 @@ public final class Mod: Identifiable {
     }
 
     public func dismissError() {
-        state.removeValue(forKey: ReservedStateKey.error)
+        setState(ReservedStateKey.error, to: nil)
         errorSource = nil
     }
 
     /// Renders a template of this mod's manifest against the current state.
     public func render(_ template: String) -> String {
-        // Manifests are checked at install and load, so their templates always parse; other text stays as is.
-        (try? ModTemplate(template))?.render(state) ?? template
+        let compiled = templates[template] ?? {
+            // Manifests are checked at install and load, so their templates always parse; other text stays as is.
+            let compiled = try? ModTemplate(template)
+            templates[template] = compiled
+            return compiled
+        }()
+        return compiled?.render(state) ?? template
     }
 
     /// Evaluates a `when` / `disabled` expression of this mod's manifest against the current state.
     public func evaluate(_ expression: String) -> Bool {
-        // Checked at install and load like templates; anything that does not parse counts as false.
-        (try? ModExpression(expression))?.evaluate(state) ?? false
+        let compiled = expressions[expression] ?? {
+            // Checked at install and load like templates; anything that does not parse counts as false.
+            let compiled = try? ModExpression(expression)
+            expressions[expression] = compiled
+            return compiled
+        }()
+        return compiled?.evaluate(state) ?? false
     }
 
     /// What a chart series bound to `key` plots: an array of numbers held by the key as is, otherwise the
@@ -458,7 +472,7 @@ public final class Mod: Identifiable {
     }
 
     private func report(_ message: String, from source: ErrorSource) {
-        state[ReservedStateKey.error] = .string(message)
+        setState(ReservedStateKey.error, to: .string(message))
         errorSource = source
     }
 
@@ -493,6 +507,8 @@ public final class Mod: Identifiable {
 
     // MARK: - State
 
+    /// Applies a patch. Keys whose value does not change are not written, so an identical patch leaves
+    /// `state` untouched and re-renders nothing; chart histories still record its numbers.
     private func merge(_ patch: ModState, fromService: Bool = false) {
         // A late result of a replaced mod must not overwrite the state file its successor uses.
         guard phase != .closed else { return }
@@ -501,14 +517,8 @@ public final class Mod: Identifiable {
         for (key, value) in patch where ModManifest.isValidKey(key) {
             // The switch position must stay a boolean.
             if key == ReservedStateKey.enabled, value.boolValue == nil { continue }
-            let previous = state[key]
-            if value == .null {
-                state.removeValue(forKey: key)
-            } else {
-                state[key] = value
-            }
             // A text field committing an unchanged value must not restart the service.
-            if manifest.settings[key] != nil, state[key] != previous {
+            if setState(key, to: value == .null ? JSONValue?.none : value), manifest.settings[key] != nil {
                 settingsChanged = true
             }
             record(value, for: key)
@@ -523,6 +533,15 @@ public final class Mod: Identifiable {
         if isEnabled != wasEnabled {
             reconcile()
         }
+    }
+
+    /// Writes one key of `state` only if its value changes, since every write invalidates the views reading
+    /// `state`. Returns whether it changed.
+    @discardableResult
+    private func setState(_ key: String, to value: JSONValue?) -> Bool {
+        guard state[key] != value else { return false }
+        state[key] = value
+        return true
     }
 
     private func record(_ value: JSONValue, for key: String) {

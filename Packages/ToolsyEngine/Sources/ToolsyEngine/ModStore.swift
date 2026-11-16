@@ -15,9 +15,12 @@ public struct LoadProblem: Sendable, Equatable, Identifiable {
 @MainActor @Observable
 public final class ModStore {
     /// Installed mods by name, then id.
-    public private(set) var mods: [Mod] = []
+    public private(set) var mods: [Mod] = [] {
+        didSet { modsByID = Dictionary(uniqueKeysWithValues: mods.map { ($0.id, $0) }) }
+    }
     public private(set) var loadProblems: [LoadProblem] = []
     public private(set) var helperStatus: HelperStatus = .notInstalled
+    private var modsByID: [String: Mod] = [:]
 
     /// Set while the panel is on screen: opening it refreshes every mod, and refresh schedules without
     /// `background` run only while it is true.
@@ -97,7 +100,7 @@ public final class ModStore {
         return PreparedInstall(
             manifest: manifest,
             replacesInstalledMod: FileManager.default.fileExists(atPath: folder(of: manifest.id).path(percentEncoded: false)),
-            installedVersion: mods.first { $0.id == manifest.id }?.manifest.version,
+            installedVersion: mod(id: manifest.id)?.manifest.version,
             staging: staging,
             approval: manifest.requiresPrivileges ? payload : nil
         )
@@ -122,7 +125,7 @@ public final class ModStore {
             throw EngineError("\(prepared.manifest.name) is already being installed.")
         }
         defer { installing.remove(id) }
-        let previous = mods.first { $0.id == id }
+        let previous = mod(id: id)
         await previous?.close()
         do {
             if let payload = prepared.approval {
@@ -280,7 +283,7 @@ public final class ModStore {
     }
 
     private func isOrphan(_ id: String) -> Bool {
-        if let mod = mods.first(where: { $0.id == id }) {
+        if let mod = mod(id: id) {
             return !mod.manifest.requiresPrivileges
         }
         // A folder that failed to load, or cannot even be examined, is not known to be gone.
@@ -311,6 +314,13 @@ public final class ModStore {
         case .ready:
             try await whenNotBusy { try await self.privileged.revoke(modID: id, keepingData: false) }
         }
+    }
+
+    // MARK: - Mods
+
+    /// The loaded mod with this id.
+    public func mod(id: String) -> Mod? {
+        modsByID[id]
     }
 
     // MARK: - Loading

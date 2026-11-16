@@ -1,4 +1,6 @@
 import Foundation
+import Observation
+import Synchronization
 import Testing
 @testable import ToolsyEngine
 import ToolsyShared
@@ -214,3 +216,22 @@ func withHarness(scale: Double = 0.01, helper: FakeHelper = FakeHelper(), _ body
 
 /// Appends its words to the mod's log: `log "$TOOLSY_EVENT" "$TOOLSY_VALUE"`.
 let logLine = #"log() { echo "$*" >> "$TOOLSY_DATA_DIR/log"; }"#
+
+/// Whether something `read` reads changes while `body` runs, as SwiftUI would see it.
+@MainActor
+func changes(_ read: () -> Void, during body: () async throws -> Void) async rethrows -> Bool {
+    let changed = Flag()
+    withObservationTracking(read) { changed.raise() }
+    try await body()
+    return changed.isRaised
+}
+
+final class Flag: Sendable {
+    private let raised = Mutex(false)
+
+    var isRaised: Bool { raised.withLock { $0 } }
+
+    func raise() {
+        raised.withLock { $0 = true }
+    }
+}
