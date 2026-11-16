@@ -63,6 +63,16 @@ struct LevelBar: View {
     }
 }
 
+/// A small upright bar that fills from the bottom, such as the load of one core; at zero a dot remains.
+struct LevelColumn: View {
+    let fraction: Double
+    var tint: Color = .accentColor
+
+    var body: some View {
+        GaugeFill(form: .column, fraction: fraction, tint: tint)
+    }
+}
+
 /// A ring that fills clockwise from the top, with text in its centre: a mod's `gauge` with
 /// style `ring`, and the dashboard's rings.
 struct RingGauge: View {
@@ -120,6 +130,8 @@ private struct GaugeFill: NSViewRepresentable {
     enum Form: Equatable {
         /// A capsule that fills from its leading end.
         case bar
+        /// An upright capsule that fills from the bottom and always shows at least a dot.
+        case column
         /// A circle that fills clockwise from the top.
         case ring(lineWidth: CGFloat)
     }
@@ -206,18 +218,27 @@ private final class GaugeFillView: NSView {
         let fraction = fraction ?? 0
         let path = CGMutablePath()
         let lineWidth: CGFloat
-        var end = fraction
+        // How long the path is, and how much of it the fill covers. A line with round caps is a capsule,
+        // and its caps add a line width to both, so even the smallest value shows as a full dot.
+        let length, filled: CGFloat
         switch form {
         case .bar:
-            // A line with round caps is a capsule; its caps make even the smallest value a full dot.
             lineWidth = bounds.height
-            let length = Swift.max(bounds.width - lineWidth, 0)
+            length = Swift.max(bounds.width - lineWidth, 0)
+            filled = bounds.width * fraction - lineWidth
             path.move(to: CGPoint(x: lineWidth / 2, y: bounds.midY))
             path.addLine(to: CGPoint(x: lineWidth / 2 + length, y: bounds.midY))
-            end = length > 0 ? Swift.max(0, (bounds.width * fraction - lineWidth) / length) : 0
+        case .column:
+            lineWidth = bounds.width
+            length = Swift.max(bounds.height - lineWidth, 0)
+            filled = bounds.height * fraction - lineWidth
+            path.move(to: CGPoint(x: bounds.midX, y: bounds.maxY - lineWidth / 2))
+            path.addLine(to: CGPoint(x: bounds.midX, y: bounds.maxY - lineWidth / 2 - length))
         case .ring(let width):
             lineWidth = width
             let radius = Swift.max((Swift.min(bounds.width, bounds.height) - lineWidth) / 2, 0)
+            length = 2 * .pi * radius
+            filled = length * fraction
             // Angles grow clockwise in a view whose origin is at the top.
             path.addArc(center: CGPoint(x: bounds.midX, y: bounds.midY), radius: radius,
                         startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
@@ -233,7 +254,8 @@ private final class GaugeFillView: NSView {
             track.strokeColor = NSColor.labelColor.withAlphaComponent(0.12).cgColor
             fill.strokeColor = tint.cgColor
         }
-        fill.strokeEnd = end
-        fill.opacity = fraction > 0 ? 1 : 0
+        // A stroke of no length at all is not drawn, caps included.
+        fill.strokeEnd = length > 0 ? Swift.min(Swift.max(filled, 0.01) / length, 1) : 0
+        fill.opacity = fraction > 0 || form == .column ? 1 : 0
     }
 }

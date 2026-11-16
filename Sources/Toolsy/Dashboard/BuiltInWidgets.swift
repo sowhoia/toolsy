@@ -105,7 +105,6 @@ private struct CoreBars: View {
                 group(nil, help: String(localized: "Cores"), loads: cores)
             }
         }
-        .animation(Motion.gentle, value: cores)
     }
 
     private func group(_ label: String?, help: String, loads: [Double]) -> some View {
@@ -117,12 +116,8 @@ private struct CoreBars: View {
                     .padding(.trailing, 1)
             }
             ForEach(loads.indices, id: \.self) { index in
-                ZStack(alignment: .bottom) {
-                    Capsule().fill(Color.primary.opacity(0.1))
-                    Capsule().fill(Color.blue.opacity(0.85))
-                        .frame(height: max(3, 16 * loads[index]))
-                }
-                .frame(width: 4, height: 16)
+                LevelColumn(fraction: loads[index], tint: Color.blue.opacity(0.85))
+                    .frame(width: 4, height: 16)
             }
         }
         .help(help)
