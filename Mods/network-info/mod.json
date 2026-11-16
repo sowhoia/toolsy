@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "id": "network-info",
+  "name": "Network Info",
+  "version": "1.0.0",
+  "author": "Toolsy",
+  "summary": "Addresses, router, DNS and Wi-Fi of the current connection, read locally",
+  "icon": "network",
+  "tint": "blue",
+  "commands": {
+    "read": { "exec": "scripts/read.sh", "timeout": 20 }
+  },
+  "lifecycle": {
+    "refresh": { "command": "read", "every": 30 },
+    "events": { "network": "read", "wake": "read" }
+  },
+  "ui": [
+    { "type": "text", "text": "The Mac is not connected to a network. This page updates as soon as it is.", "style": "caption", "when": "!interface" },
+    {
+      "type": "row",
+      "when": "interface",
+      "children": [
+        { "type": "stat", "label": "Connection", "icon": "network", "value": "{{kind}}" },
+        { "type": "stat", "label": "Signal", "icon": "wifi", "value": "{{signal}} dBm", "tint": "{{signalLevel}}", "when": "signal", "help": "Above −60 dBm is good, below −70 dBm is weak." },
+        { "type": "stat", "label": "Link rate", "icon": "speedometer", "value": "{{txRate}} Mbit/s", "when": "txRate" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Addresses",
+      "footer": "Click a value to copy it.",
+      "when": "interface",
+      "children": [
+        { "type": "value", "label": "IPv4", "icon": "number", "value": "{{ipv4}}", "copyable": true, "when": "ipv4" },
+        { "type": "value", "label": "IPv6", "icon": "number", "value": "{{ipv6}}", "copyable": true, "when": "ipv6" },
+        { "type": "value", "label": "Router", "icon": "arrow.triangle.branch", "value": "{{router}}", "copyable": true, "when": "router" },
+        { "type": "value", "label": "DNS servers", "icon": "server.rack", "value": "{{dns|join}}", "copyable": true, "when": "dns" },
+        {
+          "type": "button", "label": "Copy All", "icon": "doc.on.doc",
+          "copy": "{{kind}} ({{interface}})\nIPv4: {{ipv4|default:—}}\nIPv6: {{ipv6|default:—}}\nRouter: {{router|default:—}}\nDNS: {{dns|join|default:—}}"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Wi-Fi",
+      "footer": "macOS shows the network's name and the access point's address only to apps allowed to use your location, so they are not read here.",
+      "when": "channel || wifiProblem",
+      "children": [
+        { "type": "text", "text": "{{wifiProblem}}", "style": "caption", "tint": "warn", "when": "wifiProblem" },
+        {
+          "type": "row",
+          "when": "channel",
+          "children": [
+            { "type": "stat", "label": "Channel", "value": "{{channel}}" },
+            { "type": "stat", "label": "Band", "value": "{{band}} GHz", "when": "band" },
+            { "type": "stat", "label": "Width", "value": "{{width}} MHz", "when": "width" }
+          ]
+        },
+        { "type": "value", "label": "Standard", "value": "{{phyMode}}", "when": "phyMode" },
+        { "type": "value", "label": "Security", "value": "{{security}}", "when": "security" },
+        { "type": "value", "label": "Noise", "value": "{{noise}} dBm", "when": "noise" }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Details",
+      "collapsible": true,
+      "collapsed": true,
+      "when": "interface",
+      "children": [
+        { "type": "value", "label": "Interface", "value": "{{interface}}" },
+        { "type": "value", "label": "Configured", "value": "{{configMethod}}", "when": "configMethod" },
+        { "type": "value", "label": "Subnet mask", "value": "{{mask}}", "when": "mask" },
+        { "type": "value", "label": "Search domains", "value": "{{searchDomains|join}}", "when": "searchDomains" },
+        { "type": "value", "label": "IPv6 router", "value": "{{router6}}", "copyable": true, "when": "router6" },
+        { "type": "value", "label": "Link-local IPv6", "value": "{{linkLocal}}", "copyable": true, "when": "linkLocal" },
+        { "type": "text", "text": "All IPv6 addresses", "style": "caption", "when": "ipv6All.1" },
+        { "type": "list", "bind": "ipv6All", "when": "ipv6All.1" },
+        { "type": "value", "label": "MAC address", "value": "{{mac}}", "copyable": true, "when": "mac", "help": "Wi-Fi may use a private address that differs for each network." },
+        { "type": "value", "label": "MTU", "value": "{{mtu}}", "when": "mtu" }
+      ]
+    },
+    { "type": "text", "text": "Updates when the network changes, after sleep, and every 30 seconds while the panel is open. Nothing leaves this Mac.", "style": "caption" }
+  ],
+  "widgets": [
+    {
+      "id": "connection",
+      "title": "{{kind|default:Network}}",
+      "value": "{{address|default:Offline}}",
+      "tint": "{{level|default:off}}",
+      "detail": [
+        {
+          "type": "row",
+          "when": "interface",
+          "children": [
+            { "type": "stat", "label": "Router", "value": "{{router|default:—}}" },
+            { "type": "stat", "label": "DNS", "value": "{{dns.0|default:—}}" },
+            { "type": "stat", "label": "Signal", "value": "{{signal}} dBm", "tint": "{{signalLevel}}", "when": "signal" }
+          ]
+        },
+        { "type": "button", "label": "Copy Address", "icon": "doc.on.doc", "copy": "{{address}}", "disabled": "!address" }
+      ]
+    }
+  ],
+  "localizations": {
+    "ru": {
+      "Network Info": "Сведения о сети",
+      "Addresses, router, DNS and Wi-Fi of the current connection, read locally": "Адреса, маршрутизатор, DNS и Wi-Fi текущего подключения — без обращения к интернету",
+      "The Mac is not connected to a network. This page updates as soon as it is.": "Mac не подключён к сети. Страница обновится, как только подключение появится.",
+      "Connection": "Подключение",
+      "Signal": "Сигнал",
+      "{{signal}} dBm": "{{signal}} дБм",
+      "Above −60 dBm is good, below −70 dBm is weak.": "Выше −60 дБм — хороший сигнал, ниже −70 дБм — слабый.",
+      "Link rate": "Скорость канала",
+      "{{txRate}} Mbit/s": "{{txRate}} Мбит/с",
+      "Addresses": "Адреса",
+      "Click a value to copy it.": "Нажмите на значение, чтобы скопировать его.",
+      "Router": "Маршрутизатор",
+      "DNS servers": "DNS-серверы",
+      "Copy All": "Скопировать всё",
+      "{{kind}} ({{interface}})\nIPv4: {{ipv4|default:—}}\nIPv6: {{ipv6|default:—}}\nRouter: {{router|default:—}}\nDNS: {{dns|join|default:—}}": "{{kind}} ({{interface}})\nIPv4: {{ipv4|default:—}}\nIPv6: {{ipv6|default:—}}\nМаршрутизатор: {{router|default:—}}\nDNS: {{dns|join|default:—}}",
+      "macOS shows the network's name and the access point's address only to apps allowed to use your location, so they are not read here.": "macOS показывает имя сети и адрес точки доступа только приложениям с доступом к геопозиции, поэтому здесь их нет.",
+      "Channel": "Канал",
+      "Band": "Диапазон",
+      "{{band}} GHz": "{{band}} ГГц",
+      "Width": "Ширина",
+      "{{width}} MHz": "{{width}} МГц",
+      "Standard": "Стандарт",
+      "Security": "Защита",
+      "Noise": "Шум",
+      "{{noise}} dBm": "{{noise}} дБм",
+      "Details": "Подробности",
+      "Interface": "Интерфейс",
+      "Configured": "Настройка",
+      "Subnet mask": "Маска подсети",
+      "Search domains": "Домены поиска",
+      "IPv6 router": "Маршрутизатор IPv6",
+      "Link-local IPv6": "Локальный IPv6",
+      "All IPv6 addresses": "Все адреса IPv6",
+      "MAC address": "MAC-адрес",
+      "Wi-Fi may use a private address that differs for each network.": "Wi-Fi может использовать частный адрес, свой для каждой сети.",
+      "Updates when the network changes, after sleep, and every 30 seconds while the panel is open. Nothing leaves this Mac.": "Обновляется при смене сети, после сна и каждые 30 секунд, пока открыта панель. Данные не покидают Mac.",
+      "{{kind|default:Network}}": "{{kind|default:Сеть}}",
+      "{{address|default:Offline}}": "{{address|default:Нет сети}}",
+      "Copy Address": "Скопировать адрес"
+    }
+  }
+}
