@@ -51,6 +51,24 @@ struct ProcessRow: Identifiable, Equatable {
         offersQuit = measure == .memory && group.canQuit
     }
 
+    /// The groups a list of `count` rows shows, given `ranked` (every candidate, highest first) and the ids
+    /// it showed before: the highest ones, except that a row already shown keeps its place in the list
+    /// until the group that would replace it has noticeably more (`ProcessMeasure.reorderMargin`). Without
+    /// this the last row of a list changes with every sample: on an idle Mac the fourth and fifth busiest
+    /// apps are a fraction of a percent apart.
+    static func members(of ranked: [ProcessGroup], count: Int, previous: [String], by measure: ProcessMeasure) -> [ProcessGroup] {
+        var members = Array(ranked.prefix(count))
+        let shown = Set(previous)
+        // Shown before and now just outside, strongest first; each may hold on against the weakest newcomer.
+        for incumbent in ranked.dropFirst(count) where shown.contains(incumbent.id) {
+            guard let weakest = members.lastIndex(where: { !shown.contains($0.id) }) else { break }
+            let held = measure.value(of: incumbent)
+            guard measure.value(of: members[weakest]) <= held + measure.reorderMargin(above: held) else { break }
+            members[weakest] = incumbent
+        }
+        return members
+    }
+
     /// The order a list shows `top` (the groups that belong in it, highest first) in, given the ids it
     /// showed before: rows keep their places until one has noticeably more than the row above it
     /// (`ProcessMeasure.reorderMargin`); rows new to the list start below the others and rise as far as
@@ -119,8 +137,11 @@ struct ProcessList: View {
     }
 
     private func update() {
-        let top = measure == .memory ? monitor.largest(count) : monitor.busiest(count)
-        let updated = ProcessRow.order(top, previous: rows.map(\.id), by: measure).map { ProcessRow($0, measure: measure) }
+        let shown = rows.map(\.id)
+        // A row that dropped out of the top can only hold on from just below it.
+        let ranked = measure == .memory ? monitor.largest(count + shown.count) : monitor.busiest(count + shown.count)
+        let top = ProcessRow.members(of: ranked, count: count, previous: shown, by: measure)
+        let updated = ProcessRow.order(top, previous: shown, by: measure).map { ProcessRow($0, measure: measure) }
         // New values alone change no geometry worth animating; moving rows glide to their places.
         if updated.map(\.id) == rows.map(\.id) {
             rows = updated

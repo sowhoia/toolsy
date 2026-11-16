@@ -216,9 +216,34 @@ struct ProcessMonitorTests {
         let group = try #require(monitor.groups.first { $0.applicationPID == app.pid })
         #expect(group.name == "osascript")
         #expect(group.icon != nil)
+        // A group sampled from an earlier holder of this pid is another app: nothing is asked of this one.
+        let stale = ProcessGroup(id: "\(app.pid)-1", name: group.name, icon: nil, memory: 0, cpu: 0, processCount: 1,
+                                 canQuit: true, applicationPID: app.pid)
+        #expect(!monitor.quit(stale))
+        let renamed = ProcessGroup(id: "/Applications/Other.app", name: "Other", icon: nil, memory: 0, cpu: 0, processCount: 1,
+                                   canQuit: true, applicationPID: app.pid)
+        #expect(!monitor.quit(renamed))
+        #expect(app.process.isRunning)
+
         #expect(monitor.quit(group))
         try await waitUntil("the app to quit") { !app.process.isRunning }
         #expect(app.process.terminationReason == .exit)
+    }
+
+    @Test func aBundleIsNamedForItsOwnAppNotForOneNestedInIt() {
+        typealias App = (bundle: String?, regular: Bool)
+        let xcode: App = ("/Applications/Xcode.app", true)
+        let simulator: App = ("/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app", true)
+        let agent: App = ("/Applications/Xcode.app", false)
+        func owner(_ candidates: [App]) -> App? {
+            ProcessMonitor.owner(ofBundle: "/Applications/Xcode.app", among: candidates, bundlePath: \.bundle, isRegular: \.regular)
+        }
+        // The newest process comes first in a sample, and Simulator was started after Xcode.
+        #expect(owner([simulator, xcode])?.bundle == xcode.bundle)
+        #expect(owner([simulator]) == nil, "only the nested app runs: the group has a name from its bundle and no Quit")
+        #expect(owner([agent, xcode])?.regular == true, "the app with a Dock icon, not its background twin")
+        #expect(owner([agent])?.regular == false)
+        #expect(owner([]) == nil)
     }
 
     @Test func appsAreNamedWithoutTheirExtension() throws {

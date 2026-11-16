@@ -170,6 +170,11 @@ actor ProcessSampler {
         return pids.prefix(Int(bytes) / MemoryLayout<pid_t>.size).filter { $0 > 0 }
     }
 
+    /// The key of a running process of this user; nil when there is none with this pid.
+    static func key(of pid: pid_t) -> ProcessKey? {
+        usage(of: pid).map { ProcessKey(pid: pid, start: $0.ri_proc_start_abstime) }
+    }
+
     private static func usage(of pid: pid_t) -> rusage_info_v6? {
         var info = rusage_info_v6()
         let result = withUnsafeMutablePointer(to: &info) { pointer in

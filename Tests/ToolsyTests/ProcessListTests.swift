@@ -67,3 +67,40 @@ struct ProcessOrderTests {
         #expect(order([group("b", cpu: 130), group("a", cpu: 100)], after: ["a", "b"], by: .cpu) == ["b", "a"])
     }
 }
+
+struct ProcessMembershipTests {
+    private func members(_ ranked: [ProcessGroup], count: Int = 2, after previous: [String], by measure: ProcessMeasure = .cpu) -> [String] {
+        ProcessRow.members(of: ranked, count: count, previous: previous, by: measure).map(\.id)
+    }
+
+    @Test func aFirstListTakesTheHighest() {
+        #expect(members([group("a", cpu: 9), group("b", cpu: 5), group("c", cpu: 1)], after: []) == ["a", "b"])
+        #expect(members([group("a", cpu: 9)], after: []) == ["a"], "fewer groups than rows")
+        #expect(members([], after: ["a"]) == [])
+    }
+
+    @Test func aShownRowStaysUntilItsRivalHasNoticeablyMore() {
+        // The fourth and fifth busiest apps of an idle Mac trade places with every sample.
+        let noise = [group("a", cpu: 9), group("new", cpu: 0.41), group("old", cpu: 0.40)]
+        #expect(members(noise, after: ["a", "old"]) == ["a", "old"])
+        let clear = [group("a", cpu: 9), group("new", cpu: 6), group("old", cpu: 0.40)]
+        #expect(members(clear, after: ["a", "old"]) == ["a", "new"], "6 % of a core against 0.4 % is no noise")
+        // Memory: within 5 % of each other.
+        let megabyte: UInt64 = 1 << 20
+        let close = [group("a", memory: 900 * megabyte), group("new", memory: 204 * megabyte), group("old", memory: 200 * megabyte)]
+        #expect(members(close, after: ["a", "old"], by: .memory) == ["a", "old"])
+        let apart = [group("a", memory: 900 * megabyte), group("new", memory: 300 * megabyte), group("old", memory: 200 * megabyte)]
+        #expect(members(apart, after: ["a", "old"], by: .memory) == ["a", "new"])
+    }
+
+    @Test func onlyRowsShownBeforeHoldOn() {
+        let ranked = [group("a", cpu: 9), group("b", cpu: 0.41), group("c", cpu: 0.40), group("d", cpu: 0.39)]
+        #expect(members(ranked, after: ["a"]) == ["a", "b"], "c was not shown: it has no place to keep")
+        #expect(members(ranked, after: ["c", "d"]) == ["a", "c"],
+                "a is far ahead and comes in; of the two shown rows the stronger holds on against b")
+    }
+
+    @Test func aRowThatLeftTheCandidatesIsGone() {
+        #expect(members([group("a", cpu: 9), group("b", cpu: 5)], after: ["a", "quit"]) == ["a", "b"])
+    }
+}

@@ -82,8 +82,35 @@ final class ProcessMonitor {
     @discardableResult
     func quit(_ group: ProcessGroup) -> Bool {
         guard group.canQuit, let pid = group.applicationPID,
-              let application = NSRunningApplication(processIdentifier: pid), Self.canQuit(application) else { return false }
+              let application = NSRunningApplication(processIdentifier: pid), Self.canQuit(application),
+              // The app may have quit since the group was sampled and its pid been given to another.
+              Self.groupID(of: application) == group.id else { return false }
         return application.terminate()
+    }
+
+    /// The id of the group a running application owns: its bundle (which is no group's id when the app is
+    /// nested in another), or itself as a process when it has none.
+    private static func groupID(of application: NSRunningApplication) -> String? {
+        if let bundle = application.bundleURL?.path, bundle.hasSuffix(".app") {
+            return bundle
+        }
+        return ProcessSampler.key(of: application.processIdentifier).map(id)
+    }
+
+    private static func id(of process: ProcessKey) -> String {
+        "\(process.pid)-\(process.start)"
+    }
+
+    /// Which of the applications among a group's processes the group is named for and Quit would quit. For
+    /// a bundle that is the app whose bundle it is, the one with a Dock icon if several are (an app and its
+    /// login item). An app nested inside another (Simulator in Xcode) is part of the outer app's group and
+    /// adds to its numbers, but neither names it nor is what the group's Quit means.
+    static func owner<Application>(
+        ofBundle path: String, among candidates: [Application],
+        bundlePath: (Application) -> String?, isRegular: (Application) -> Bool
+    ) -> Application? {
+        let own = candidates.filter { bundlePath($0) == path }
+        return own.first(where: isRegular) ?? own.first
     }
 
     // MARK: Sampling
@@ -132,18 +159,18 @@ final class ProcessMonitor {
         }
         var seen: [String: Look] = [:]
         groups = readings.map { reading in
-            // Several processes of a bundle can be registered applications (an app and its login
-            // item); the one with a Dock icon is the app.
             let candidates = reading.pids.compactMap { applications[$0] }
-            let application = candidates.first { $0.activationPolicy == .regular } ?? candidates.first
-            let id: String, look: Look
+            let id: String, look: Look, application: NSRunningApplication?
             switch reading.kind {
             case .bundle(let path):
                 id = path
+                application = Self.owner(ofBundle: path, among: candidates, bundlePath: { $0.bundleURL?.path },
+                                         isRegular: { $0.activationPolicy == .regular })
                 look = looks[id] ?? Look(name: Self.bundleName(atPath: path), icon: NSWorkspace.shared.icon(forFile: path))
                 seen[id] = look
             case .process(let key, let executable):
-                id = "\(key.pid)-\(key.start)"
+                id = Self.id(of: key)
+                application = candidates.first
                 look = looks[id] ?? Look(name: (executable as NSString).lastPathComponent, icon: application?.icon)
                 // Kept only once it has an icon: a process can become an application after it started.
                 if look.icon != nil { seen[id] = look }
