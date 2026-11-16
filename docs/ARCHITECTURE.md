@@ -58,6 +58,15 @@ and applies each line it prints as a patch. `refresh` commands are scheduled onl
 panel is open unless the mod asks for background refresh. With the panel closed and no service
 running, Toolsy has no timers.
 
+System events reach mods through `SystemEventMonitor` in the app, which observes only the events
+some installed mod declares (`ModStore.observedEvents`) and follows that set as mods come and go:
+wake from `NSWorkspace.didWakeNotification`, power from `IOPSCreateLimitedPowerNotification` (posted
+only when the providing source actually changes), network from the dynamic store keys of the
+primary interface and of the interfaces' addresses, link-local IPv6 excluded and a burst settled
+into one event after two quiet seconds. A mod's `notify` goes through the store's rate limit to
+`ModNotifier`, which asks for permission the first time one arrives and opens the mod's page when a
+notification is clicked. A debug run on scratch data prints notifications instead of posting them.
+
 On disk, per user (`~/Library/Application Support/Toolsy/`):
 
 ```

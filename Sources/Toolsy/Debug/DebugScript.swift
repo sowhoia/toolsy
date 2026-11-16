@@ -27,6 +27,7 @@ import ToolsyShared
 ///     dashboard edit|done|reset|print|add <widget>|remove <widget>|move <widget> <index>
 ///               size <widget> small|medium|wide|style <widget> line|area|bar|unit <widget> bytes|bits
 ///               deviceline on|off
+///     event launch|wake|network|power                     notifications
 ///
 /// Pages are root, settings, gallery and mod:<id>. Anchors are the names given with `debugAnchor`
 /// (`tile:<id>`, `widget:<widget>`, `widget-remove:<widget>`, `gallery:<widget>`, `edit-widgets`, `edit-done`,
@@ -37,6 +38,9 @@ import ToolsyShared
 /// like `clickat`'s and `moveto` drags it elsewhere, so a pressed or dragged control can be captured;
 /// `release` lets go. `capture` with an anchor captures only that control. `set` and `run` go through
 /// the same model calls as the controls (for the menu picker, whose native menu would block the script).
+/// `event wake` posts the workspace's wake notification inside this process, so it travels the way a real
+/// wake does (and does nothing unless a mod listens); the other events go to the store directly. A debug run
+/// prints each notification a mod gives (`NOTIFY`) instead of showing it; `notifications` lists them again.
 @MainActor
 enum DebugScript {
     static func start(_ file: URL, app: AppDelegate) {
@@ -293,6 +297,20 @@ private final class Runner {
             try await Task.sleep(for: .milliseconds(300))
         case "dashboard":
             try await dashboard(arguments)
+        case "event":
+            guard let event = ModSystemEvent(rawValue: rest) else { throw ScriptError("event launch|wake|network|power") }
+            if event == .wake {
+                NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: NSWorkspace.shared)
+            } else {
+                mods.store.post(event)
+            }
+            say("EVENT \(event.rawValue) observing=\(app.systemEvents.sources.keys.map(\.rawValue).sorted())")
+        case "notifications":
+            guard let log = app.notifier.center as? LoggedNotifications else { throw ScriptError("notifications go to Notification Centre") }
+            say("NOTIFICATIONS \(log.shown.count)")
+            for request in log.shown {
+                say("NOTIFIED \(request.content.threadIdentifier) “\(request.content.title)” “\(request.content.body)”")
+            }
         case "print":
             say(rest)
         case "quit":
