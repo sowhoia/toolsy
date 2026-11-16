@@ -21,7 +21,7 @@ import ToolsyShared
 
     /// `run --json` of one command, which must succeed with a patch.
     private func patch(_ folder: String, _ command: String, _ options: [String] = []) async throws -> RunJSON {
-        let result = try await toolsyMod(["run", folder, command, "--locale", "en", "--json"] + options)
+        let result = try await toolsyModRun([folder, command, "--locale", "en", "--json"] + options)
         #expect(result.status == 0, "\(command): \(result.output)")
         let report = try JSONDecoder().decode(RunJSON.self, from: Data(result.output.utf8))
         #expect(report.ok && report.output?.kind == "patch" && report.notes.isEmpty, "\(command): \(result.output)")
@@ -43,7 +43,7 @@ import ToolsyShared
         #expect(Set(patch.keys) == ["uptime", "bootedAt", "status", "level"])
         #expect(patch["uptime"]?.numberValue.map { $0 > 0 } == true && patch["level"] == "ok" && patch["status"] == "Fine")
         // One day as the limit: a Mac that has run longer gets the warning, in the user's language.
-        let strict = try await toolsyMod(["run", folder, "check", "--key", "days", "--value", "0", "--locale", "ru", "--json"])
+        let strict = try await toolsyModRun([folder, "check", "--key", "days", "--value", "0", "--locale", "ru", "--json"])
         let warned = try JSONDecoder().decode(RunJSON.self, from: Data(strict.output.utf8))
         #expect(warned.output?.patch?["status"] == "Пора перезагрузить" && warned.output?.patch?["level"] == "warn")
         #expect(warned.notes == [#"an input binds "days", so its value was stored in the state first, as the control does"#])
@@ -54,7 +54,7 @@ import ToolsyShared
         let directory = try TemporaryDirectory()
         let folder = try await make("switch", in: directory)
         // Without a folder, switching on fails with a reason and changes nothing.
-        let refused = try await toolsyMod(["run", folder, "hide", "--locale", "en", "--json"])
+        let refused = try await toolsyModRun([folder, "hide", "--locale", "en", "--json"])
         #expect(refused.status == 1)
         #expect(try JSONDecoder().decode(RunJSON.self, from: Data(refused.output.utf8)).error == "Choose a folder first")
         #expect(try await patch(folder, "status").output?.patch == ["enabled": false, "status": "No folder chosen", "level": "off"])
@@ -81,7 +81,7 @@ import ToolsyShared
     @Test func service() async throws {
         let directory = try TemporaryDirectory()
         let folder = try await make("service", in: directory)
-        let result = try await toolsyMod(["run", folder, "watch", "--for", "4", "--state", #"{"interval": 1}"#, "--locale", "en", "--json"])
+        let result = try await toolsyModRun([folder, "watch", "--for", "4", "--state", #"{"interval": 1}"#, "--locale", "en", "--json"])
         #expect(result.status == 0, "\(result.output)")
         let report = try JSONDecoder().decode(RunJSON.self, from: Data(result.output.utf8))
         #expect(report.ok && report.service && report.timedOut && report.event == "service" && report.notes.isEmpty, "stopped while running")

@@ -15,6 +15,23 @@ func toolsyMod(_ arguments: [String], in directory: URL? = nil) async throws -> 
     return (result.exitCode, String(decoding: result.stdout, as: UTF8.self), String(decoding: result.stderr, as: UTF8.self))
 }
 
+/// `toolsy-mod run … --json` of a command that is expected to finish, launched again while the command
+/// only waited: timed out, or, as a service, was stopped before it said anything.
+///
+/// macOS checks a new executable when it is first launched, about 0.4 s each and one at a time across
+/// the whole system. While the suite launches the scripts it has just written, a script can wait in that
+/// queue for longer than the ten seconds its command is given. The check is made once, so the next launch
+/// starts at once; a script that really hangs times out every time and fails the test.
+func toolsyModRun(_ arguments: [String]) async throws -> (status: Int32, output: String, error: String) {
+    var result = try await toolsyMod(["run"] + arguments)
+    for _ in 0..<5 {
+        guard let report = try? JSONDecoder().decode(RunJSON.self, from: Data(result.output.utf8)),
+              report.service ? report.lines?.isEmpty != false : report.timedOut else { break }
+        result = try await toolsyMod(["run"] + arguments)
+    }
+    return result
+}
+
 private func archiveEntries(_ archive: URL) async throws -> [String] {
     let result = try await ProcessRunner.run(ProcessRunner.Request(
         executable: URL(filePath: "/usr/bin/zipinfo"), arguments: ["-1", archive.path(percentEncoded: false)]

@@ -39,8 +39,10 @@ struct RunJSON: Decodable {
 }
 
 @Suite struct CLIRunTests {
-    private func run(_ folder: URL, _ arguments: [String]) async throws -> (status: Int32, report: RunJSON) {
-        let result = try await toolsyMod(["run", folder.path(percentEncoded: false)] + arguments + ["--json"])
+    /// `run --json`; `finishing` commands are launched again while they only waited (`toolsyModRun`).
+    private func run(_ folder: URL, _ arguments: [String], finishing: Bool = false) async throws -> (status: Int32, report: RunJSON) {
+        let all = [folder.path(percentEncoded: false)] + arguments + ["--json"]
+        let result = try await (finishing ? toolsyModRun(all) : toolsyMod(["run"] + all))
         #expect(result.error.isEmpty, "\(result.error)")
         return (result.status, try JSONDecoder().decode(RunJSON.self, from: Data(result.output.utf8)))
     }
@@ -57,7 +59,8 @@ struct RunJSON: Decodable {
             """#), scripts: ["bin/echo": #"printf '{"argv": "%s|%s", "event": "%s", "key": "%s", "value": "%s", "locale": "%s", "input": %s}' "$1" "$2" "$TOOLSY_EVENT" "$TOOLSY_KEY" "$TOOLSY_VALUE" "$TOOLSY_LOCALE" "$(cat)""#], in: directory)
 
         let (status, report) = try await run(folder, ["echo", "--key", "host", "--value", #""b.example""#, "--locale", "pt-BR",
-                                                       "--state", #"{"enabled": true, "level2": null, "extra": [1]}"#, "--event", "wake"])
+                                                       "--state", #"{"enabled": true, "level2": null, "extra": [1]}"#, "--event", "wake"],
+                                             finishing: true)
         #expect(status == 0 && report.ok && report.exitStatus == 0 && !report.timedOut && report.timeout == 9)
         #expect(report.mod == "demo" && report.command == "echo" && report.program == "exec bin/echo one two words")
         #expect(report.event == "wake" && report.locale == "pt-br" && report.key == "host" && report.value == "b.example")
