@@ -309,7 +309,9 @@ struct InstallQueueTests {
         #expect(firstDialog.title.contains("Mod first"))
         #expect(firstDialog.message?.contains("1.0") == true)
         #expect(firstDialog.message?.contains("About first") == true)
-        #expect(firstDialog.warning == nil)
+        #expect(firstDialog.message?.contains("Not signed by its author.") == true)
+        // Every mod runs programs as the user; the dialog says so, not only for administrator commands.
+        #expect(firstDialog.warning?.contains("with your permissions") == true)
         fixture.panel.dismissDialog(confirmed: true)
 
         try await fixture.waitUntil("the first mod") { fixture.model.mod(id: "first") != nil }
@@ -326,6 +328,35 @@ struct InstallQueueTests {
 
         try await fixture.waitUntil("the queue to finish") { !fixture.model.isInstalling && fixture.panel.dialog == nil }
         #expect(fixture.model.store.mods.map(\.id) == ["first"])
+        await fixture.cleanUp()
+    }
+
+    /// The author field is the author's own word: the dialog says which key signed the files, and warns when
+    /// an update comes from another key or names another author.
+    @Test func theConfirmationSaysWhoSignedThePackage() async throws {
+        let fixture = try Fixture()
+        let author = try ModSigningKey.generate(at: fixture.root.appending(path: "author.key"))
+        let stranger = try ModSigningKey.generate(at: fixture.root.appending(path: "stranger.key"))
+        func package(_ name: String, version: String, by writer: String, key: String) async throws -> URL {
+            let folder = try fixture.modFolder(name, #"{"schema": 1, "id": "tool", "name": "Tool", "version": "\#(version)", "author": "\#(writer)"}"#)
+            let archive = fixture.root.appending(path: "\(name).toolsymod")
+            _ = try await ModPackage.pack(folder, to: archive, signingKey: ModSigningKey.load(from: fixture.root.appending(path: key)))
+            return archive
+        }
+        fixture.model.install([try await package("v1", version: "1", by: "Ann", key: "author.key")])
+        let first = try await fixture.waitForDialog()
+        #expect(first.message?.contains("Signed with key \(author.fingerprint).") == true)
+        #expect(first.warning?.contains("may not come from the same author") == false)
+        fixture.panel.dismissDialog(confirmed: true)
+        try await fixture.waitUntil("the mod") { fixture.model.mod(id: "tool") != nil }
+
+        fixture.model.install([try await package("v2", version: "2", by: "Bob", key: "stranger.key")])
+        let update = try await fixture.waitForDialog()
+        #expect(update.warning?.contains("The installed version is signed with key \(author.fingerprint), this one with key \(stranger.fingerprint).") == true)
+        #expect(update.warning?.contains("The author named in the mod changes from “Ann” to “Bob”.") == true)
+        fixture.panel.dismissDialog(confirmed: false)
+        try await fixture.waitUntil("the queue to finish") { !fixture.model.isInstalling && fixture.panel.dialog == nil }
+        #expect(fixture.model.mod(id: "tool")?.manifest.version == "1")
         await fixture.cleanUp()
     }
 

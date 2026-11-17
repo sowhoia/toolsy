@@ -179,6 +179,13 @@
 "Version %@" = "Версия %@";
 "Version %@ by %@" = "Версия %1$@, автор: %2$@";
 "Replaces version %@. Settings are kept." = "Заменит версию %@. Настройки сохранятся.";
+"Signed with key %@." = "Подписан ключом %@.";
+"Not signed by its author." = "Автор не подписал мод.";
+"The installed version is signed with key %@, this one with key %@. It may not come from the same author." = "Установленная версия подписана ключом %1$@, а эта — ключом %2$@. Возможно, её сделал не тот же автор.";
+"The installed version is signed with key %@, this one is not signed. It may not come from the same author." = "Установленная версия подписана ключом %@, а эта не подписана. Возможно, её сделал не тот же автор.";
+"The author named in the mod changes from “%@” to “%@”." = "Автор, указанный в моде, меняется с «%1$@» на «%2$@».";
+"The installed version names “%@” as its author, this one names no author." = "В установленной версии автором указан «%@», а в этой автор не указан.";
+"A mod runs its own programs with your permissions: they can open and change your files and use the network. Install it only if you trust its author." = "Мод запускает свои программы с вашими правами: они могут открывать и изменять ваши файлы и выходить в сеть. Устанавливайте мод, только если доверяете автору.";
 "Replaces the installed copy. Settings are kept." = "Заменит установленную копию. Настройки сохранятся.";
 "Couldn’t install “%@”" = "Не удалось установить «%@»";
 "Remove “%@”?" = "Удалить «%@»?";

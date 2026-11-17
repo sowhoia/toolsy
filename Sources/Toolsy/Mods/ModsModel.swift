@@ -186,17 +186,33 @@ final class ModsModel {
         if let summary = manifest.summary, !summary.isEmpty {
             lines.append(summary)
         }
+        // The author field is the author's own word; a signature is the one thing that says who made the files.
+        lines.append(prepared.signature.map { String(localized: "Signed with key \($0.fingerprint).") }
+            ?? String(localized: "Not signed by its author."))
+
+        var warnings: [String] = []
+        if prepared.signerChanged, let installed = prepared.installedSignature {
+            warnings.append(prepared.signature.map {
+                String(localized: "The installed version is signed with key \(installed.fingerprint), this one with key \($0.fingerprint). It may not come from the same author.")
+            } ?? String(localized: "The installed version is signed with key \(installed.fingerprint), this one is not signed. It may not come from the same author."))
+        }
+        if let previous = prepared.installedManifest?.author, previous != manifest.author {
+            warnings.append(manifest.author.map { String(localized: "The author named in the mod changes from “\(previous)” to “\($0)”.") }
+                ?? String(localized: "The installed version names “\(previous)” as its author, this one names no author."))
+        }
         let privileged = !prepared.privilegedCommands.isEmpty
-        // For a mod with administrator commands this confirmation is the consent to run them as root.
-        let warning = privileged
-            ? ([String(localized: "Installing it lets these commands run as administrator (root), now and later, without asking again. Install it only if you trust its author.")]
-               + [ModInterface.passwordNotice(for: helperStatus)].compactMap(\.self)).joined(separator: "\n\n")
-            : nil
+        if privileged {
+            // For a mod with administrator commands this confirmation is the consent to run them as root.
+            warnings.append(String(localized: "Installing it lets these commands run as administrator (root), now and later, without asking again. Install it only if you trust its author."))
+            warnings += [ModInterface.passwordNotice(for: helperStatus)].compactMap(\.self)
+        } else {
+            warnings.append(String(localized: "A mod runs its own programs with your permissions: they can open and change your files and use the network. Install it only if you trust its author."))
+        }
         return ConfirmationRequest(
             title: prepared.replacesInstalledMod
                 ? String(localized: "Update “\(manifest.name)”?") : String(localized: "Install “\(manifest.name)”?"),
             message: lines.joined(separator: "\n"),
-            warning: warning,
+            warning: warnings.joined(separator: "\n\n"),
             details: privileged ? ModInterface.privilegedCommandLines(of: manifest) : [],
             icon: manifest.icon ?? "puzzlepiece.extension.fill",
             iconTint: Tint.color(manifest.tint),
