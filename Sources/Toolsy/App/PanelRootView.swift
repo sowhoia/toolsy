@@ -54,6 +54,7 @@ struct PanelRootView: View {
         .clipShape(RoundedRectangle(cornerRadius: Metrics.panelRadius, style: .continuous))
         .panelGlass()
         .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { panel.glassFrame = $0 }
         .debugAnchor("panel")
         .padding(Metrics.panelInset)
         .scaleEffect(panel.isPresented || reduceMotion ? 1 : 0.96, anchor: .top)

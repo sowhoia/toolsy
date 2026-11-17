@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The borderless, transparent panel under the status item. It never activates the app (like
 /// Control Center), can still become key so text fields work, floats above full-screen apps on
-/// every Space, and is dismissed by outside clicks, Esc or another app taking focus.
+/// every Space, and is dismissed by outside clicks, Esc or another app taking focus. A press outside
+/// that may start a drag to the panel closes it only once released elsewhere (`OutsideDismissal`).
 final class PanelController: NSObject, NSWindowDelegate {
     private let state: PanelState
     private let keepOpen: Bool
@@ -13,6 +14,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var anchor: NSWindow?
     private var dismissalMonitors: [Any] = []
     private var activationObserver: NSObjectProtocol?
+    private var outsideDismissal = OutsideDismissal()
     /// Greater than zero while the panel presents its own modal window (an `NSOpenPanel`);
     /// focus moving there must not close the panel.
     private var modalDepth = 0
@@ -127,8 +129,23 @@ final class PanelController: NSObject, NSWindowDelegate {
         guard !keepOpen else { return }
         if let monitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown],
-            handler: { [weak self] _ in MainActor.assumeIsolated { self?.dismissIfIdle() } }
+            handler: { [weak self] event in
+                let outside: OutsideDismissal.Event = event.type == .leftMouseDown ? .leftClickOrFocusChange : .otherButtonDown
+                MainActor.assumeIsolated { self?.somethingHappenedOutside(outside) }
+            }
         ) {
+            dismissalMonitors.append(monitor)
+        }
+        // The release goes to the app that had the press: another one (a drag from Finder), or this one.
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.leftButtonReleased() }
+        }) {
+            dismissalMonitors.append(monitor)
+        }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.leftButtonReleased() }
+            return event
+        }) {
             dismissalMonitors.append(monitor)
         }
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -137,7 +154,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             let isOtherApp = app?.processIdentifier != ProcessInfo.processInfo.processIdentifier
             MainActor.assumeIsolated {
-                if isOtherApp { self?.dismissIfIdle() }
+                if isOtherApp { self?.somethingHappenedOutside(.leftClickOrFocusChange) }
             }
         }
     }
@@ -149,6 +166,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
         }
         activationObserver = nil
+        outsideDismissal = OutsideDismissal()
     }
 
     /// Esc closes the dialog if one is shown, then leaves editing the dashboard, otherwise closes the
@@ -166,16 +184,41 @@ final class PanelController: NSObject, NSWindowDelegate {
         return true
     }
 
-    private func dismissIfIdle() {
-        guard modalDepth == 0, state.holdCount == 0, !keepOpen else { return }
-        hide()
+    /// Whether something outside may close the panel: not while the panel's own open panel or a system prompt
+    /// it waits for has the focus, and never with `--keep-open`.
+    private var isIdle: Bool {
+        modalDepth == 0 && state.holdCount == 0 && !keepOpen
+    }
+
+    private func somethingHappenedOutside(_ event: OutsideDismissal.Event) {
+        guard isIdle else { return }
+        if outsideDismissal.handle(event, leftButtonHeld: NSEvent.pressedMouseButtons & 1 != 0) { hide() }
+    }
+
+    private func leftButtonReleased() {
+        guard outsideDismissal.isWaitingForRelease else { return }
+        let closes = outsideDismissal.leftButtonReleased(at: NSEvent.mouseLocation, frame: glassFrameOnScreen)
+        guard isIdle, state.isPresented else { return }
+        if closes {
+            hide()
+        } else {
+            // Released over the panel, such as a mod's file dropped on it: the panel takes back the keyboard
+            // focus the press may have taken, for what follows (Return confirms the installation).
+            window.makeKey()
+        }
+    }
+
+    /// Where the panel's glass is on screen. The rest of the window is clear and lets clicks through.
+    private var glassFrameOnScreen: CGRect {
+        guard let content = window.contentView else { return .zero }
+        return window.convertToScreen(content.convert(state.glassFrame, to: nil))
     }
 
     func windowDidResignKey(_ notification: Notification) {
         // Focus went to another app's window (Spotlight, a notification) rather than to one of
         // ours, e.g. the open panel.
-        guard state.isPresented, modalDepth == 0, state.holdCount == 0, NSApp.keyWindow == nil else { return }
-        dismissIfIdle()
+        guard state.isPresented, NSApp.keyWindow == nil else { return }
+        somethingHappenedOutside(.leftClickOrFocusChange)
     }
 
     // MARK: Modal windows

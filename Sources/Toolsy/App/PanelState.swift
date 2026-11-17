@@ -51,6 +51,9 @@ final class PanelState {
     private(set) var isVisible = false
     /// A file is dragged over the panel; it shows where to drop it.
     var isDropTargeted = false
+    /// Where the panel's glass is, in the coordinates of the window's content (top-left origin): a mouse
+    /// button released over it, at the end of a drag from another app, does not close the panel.
+    @ObservationIgnored var glassFrame: CGRect = .zero
 
     @ObservationIgnored private var visibilityHandlers: [(Bool) -> Void] = []
     /// Greater than zero while something outside the panel needs the user (the administrator
