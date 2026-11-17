@@ -208,13 +208,53 @@ which reports nothing, is read at start, on wake and every 30 minutes through
 `NSBackgroundActivityScheduler`. Each alert notifies once per episode and re-arms only past a margin,
 and the pressure Toolsy's own memory reclaim holds is no episode. `UpdateChecker` asks GitHub's API
 for the latest release shortly after launch and about daily through `NSBackgroundActivityScheduler`
-while its setting is on (never on scratch data), compares the tag as a semantic version and only
-links to the release page. `ModNotifier` posts both in groups of their own.
+while its setting is on (never on scratch data), compares the tag as a semantic version, and takes
+from the release's files the app's archive `Toolsy-X.Y.Z.zip` and its signature `….zip.sig`, both
+downloads of this repository's releases; a release without them is only linked to. It remembers the
+version that ran last in `Settings.json`, so a newer one says once that Toolsy was updated, and the
+version whose offer the user put away on the dashboard. `UpdateInstaller` installs one (below).
+`ModNotifier` posts both in groups of their own.
 
 The panel closes when nobody can see it: the displays or the Mac going to sleep, the session
 switching to another user. An outside press of the left button closes it on release, and only away
 from the glass, so a file dragged from Finder can be dropped on it. After its open panel made Toolsy
 the active app, activation goes back to the app that had it once the panel closes.
+
+## Updating Toolsy
+
+`UpdateInstaller` installs a new version when the user clicks Update and Restart, and only then is
+anything downloaded. Nothing on disk changes until every check has passed:
+
+1. The signature file comes first, at most 4 KB: JSON with the version, the archive's size and its
+   SHA-256, and an Ed25519 signature of the three by the release key (`UpdateSignature`). Its public
+   half is `ToolsyUpdatePublicKey` in Info.plist, sealed by the app's code signature like its code. The
+   version must be the release's.
+2. The archive is downloaded (`ReleaseDownload`, an ephemeral session like the check's) into a staging
+   folder on the app's volume, refused as soon as more than the signed size is announced or arrives,
+   and must have the signed size and SHA-256.
+3. Only then is it unpacked, with `ditto` and without quarantine, and the app in it checked
+   (`UpdateBundleCheck`): one real folder, not a link; this bundle identifier; the signed version; a
+   minimum macOS this Mac meets; code for the architecture the app runs as; a code signature that
+   seals every file of every architecture, and, when the running app is signed by a Developer ID
+   team, by the same team.
+4. Toolsy waits until no dialog is open and no mod, helper or memory reclaim is in progress, then the
+   new app and the running one swap places in one `renamex_np(RENAME_SWAP)`: either is at the app's
+   path at every moment, and the old one goes with the staging folder. The running process keeps what
+   it has loaded.
+5. A shell in a session of its own waits until Toolsy's process has exited and opens the app again,
+   with the panel open if it was open, and Toolsy quits the normal way, stopping mods' services.
+
+A copy that cannot replace itself says why and offers the download: one without the release key (a
+bare executable), one macOS runs translocated from where it was downloaded, one on a read-only disk or
+one that cannot swap, and one in a folder the user may not change. Only the download can be cancelled;
+once checking has begun it runs to the restart or to a failure, and a failure leaves the app as it was.
+
+What this defends against: whoever controls the network, GitHub's servers or the repository's
+releases can withhold an update but not install one, nor an older release as a newer one. The
+release key is the trust anchor: it is kept outside the repository by whoever publishes releases
+(`scripts/release.sh` signs with it), and losing it means users update by hand once to a release
+whose Info.plist names a new key. The helper accepts only the build that installed it, so after an
+update macOS asks for the administrator password once more, when the helper is next needed.
 
 ## Privileged execution
 

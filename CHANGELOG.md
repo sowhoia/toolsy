@@ -37,9 +37,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Updates and settings
 
-- Toolsy checks GitHub for a new version shortly after it starts and about once a day, and shows one
-  in Settings with a link to it; nothing is downloaded by itself. The request identifies nothing but
-  the version of Toolsy. Switch it off in Settings, or check now.
+- Toolsy checks GitHub for a new version shortly after it starts and about once a day, says so once
+  with a notification, and offers it at the top of the panel and in Settings. Update and Restart
+  downloads it, checks that Toolsy's release key signed exactly that archive and that it holds Toolsy
+  in that version for this Mac, puts it in the place of the running app in one step and opens the new
+  version, which says it was updated. Nothing is downloaded before the click, and a copy that cannot
+  replace itself offers the download instead. The requests identify nothing but the version of
+  Toolsy. Switch the check off in Settings, or check now.
 - Copy Diagnostics in Settings: text for a bug report, without mods' settings or output.
 
 ### Mods
@@ -74,8 +78,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The app, its helper, `toolsy-mod` and `vpn-protector` are universal binaries, for Intel Macs on
   macOS 26 too; the bundle is 10.0 MB.
-- `scripts/release.sh` builds, checks, notarizes and packs a release with `SHA256SUMS`, and keeps the
-  debug symbols for crash reports.
+- `scripts/release.sh` builds, checks, notarizes and packs a release with `SHA256SUMS`, signs the
+  app's archive for Toolsy's updater, and keeps the debug symbols for crash reports.
 - `scripts/build-app.sh` stops when a build fails, where it packed the previous binaries, and signs
   with a secure timestamp when given an identity.
 - CI on macOS 26; the helper's tests no longer fail now and then; ShellCheck finds nothing.

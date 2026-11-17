@@ -21,6 +21,9 @@ In scope:
   commands a mod will run as root, the approved copies the helper keeps, and the refusal of a mod's
   root commands once its files have changed or it has been removed.
 - **toolsy-mod**, the command line tool in `Toolsy.app/Contents/Helpers`.
+- **Updating Toolsy**: the checks of the release key's signature, of the downloaded archive and of
+  the app in it before it takes the running app's place
+  ([Updating Toolsy](docs/ARCHITECTURE.md#updating-toolsy)).
 
 What a mod does with the access its user confirmed at installation is the mod's own behaviour, not
 a vulnerability of Toolsy, unless Toolsy let it do more than the confirmation said.

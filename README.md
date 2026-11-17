@@ -17,7 +17,7 @@ switched on needs, and a check for updates about once a day (which you can switc
 move `Toolsy.app` to `/Applications`. It runs on Apple silicon and Intel Macs, and `SHA256SUMS`
 beside it lists the checksum of every file of the release. If macOS refuses to open it the first
 time because it cannot check it for malicious software, open **System Settings → Privacy &
-Security** and click **Open Anyway**.
+Security** and click **Open Anyway**. From then on Toolsy updates itself (see [Updates](#updates)).
 
 **From source.** Requires macOS 26 and Xcode 26 (or its command line tools).
 
@@ -70,12 +70,28 @@ switched on, on wake and about every half hour. An alert that is off costs nothi
 
 ## Updates
 
-Toolsy checks for a new version shortly after it starts and then about once a day, and Settings
-shows one it finds, with a button that opens its page; nothing is downloaded or installed by
-itself. The check asks GitHub's API for the latest release of this repository and sends nothing
-about you: an `Accept` header, `Toolsy/<version>` as its user agent and a fixed language, without
-cookies or a cache. Switch off **Check for Updates Automatically** in Settings to stop it, or use
-**Check Now**.
+Toolsy checks for a new version shortly after it starts and then about once a day, says so once
+with a notification, and offers it at the top of the panel and in Settings. **Update and Restart**
+downloads it, checks it, puts it in the place of the running app and opens the new version, which
+says what it was updated from; **What's New** opens the release's page. Put the offer away with its
+cross and the panel offers the next version again; Settings keeps offering this one. Nothing is
+downloaded before you click, and nothing changes until every check has passed:
+
+- the release's archive must carry a signature by Toolsy's release key, whose public half is in the
+  app (`ToolsyUpdatePublicKey` in its Info.plist), over the version, the size and the SHA-256 of
+  exactly that archive;
+- the app in it must be Toolsy in that version, for this Mac and its version of macOS, with an
+  intact code signature, by the same Developer ID team once Toolsy is signed with one;
+- Toolsy waits until no dialog is open and no mod or helper is being installed, and the new app
+  takes the old one's place in a single rename, so one or the other is there at every moment.
+
+A copy that cannot replace itself (one macOS runs from where it was downloaded, or one in a folder
+you may not change) offers the download instead and says why. The check asks GitHub's API for the
+latest release of this repository and sends nothing about you: an `Accept` header,
+`Toolsy/<version>` as its user agent and a fixed language, without cookies or a cache; downloading
+the update sends the same. Switch off **Check for Updates Automatically** in Settings to stop
+checking, or use **Check Now**. After an update, macOS asks once more for the administrator password
+the next time the helper is needed (see [Administrator access](#administrator-access)).
 
 Settings also has **Copy Diagnostics**: text for a bug report with the versions, this Mac, the mods
 and what they ran lately, never their settings or what they printed.
@@ -158,7 +174,7 @@ design and its threat model are described in [docs/ARCHITECTURE.md](docs/ARCHITE
 | `~/Library/Application Support/Toolsy/Run/` | The running service of each mod, so a crash leaves none behind |
 | `~/Library/Application Support/Toolsy/Signers/` | The key that signed each installed mod, for mods that came signed |
 | `~/Library/Application Support/Toolsy/Dashboard.json` | The dashboard's widgets, order and options |
-| `~/Library/Application Support/Toolsy/Settings.json` | The alerts switched on and whether to check for updates |
+| `~/Library/Application Support/Toolsy/Settings.json` | The alerts switched on, whether to check for updates and the version that ran last |
 | `~/Library/Application Support/Toolsy/DeveloperMode` | Present while developer mode is on |
 | `/Library/PrivilegedHelperTools/app.toolsy.helper` | The helper (only after administrator access was set up) |
 | `/Library/LaunchDaemons/app.toolsy.helper.plist` | Its launchd job |
@@ -176,7 +192,8 @@ Packages/ToolsyShared/   the contract: mod format, command protocol, process run
 Packages/ToolsyEngine/   mod runtime and the toolsy-mod tool
 Packages/ToolsyPrivileged/  the root helper, its XPC interface and client
 Mods/                    mods maintained here
-scripts/                 build-app.sh, build-mods.sh, install.sh, release.sh, make-icon.swift
+scripts/                 build-app.sh, build-mods.sh, install.sh, release.sh, sign-update.swift,
+                         make-icon.swift
 docs/                    MOD_FORMAT.md, MOD_AUTHORING_FOR_AI.md, ARCHITECTURE.md
 .github/workflows/       ci.yml: what every push and pull request is checked with
 ```
@@ -197,7 +214,13 @@ scripts/build-app.sh --debug                        # build/Toolsy.app
 app, notarizes and staples it with the notarytool profile `TOOLSY_NOTARY_PROFILE`, packs the mods and
 writes the archive, `SHA256SUMS` and the release notes to `dist/release/`, keeping the debug symbols
 there unpublished; `--publish` creates the GitHub release (`--ad-hoc`, `--skip-notarization` and
-`--allow-beta` exist for trying it out). CI runs the four test suites, the tests of `vpn-protector`,
+`--allow-beta` exist for trying it out). It also signs the archive for the updater with the release
+key, `~/.config/toolsy/update-signing.key` unless `TOOLSY_UPDATE_KEY` names another file: a key made
+once with `toolsy-mod keygen`, kept out of the repository, whose public half is
+`ToolsyUpdatePublicKey` in `Resources/Info.plist` (`swift scripts/sign-update.swift --public-key
+<key>` prints it). Keep a backup of it: installed copies refuse an update signed with any other key
+and only link to its page. To move to a new key, publish one release signed with the old key whose
+Info.plist names the new one. CI runs the four test suites, the tests of `vpn-protector`,
 ShellCheck, `scripts/build-mods.sh`, each mod's `test.sh` and a universal build on macOS 26. The mods'
 `build.sh` pack the same bytes from the same sources. `swift scripts/make-icon.swift` regenerates the
 app icon. Each mod in `Mods/` has a
