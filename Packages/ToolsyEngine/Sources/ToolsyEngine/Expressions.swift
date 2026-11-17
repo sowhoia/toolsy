@@ -29,8 +29,18 @@ public struct ModExpression: Sendable, Equatable {
 
     let root: Node
 
+    /// Far beyond any condition a page needs. Parsing, evaluating and freeing a tree recurse once per level,
+    /// so these bounds keep a crafted manifest from overflowing the stack (a task has 512 KB) before anyone
+    /// has confirmed installing it.
+    static let maxTokens = 256
+    static let maxNesting = 32
+
     public init(_ source: String) throws(SyntaxError) {
-        var parser = Parser(tokens: try Self.tokens(of: source))
+        let tokens = try Self.tokens(of: source)
+        guard tokens.count <= Self.maxTokens else {
+            throw SyntaxError("the expression is longer than \(Self.maxTokens) tokens")
+        }
+        var parser = Parser(tokens: tokens)
         root = try parser.parseOr()
         if let extra = parser.peek {
             throw SyntaxError("unexpected \(extra.description)")
@@ -178,6 +188,8 @@ extension ModExpression {
     struct Parser {
         let tokens: [Token]
         var position = 0
+        /// Parentheses and `!` open so far; each recurses.
+        private var depth = 0
 
         init(tokens: [Token]) {
             self.tokens = tokens
@@ -206,7 +218,17 @@ extension ModExpression {
         }
 
         private mutating func parseNot() throws(SyntaxError) -> Node {
-            take("!") ? .not(try parseNot()) : try parseComparison()
+            guard take("!") else { return try parseComparison() }
+            return .not(try nested { (parser: inout Parser) throws(SyntaxError) in try parser.parseNot() })
+        }
+
+        private mutating func nested(_ parse: (inout Parser) throws(SyntaxError) -> Node) throws(SyntaxError) -> Node {
+            depth += 1
+            defer { depth -= 1 }
+            guard depth <= ModExpression.maxNesting else {
+                throw SyntaxError("the expression is nested more than \(ModExpression.maxNesting) levels deep")
+            }
+            return try parse(&self)
         }
 
         private mutating func parseComparison() throws(SyntaxError) -> Node {
@@ -268,7 +290,7 @@ extension ModExpression {
                 guard let path = StatePath(word) else { throw SyntaxError("\"\(word)\" is not a valid state key or path") }
                 return .path(path)
             case .symbol("("):
-                let inner = try parseOr()
+                let inner = try nested { (parser: inout Parser) throws(SyntaxError) in try parser.parseOr() }
                 guard take(")") else { throw SyntaxError("\"(\" is not closed") }
                 return inner
             case .symbol:

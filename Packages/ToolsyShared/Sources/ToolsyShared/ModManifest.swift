@@ -63,7 +63,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     public static func load(from data: Data) throws -> ModManifest {
         let manifest: ModManifest
         do {
-            manifest = try JSONDecoder().decode(ModManifest.self, from: data)
+            manifest = try JSONValue.decode(ModManifest.self, from: data)
         } catch let error as DecodingError {
             throw ManifestError(decoding: error)
         }

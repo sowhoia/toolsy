@@ -213,7 +213,7 @@ final class HelperService: Sendable {
         }
         let input: CommandInput
         do {
-            input = try JSONDecoder().decode(CommandInput.self, from: data)
+            input = try JSONValue.decode(CommandInput.self, from: data)
         } catch {
             throw HelperError.failed("the command input is not valid")
         }

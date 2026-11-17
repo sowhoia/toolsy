@@ -84,6 +84,23 @@ private func syntaxError(_ expression: String) -> String? {
         #expect(syntaxError("enabled") == nil)
         #expect(syntaxError(" ( a || b ) && !c ") == nil)
     }
+
+    /// Nested a few thousand levels deep, a `when` overflowed the stack of whoever parsed it: Toolsy crashed on
+    /// opening such a file, before its install confirmation.
+    @Test func boundsNestingAndLength() {
+        let limit = ModExpression.maxNesting
+        let deepest = String(repeating: "(", count: limit) + "a" + String(repeating: ")", count: limit)
+        #expect(syntaxError(deepest) == nil)
+        #expect(syntaxError("(" + deepest + ")") == "the expression is nested more than 32 levels deep")
+        #expect(syntaxError(String(repeating: "!", count: limit) + "a") == nil)
+        #expect(syntaxError(String(repeating: "!", count: limit + 1) + "a") == "the expression is nested more than 32 levels deep")
+        #expect(syntaxError("!(" + String(repeating: "!", count: limit - 1) + "a)") == "the expression is nested more than 32 levels deep")
+
+        let longest = Array(repeating: "a", count: 128).joined(separator: " || ")
+        #expect(syntaxError(longest) == nil, "255 tokens")
+        #expect(syntaxError(longest + " || a") == "the expression is longer than 256 tokens")
+        #expect(syntaxError(String(repeating: "(", count: 5000) + "a" + String(repeating: ")", count: 5000)) != nil)
+    }
 }
 
 @Suite struct ExpressionPathTests {

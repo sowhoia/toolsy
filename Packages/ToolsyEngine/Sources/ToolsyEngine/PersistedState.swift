@@ -16,7 +16,7 @@ struct PersistedState: Codable, Equatable {
         var saved = PersistedState(enabled: false, settings: [:])
         let url = file(for: manifest.id, in: directories)
         do {
-            saved = try JSONDecoder().decode(PersistedState.self, from: Data(contentsOf: url))
+            saved = try JSONValue.decode(PersistedState.self, from: Data(contentsOf: url))
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             // Never saved yet.
         } catch {

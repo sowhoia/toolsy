@@ -53,6 +53,20 @@ private func archiveEntries(_ archive: URL) async throws -> [String] {
         #expect(try await toolsyMod(["pack"]).status == 2)
     }
 
+    /// A manifest nested this deeply crashed toolsy-mod and Toolsy with a stack overflow (exit 138).
+    @Test func refusesManifestsNestedTooDeeply() async throws {
+        let directory = try TemporaryDirectory()
+        let when = String(repeating: "(", count: 1500) + "shown" + String(repeating: ")", count: 1500)
+        let deepWhen = try writeMod(manifest(#""ui": [{"type": "text", "text": "x", "when": "\#(when)"}]"#), in: directory, folder: "when")
+        #expect(try await toolsyMod(["validate", deepWhen.path(percentEncoded: false)])
+            == (1, "", "ui[0].when: the expression is longer than 256 tokens\n"))
+
+        let nested = String(repeating: "[", count: 500) + String(repeating: "]", count: 500)
+        let deepSettings = try writeMod(manifest(#""settings": {"x": \#(nested)}"#), in: directory, folder: "settings")
+        #expect(try await toolsyMod(["validate", deepSettings.path(percentEncoded: false)])
+            == (1, "", "the JSON is nested more than 64 levels deep\n"))
+    }
+
     @Test func packsAFolderThatInstalls() async throws {
         try await withHarness { harness in
             let folder = try writeMod(manifest(#""commands": {"t": {"exec": "bin/t"}}"#), scripts: ["bin/t": #"echo '{"packed": true}'"#], in: harness.temporary)

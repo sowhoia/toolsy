@@ -45,6 +45,57 @@ extension JSONValue: Codable {
 }
 
 extension JSONValue {
+    /// The deepest nesting of arrays and objects accepted from outside the app: manifests, command output,
+    /// saved state. Decoding, comparing and freeing a value recurse once per level and a task's stack is
+    /// 512 KB, so a crafted file nested a few hundred levels deep would crash Toolsy; no mod needs more than
+    /// a handful of levels.
+    public static let maxNesting = 64
+
+    /// Decodes JSON that came from outside the app, refusing input nested deeper than `maxNesting` before the
+    /// recursive decoder sees it. The refusal is a `DecodingError.dataCorrupted`, like any other bad input.
+    public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        guard nesting(of: data) <= maxNesting else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: [], debugDescription: "the JSON is nested more than \(maxNesting) levels deep"
+            ))
+        }
+        return try JSONDecoder().decode(type, from: data)
+    }
+
+    /// How deeply arrays and objects nest in `data`, counting brackets outside strings and stopping once past
+    /// `maxNesting`. It says nothing about whether the rest is valid JSON; the decoder decides that.
+    static func nesting(of data: Data) -> Int {
+        var depth = 0
+        var deepest = 0
+        var inString = false
+        var escaped = false
+        for byte in data {
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if byte == UInt8(ascii: "\\") {
+                    escaped = true
+                } else if byte == UInt8(ascii: "\"") {
+                    inString = false
+                }
+                continue
+            }
+            switch byte {
+            case UInt8(ascii: "\""):
+                inString = true
+            case UInt8(ascii: "["), UInt8(ascii: "{"):
+                depth += 1
+                deepest = max(deepest, depth)
+                if deepest > maxNesting { return deepest }
+            case UInt8(ascii: "]"), UInt8(ascii: "}"):
+                depth -= 1
+            default:
+                break
+            }
+        }
+        return deepest
+    }
+
     public var boolValue: Bool? {
         if case .bool(let value) = self { value } else { nil }
     }

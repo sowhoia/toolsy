@@ -42,7 +42,7 @@ public enum CommandOutput: Sendable, Equatable {
             return
         }
         do {
-            let value = try JSONDecoder().decode(JSONValue.self, from: output)
+            let value = try JSONValue.decode(JSONValue.self, from: output)
             self = value.objectValue.map(Self.patch) ?? .notAnObject(value)
         } catch DecodingError.dataCorrupted(let context) {
             // The decoder's own sentence is generic; the parser's says where the problem is.

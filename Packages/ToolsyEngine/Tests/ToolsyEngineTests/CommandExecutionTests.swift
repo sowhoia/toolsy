@@ -12,6 +12,9 @@ import ToolsyShared
         #expect(CommandOutput(Data("42".utf8)) == .notAnObject(42))
         #expect(CommandOutput(Data(#"{"a": 1}"#.utf8)).patch == ["a": 1])
         #expect(CommandOutput(Data("42".utf8)).patch == nil)
+        // A few hundred levels overflowed the stack while decoding; a mod's output is refused instead.
+        let deep = Data((#"{"a": "# + String(repeating: "[", count: 500) + String(repeating: "]", count: 500) + "}").utf8)
+        #expect(CommandOutput(deep) == .notJSON(reason: "the JSON is nested more than 64 levels deep"))
 
         for text in ["hello", #"{"a": 1} trailing"#, "{'a': 1}", #"{"a": 1}{"b": 2}"#] {
             guard case .notJSON(let reason) = CommandOutput(Data(text.utf8)) else {
