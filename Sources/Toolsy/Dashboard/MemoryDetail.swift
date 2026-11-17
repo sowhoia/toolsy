@@ -65,6 +65,17 @@ struct OptimizationMessage: Equatable {
         self.title = title
         self.detail = detail
     }
+
+    /// What an optimisation came to, rather than what it does or that it is under way.
+    var isResult: Bool {
+        ![.about, .working].contains(tone)
+    }
+
+    /// What VoiceOver says when the optimisation ends, which happens seconds after the button was pressed,
+    /// wherever the user's focus is by then. Nil before and while it runs.
+    var announcement: String? {
+        isResult ? [title, detail].compactMap(\.self).joined(separator: "\n") : nil
+    }
 }
 
 /// The Memory detail: how the memory is used, the one-button optimisation, and the apps that hold the most.
@@ -155,7 +166,7 @@ private struct OptimizationStatus: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
-            if isResult {
+            if message.isResult {
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
@@ -177,11 +188,10 @@ private struct OptimizationStatus: View {
                 .padding(.horizontal, -8)
         }
         .animation(Motion.fade, value: message)
+        .onChange(of: message) { _, message in
+            if let announcement = message.announcement { VoiceOver.announce(announcement) }
+        }
         .debugAnchor("memory-status")
-    }
-
-    private var isResult: Bool {
-        ![.about, .working].contains(message.tone)
     }
 
     private var symbol: String {

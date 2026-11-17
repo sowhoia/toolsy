@@ -58,6 +58,11 @@ final class PanelState {
     @ObservationIgnored private(set) var holdCount = 0
     /// Set by the panel controller, which keeps the panel open while the open panel is up.
     @ObservationIgnored var chooseFilesHandler: ((NSOpenPanel) async -> [URL])?
+    @ObservationIgnored private let announce: @MainActor (String) -> Void
+
+    init(announce: @escaping @MainActor (String) -> Void = VoiceOver.announce) {
+        self.announce = announce
+    }
 
     var currentPage: PanelPage { path.last ?? .root }
 
@@ -87,6 +92,8 @@ final class PanelState {
     func confirm(_ request: ConfirmationRequest) {
         if dialog != nil { dismissDialog(confirmed: false) }
         withAnimation(Motion.snappy) { dialog = request }
+        // The page that VoiceOver's focus was on is hidden from it now; say what took its place.
+        announce(request.title)
     }
 
     /// Removes a progress notice shown with `confirm`, unless another dialog has replaced it.
