@@ -94,6 +94,16 @@ struct LaunchOptions {
         #endif
     }
 
+    /// Whether this run may look for updates by itself: never in a debug run on scratch data, which must not
+    /// depend on the network. Check Now works in every run.
+    var checksForUpdates: Bool {
+        #if DEBUG
+        return dataRoot == nil
+        #else
+        return true
+        #endif
+    }
+
     private static func warn(_ message: String) {
         FileHandle.standardError.write(Data("Toolsy: \(message)\n".utf8))
     }

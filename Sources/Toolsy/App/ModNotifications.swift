@@ -29,10 +29,13 @@ final class ModNotifier: NSObject {
     enum Topic: String {
         /// Alerts about the Mac; a click opens the dashboard.
         case alerts = "toolsy:alerts"
+        /// A new version of Toolsy; a click opens Settings, where it is downloaded.
+        case update = "toolsy:update"
 
         var page: PanelPage {
             switch self {
             case .alerts: .root
+            case .update: .settings
             }
         }
     }

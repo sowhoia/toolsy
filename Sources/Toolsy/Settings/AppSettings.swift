@@ -5,7 +5,7 @@ import ToolsyShared
 
 private let logger = Logger(subsystem: ToolsyPaths.bundleIdentifier, category: "settings")
 
-/// Toolsy's own choices beyond the dashboard and developer mode: the alerts about the Mac.
+/// Toolsy's own choices beyond the dashboard and developer mode: the alerts about the Mac and the update check.
 /// Saved in `Settings.json` in the data root after every change, so a debug run on scratch data neither sees nor
 /// changes the user's. One instance lives for the life of the app.
 ///
@@ -20,12 +20,24 @@ final class AppSettings {
         didSet { if alerts != oldValue { save() } }
     }
 
+    /// Whether Toolsy looks for a new version by itself; on until the user switches it off.
+    var checksForUpdates: Bool {
+        didSet { if checksForUpdates != oldValue { save() } }
+    }
+
+    /// The newest version the user has been told about, so that each one is announced once.
+    var announcedVersion: String? {
+        didSet { if announcedVersion != oldValue { save() } }
+    }
+
     @ObservationIgnored let file: URL
 
     init(file: URL) {
         self.file = file
         let saved = Self.load(file)
         alerts = saved?.alerts ?? []
+        checksForUpdates = saved?.checksForUpdates ?? true
+        announcedVersion = saved?.announcedVersion
     }
 
     // MARK: File
@@ -35,26 +47,34 @@ final class AppSettings {
     private struct SavedSettings: Codable {
         var version: Int
         var alerts: Set<MacAlert>
+        var checksForUpdates: Bool
+        var announcedVersion: String?
 
         private enum CodingKeys: String, CodingKey {
-            case version, alerts
+            case version, alerts, checksForUpdates, announcedVersion
         }
 
-        init(version: Int, alerts: Set<MacAlert>) {
+        init(version: Int, alerts: Set<MacAlert>, checksForUpdates: Bool, announcedVersion: String?) {
             self.version = version
             self.alerts = alerts
+            self.checksForUpdates = checksForUpdates
+            self.announcedVersion = announcedVersion
         }
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decode(Int.self, forKey: .version)
             alerts = Set(try container.decodeIfPresent([String].self, forKey: .alerts)?.compactMap(MacAlert.init(rawValue:)) ?? [])
+            checksForUpdates = try container.decodeIfPresent(Bool.self, forKey: .checksForUpdates) ?? true
+            announcedVersion = try container.decodeIfPresent(String.self, forKey: .announcedVersion)
         }
 
         func encode(to encoder: any Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(version, forKey: .version)
             try container.encode(alerts.map(\.rawValue).sorted(), forKey: .alerts)
+            try container.encode(checksForUpdates, forKey: .checksForUpdates)
+            try container.encodeIfPresent(announcedVersion, forKey: .announcedVersion)
         }
     }
 
@@ -63,7 +83,8 @@ final class AppSettings {
     }
 
     private func save() {
-        let saved = SavedSettings(version: Self.version, alerts: alerts)
+        let saved = SavedSettings(version: Self.version, alerts: alerts, checksForUpdates: checksForUpdates,
+                                  announcedVersion: announcedVersion)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {

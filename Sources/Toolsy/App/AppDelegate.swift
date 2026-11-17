@@ -15,9 +15,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Mods' system events and notifications.
     let systemEvents: SystemEventMonitor
     let notifier: ModNotifier
-    /// Toolsy's own preferences and its alerts about the Mac.
+    /// Toolsy's own preferences, its alerts about the Mac and its check for updates.
     let settings: AppSettings
     let alerts: SystemAlerts
+    let updates: UpdateChecker
 
     private let options: LaunchOptions
     private var statusItem: NSStatusItem?
@@ -72,6 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             isRefused: { [notifier] askingFirst in await notifier.isRefused(askingFirst: askingFirst) }
         )
+        updates = UpdateChecker(settings: settings, mayCheckAutomatically: options.checksForUpdates) { [notifier] release in
+            let notification = UpdateCheck.notification(for: release)
+            Task { await notifier.show(title: notification.title, body: notification.body, topic: .update, id: release.version.description) }
+        }
         super.init()
         notifier.openPanel = { [weak self] page in self?.openPanel(on: page) }
         mods.presentPanel = { [weak self] in self?.openPanel(on: nil) }
@@ -109,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mods.start()
         systemEvents.start()
         alerts.start()
+        updates.start()
         loginItem.registerOnFirstLaunch()
         if options.openAtLaunch {
             // The menu bar places the new status item asynchronously; open once it has a frame.
@@ -138,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isTerminating = true
         systemEvents.stop()
         alerts.stop()
+        updates.stop()
         Task {
             await mods.shutdown(within: .seconds(4))
             NSApp.reply(toApplicationShouldTerminate: true)
@@ -208,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makePanelController() -> PanelController {
         let controller = PanelController(state: panelState, options: options, mods: mods, loginItem: loginItem,
                                          dashboard: dashboard, processes: processes, memoryOptimizer: memoryOptimizer,
-                                         alerts: alerts)
+                                         alerts: alerts, updates: updates)
         panelController = controller
         return controller
     }

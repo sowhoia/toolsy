@@ -368,3 +368,16 @@
 "%@ left. Connect the power adapter." = "Осталось %@. Подключите адаптер питания.";
 "Startup disk is almost full" = "Загрузочный диск почти заполнен";
 "%@ free. Apps may fail to save their work." = "Свободно %@. Приложениям может не хватить места, чтобы сохранить работу.";
+
+/* Settings: checking for updates */
+"Updates" = "Обновления";
+"Toolsy asks GitHub for its latest release and sends nothing but its own version. Nothing is downloaded or installed by itself." = "Toolsy спрашивает у GitHub о последнем выпуске и не передаёт ничего, кроме номера своей версии. Сам он ничего не загружает и не устанавливает.";
+"Check for Updates Automatically" = "Проверять обновления автоматически";
+"Toolsy is up to date" = "У вас последняя версия Toolsy";
+"Download Update" = "Скачать обновление";
+"Check Now" = "Проверить сейчас";
+"Toolsy %@ is available" = "Доступна версия Toolsy %@";
+"Click to download it in Toolsy’s settings." = "Нажмите, чтобы скачать её в настройках Toolsy.";
+"Couldn’t reach GitHub. Check the internet connection." = "Не удалось связаться с GitHub. Проверьте подключение к интернету.";
+"GitHub limits how often it can be asked. Try again later." = "GitHub ограничивает частоту запросов. Попробуйте позже.";
+"GitHub’s answer wasn’t understood. Try again later." = "Не удалось разобрать ответ GitHub. Попробуйте позже.";
