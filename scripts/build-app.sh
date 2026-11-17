@@ -22,12 +22,16 @@ done
 identity=${TOOLSY_SIGN_IDENTITY:--}
 app="$root/build/Toolsy.app"
 
-# Builds one product of the package in directory $1 and prints the path of the built file.
+# Builds PRODUCT of the package in directory PACKAGE and copies it to OUTPUT. Call it as a plain
+# command, never inside $(…): bash 3.2 ignores `set -e` there, so a failed build would go on with
+# the binary of the previous one.
 build_product() {
-    local package=$1 product=$2 product_configuration=$3
+    local package=$1 product=$2 product_configuration=$3 output=$4 bin_path
     # The beta toolchain prints a "remark:" line per prebuilt module; drop them, keep everything else.
-    (cd "$package" && swift build -c "$product_configuration" --product "$product" 2>&1 | { grep -v 'remark:' || true; }) >&2
-    echo "$(cd "$package" && swift build -c "$product_configuration" --show-bin-path)/$product"
+    (cd "$package" && swift build -c "$product_configuration" --product "$product" 2>&1) |
+        { grep -v 'remark:' || true; } >&2
+    bin_path=$(cd "$package" && swift build -c "$product_configuration" --show-bin-path)
+    cp "$bin_path/$product" "$output"
 }
 
 sign() {
@@ -42,11 +46,10 @@ slim() {
     strip -rSTx "$1"
 }
 
-binary=$(build_product "$root" Toolsy "$configuration")
-
+# Whatever an earlier build left must not pass for this one's, whichever step fails.
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
-cp "$binary" "$app/Contents/MacOS/Toolsy"
+build_product "$root" Toolsy "$configuration" "$app/Contents/MacOS/Toolsy"
 if [ "$configuration" = release ]; then
     slim "$app/Contents/MacOS/Toolsy"
 fi
@@ -57,13 +60,11 @@ if [ -f "$root/Resources/AppIcon.icns" ]; then
 fi
 
 if [ "$app_only" = false ]; then
-    helper=$(build_product "$root/Packages/ToolsyPrivileged" ToolsyHelper release)
-    cp "$helper" "$app/Contents/Helpers/ToolsyHelper"
+    build_product "$root/Packages/ToolsyPrivileged" ToolsyHelper release "$app/Contents/Helpers/ToolsyHelper"
     slim "$app/Contents/Helpers/ToolsyHelper"
     sign --identifier app.toolsy.helper "$app/Contents/Helpers/ToolsyHelper"
 
-    mod_tool=$(build_product "$root/Packages/ToolsyEngine" toolsy-mod release)
-    cp "$mod_tool" "$app/Contents/Helpers/toolsy-mod"
+    build_product "$root/Packages/ToolsyEngine" toolsy-mod release "$app/Contents/Helpers/toolsy-mod"
     slim "$app/Contents/Helpers/toolsy-mod"
     sign --identifier app.toolsy.mod-tool "$app/Contents/Helpers/toolsy-mod"
 fi
