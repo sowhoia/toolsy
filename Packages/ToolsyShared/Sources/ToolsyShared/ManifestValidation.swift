@@ -5,6 +5,13 @@ extension ModManifest {
     static let maxNesting = 4
     static let maxWidgets = 8
 
+    /// "1", "1.2" or "1.2.3" as three numbers, missing ones 0; nil for anything else.
+    static func versionNumbers(_ text: String) -> [Int]? {
+        guard text.wholeMatch(of: /[0-9]{1,4}(\.[0-9]{1,4}){0,2}/) != nil else { return nil }
+        let numbers = text.split(separator: ".").compactMap { Int($0) }
+        return numbers + Array(repeating: 0, count: 3 - numbers.count)
+    }
+
     /// Checks everything decoding cannot: identifiers, cross-references, ranges and paths.
     /// The helper relies on it as well, so a manifest that passes is safe to snapshot and run.
     public func validate() throws {
@@ -19,6 +26,15 @@ extension ModManifest {
         }
         guard !version.isEmpty, version.count <= 32 else {
             throw ManifestError("version must be 1–32 characters")
+        }
+        if let toolsy {
+            guard let required = Self.versionNumbers(toolsy) else {
+                throw ManifestError("toolsy must be a version such as \"1.1\" or \"1.1.0\"")
+            }
+            // Its own version is three numbers by construction.
+            if let current = Self.versionNumbers(ToolsyVersion.current), current.lexicographicallyPrecedes(required) {
+                throw ManifestError("needs Toolsy \(toolsy) or later; this is Toolsy \(ToolsyVersion.current)")
+            }
         }
         if let homepage, !Self.isWebURL(homepage) {
             throw ManifestError("homepage must be an http or https URL")

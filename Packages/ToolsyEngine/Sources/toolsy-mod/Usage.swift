@@ -13,6 +13,7 @@ enum Usage {
           preview <folder>         print what the mod's page and widgets show for a state
           pack <folder>            check a mod folder and pack it into a .toolsymod file
           help [<command>]         explain a command
+          --version                print the version of toolsy-mod, which is that of its Toolsy
 
         Exit status: 0 success, 1 the mod or the run failed, 2 the tool was used wrongly.
         """

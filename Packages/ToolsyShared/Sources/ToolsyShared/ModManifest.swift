@@ -9,6 +9,8 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     public var id: String
     public var name: String
     public var version: String
+    /// The oldest Toolsy the mod works with, such as `1.1`; older versions of Toolsy ignore the field.
+    public var toolsy: String?
     public var author: String?
     public var summary: String?
     /// SF Symbol name.
@@ -36,7 +38,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schema, id, name, version, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui, widgets, language, localizations
+        case schema, id, name, version, toolsy, author, summary, icon, tint, homepage, settings, commands, lifecycle, ui, widgets, language, localizations
     }
 
     public init(from decoder: any Decoder) throws {
@@ -45,6 +47,7 @@ public struct ModManifest: Decodable, Sendable, Equatable {
         id = try container.decode(String.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         version = try container.decode(String.self, forKey: .version)
+        toolsy = try container.decodeIfPresent(String.self, forKey: .toolsy)
         author = try container.decodeIfPresent(String.self, forKey: .author)
         summary = try container.decodeIfPresent(String.self, forKey: .summary)
         icon = try container.decodeIfPresent(String.self, forKey: .icon)

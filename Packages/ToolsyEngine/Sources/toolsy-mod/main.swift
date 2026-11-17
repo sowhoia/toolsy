@@ -48,6 +48,10 @@ func perform(_ arguments: [String]) async throws -> Int32 {
         let manifest = try await ModPackage.pack(folder, to: archive)
         print("OK \(manifest.id) \(manifest.version) \(archive.path(percentEncoded: false))")
         return 0
+    case "--version":
+        _ = try Arguments(rest, command: command).positionals(0...0, "")
+        print("toolsy-mod \(ToolsyVersion.current)")
+        return 0
     case "help", "--help", "-h":
         let topic = try Arguments(rest, command: "help").positionals(0...1, "")
         guard let name = topic.first else {

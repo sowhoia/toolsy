@@ -52,6 +52,29 @@ private func failure(_ json: String) -> String {
     }
 }
 
+@Suite struct RequiredToolsyVersionTests {
+    @Test func acceptsThisVersionAndOlderOnes() throws {
+        for version in ["1", "1.0", "1.1", ToolsyVersion.current] {
+            #expect(try manifest(minimal(#""toolsy": "\#(version)""#)).toolsy == version)
+        }
+        #expect(try manifest(minimal()).toolsy == nil)
+    }
+
+    /// Without the field a mod written for a later Toolsy failed with "unknown control type", or worse, had a
+    /// new field silently ignored.
+    @Test func refusesAModForALaterToolsy() {
+        for version in ["1.10", "2", "1.1.1"] {
+            #expect(failure(minimal(#""toolsy": "\#(version)""#)) == "needs Toolsy \(version) or later; this is Toolsy \(ToolsyVersion.current)")
+        }
+    }
+
+    @Test func refusesWhatIsNotAVersion() {
+        for version in ["", "v1.1", "1.1.0.1", "1.x", "1..2"] {
+            #expect(failure(minimal(#""toolsy": "\#(version)""#)) == #"toolsy must be a version such as "1.1" or "1.1.0""#, "\(version)")
+        }
+    }
+}
+
 @Suite struct ManifestDecodingTests {
     @Test func appliesDefaults() throws {
         let mod = try manifest(minimal())

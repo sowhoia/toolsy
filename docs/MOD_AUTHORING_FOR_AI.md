@@ -332,6 +332,7 @@ Rules for the contents (installing refuses a mod that breaks one):
 | `id` | string | yes | 1–64 of `a-z 0-9 . _ -`, starting and ending with a letter or digit. Identifies the mod: installing a mod with an installed `id` replaces that mod. |
 | `name` | string | yes | Display name, 1–80 characters, not blank. Translated. |
 | `version` | string | yes | Free form, 1–32 characters, such as `1.0.0`. |
+| `toolsy` | string | no | The oldest Toolsy the mod works with: `"1.1"` or `"1.1.0"`. A newer one is refused at install, telling the user to update Toolsy; Toolsy 1.0 ignores the field. Set it only when the mod relies on something this document says was added after 1.0. |
 | `author` | string | no | Shown on the mod's page. Not translated. |
 | `summary` | string | no | One sentence under the name. Translated. |
 | `icon` | string | no | An SF Symbol name, such as `bolt.fill`, `network`, `clock`, `internaldrive`. An unknown name shows no icon. |
@@ -909,6 +910,7 @@ the user (most root operations simply fail without root, but not all of them).
 | `id` | 1–64 characters |
 | `name` | 1–80 characters |
 | `version` | 1–32 characters |
+| `toolsy` | `1`, `1.2` or `1.2.3`, each number up to 4 digits |
 | State keys and command names | 64 characters |
 | Command `timeout` | 30 s by default, at most 3600 s |
 | Grace between `SIGTERM` and `SIGKILL` | 2 s |
@@ -930,7 +932,7 @@ the user (most root operations simply fail without root, but not all of them).
 
 `/Applications/Toolsy.app/Contents/Helpers/toolsy-mod` writes, checks, runs and packs mods without
 the app. `<mod>` is a folder, a `.toolsymod` file or a lone manifest (`.json`); `<folder>` only a
-folder. `toolsy-mod help <command>` explains each command. Options may come before or after the
+folder. `toolsy-mod help <command>` explains each command; `toolsy-mod --version` prints the version, which is that of the Toolsy it ships with. Options may come before or after the
 positional arguments, as `--option value` or `--option=value`; an unknown, repeated or malformed
 option is an error.
 

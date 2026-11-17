@@ -42,7 +42,8 @@ Installed mods live in `~/Library/Application Support/Toolsy/Mods/<id>/`.
 ### toolsy-mod
 
 `toolsy-mod` writes, checks, runs and packs mods without the app. It ships inside it
-(`Toolsy.app/Contents/Helpers/toolsy-mod`); `toolsy-mod help <command>` explains each command.
+(`Toolsy.app/Contents/Helpers/toolsy-mod`); `toolsy-mod help <command>` explains each command, and
+`toolsy-mod --version` prints its version, which is that of its Toolsy.
 
 ```sh
 toolsy-mod new my-mod --template widget        # a working mod to start from
@@ -131,6 +132,7 @@ Toolsy shows for a failed run; and standard error.
 | `id` | yes | Unique identifier: 1–64 of `a-z 0-9 . _ -`, starting and ending with a letter or digit. |
 | `name` | yes | Display name, up to 80 characters. |
 | `version` | yes | Free-form version string, up to 32 characters. |
+| `toolsy` | no | The oldest Toolsy the mod works with, such as `"1.1"` (since 1.1). A mod for a later Toolsy is refused at install with a message to update; Toolsy 1.0 ignores the field. |
 | `author`, `summary`, `homepage` | no | Shown on the mod's page. `homepage` must be `http(s)`. |
 | `icon` | no | [SF Symbol](https://developer.apple.com/sf-symbols/) name. |
 | `tint` | no | Accent colour, see [Colours](#colours). |

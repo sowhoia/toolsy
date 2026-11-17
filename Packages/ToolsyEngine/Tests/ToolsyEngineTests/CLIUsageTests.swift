@@ -63,6 +63,11 @@ struct ValidationJSON: Decodable, Equatable {
         #expect(wrong.error == "toolsy-mod: unknown option --force for pack\nusage: toolsy-mod pack <folder> [-o <file.toolsymod>]\nRun \"toolsy-mod help pack\" for details.\n")
     }
 
+    @Test func printsTheVersionItShipsWith() async throws {
+        #expect(try await toolsyMod(["--version"]) == (0, "toolsy-mod \(ToolsyVersion.current)\n", ""))
+        #expect(try await toolsyMod(["--version", "x"]).status == 2)
+    }
+
     @Test func optionsComeAnywhereAndTakeEitherForm() async throws {
         let directory = try TemporaryDirectory()
         try writeMod(manifest(id: "keep-awake"), in: directory, folder: "mod")
