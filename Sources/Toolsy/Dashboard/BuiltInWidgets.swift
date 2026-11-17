@@ -341,7 +341,8 @@ private struct GPUDetail: View {
             HStack(spacing: 12) {
                 DetailFact(label: String(localized: "Rendering"), value: gpu?.renderer.map(Format.percent) ?? "—")
                 DetailFact(label: String(localized: "Tiling"), value: gpu?.tiler.map(Format.percent) ?? "—")
-                DetailFact(label: String(localized: "Memory in use"), value: gpu?.memoryInUse.map(Format.storage) ?? "—")
+                // Unified memory: in the binary units of every other memory figure, not the decimal ones of disks.
+                DetailFact(label: String(localized: "Memory in use"), value: gpu?.memoryInUse.map { Format.memory(UInt64(clamping: $0)) } ?? "—")
             }
         }
     }
