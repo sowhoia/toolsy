@@ -6,10 +6,14 @@
 # HEAD must carry the tag vX.Y.Z of the version that Resources/Info.plist, ToolsyVersion.swift and the
 # newest version of CHANGELOG.md name, and nothing may be uncommitted. The app is built with
 # scripts/build-app.sh and signed with TOOLSY_SIGN_IDENTITY (a "Developer ID Application: …" identity),
-# then notarized with the notarytool keychain profile TOOLSY_NOTARY_PROFILE and stapled. dist/release/
-# is made anew on every run and receives:
+# then notarized with the notarytool keychain profile TOOLSY_NOTARY_PROFILE and stapled. The zip is
+# signed for Toolsy's own updater with TOOLSY_UPDATE_KEY (default ~/.config/toolsy/update-signing.key), the
+# key whose public half is ToolsyUpdatePublicKey in Resources/Info.plist. dist/release/ is made anew on
+# every run and receives:
 #
 #   Toolsy-X.Y.Z.zip          the app
+#   Toolsy-X.Y.Z.zip.sig      the update key's signature of the zip, without which Toolsy only links to
+#                             the release instead of installing it
 #   <mod>.toolsymod           the example mods (not vpn-protector)
 #   SHA256SUMS                the checksums of the files above
 #   release-notes.md          the version's section of CHANGELOG.md, the text of the GitHub release
@@ -87,6 +91,15 @@ profile=${TOOLSY_NOTARY_PROFILE-}
 [ -n "$profile" ] || [ "$skip_notarization" = true ] ||
     fail "set TOOLSY_NOTARY_PROFILE to a notarytool keychain profile (--skip-notarization goes on without)"
 
+# The beta toolchain prints a "remark:" line per prebuilt module; drop them, keep everything else.
+sign_update() {
+    swift "$root/scripts/sign-update.swift" "$@" 2> >(grep -v 'remark:' >&2)
+}
+update_key=${TOOLSY_UPDATE_KEY:-$HOME/.config/toolsy/update-signing.key}
+[ -f "$update_key" ] ||
+    fail "no update signing key at $update_key: set TOOLSY_UPDATE_KEY to the key ToolsyUpdatePublicKey in Resources/Info.plist names"
+sign_update --check "$update_key"
+
 out="$root/dist/release"
 app="$root/build/Toolsy.app"
 binaries=("$app/Contents/MacOS/Toolsy" "$app/Contents/Helpers/ToolsyHelper" "$app/Contents/Helpers/toolsy-mod")
@@ -152,6 +165,7 @@ fi
 mkdir "$work/unpacked"
 ditto -x -k "$zip" "$work/unpacked"
 codesign --verify --deep --strict "$work/unpacked/Toolsy.app"
+sign_update "$update_key" "$version" "$zip"
 
 symbols="$work/Toolsy-$version-dSYMs"
 mkdir "$symbols"
@@ -180,7 +194,7 @@ while IFS= read -r mod; do
 done <<< "$packed"
 
 # The symbols stay out: they are for the one who reads crash reports, and they hold this Mac's paths.
-assets=("Toolsy-$version.zip")
+assets=("Toolsy-$version.zip" "Toolsy-$version.zip.sig")
 for mod in "$out"/*.toolsymod; do
     assets+=("$(basename "$mod")")
 done
