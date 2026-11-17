@@ -1,8 +1,10 @@
 #!/bin/bash
 # Builds build/Toolsy.app from the Swift packages.
 #
-#   scripts/build-app.sh             release build with the helper and toolsy-mod embedded
-#   scripts/build-app.sh --debug     debug build of the app (faster to compile)
+#   scripts/build-app.sh             release build for Apple silicon and Intel Macs (universal), with
+#                                    the helper and toolsy-mod embedded
+#   scripts/build-app.sh --debug     debug build of the app for this Mac's architecture only (faster
+#                                    to compile)
 #   scripts/build-app.sh --app-only  skip the embedded tools (UI work that does not need them)
 #
 # TOOLSY_SIGN_IDENTITY selects a signing identity; the default "-" signs ad hoc, which is all
@@ -21,17 +23,31 @@ for argument in "$@"; do
 done
 identity=${TOOLSY_SIGN_IDENTITY:--}
 app="$root/build/Toolsy.app"
+# macOS 26 runs on Intel Macs too.
+if [ "$configuration" = release ]; then
+    architectures=(arm64 x86_64)
+else
+    architectures=("$(uname -m)")
+fi
 
-# Builds PRODUCT of the package in directory PACKAGE and copies it to OUTPUT. Call it as a plain
-# command, never inside $(…): bash 3.2 ignores `set -e` there, so a failed build would go on with
-# the binary of the previous one.
+# Builds PRODUCT of the package in directory PACKAGE for every architecture of this build and writes
+# it to OUTPUT, as one universal file when there are several. Call it as a plain command, never
+# inside $(…): bash 3.2 ignores `set -e` there, so a failed build would go on with the old binary.
 build_product() {
-    local package=$1 product=$2 product_configuration=$3 output=$4 bin_path
-    # The beta toolchain prints a "remark:" line per prebuilt module; drop them, keep everything else.
-    (cd "$package" && swift build -c "$product_configuration" --product "$product" 2>&1) |
-        { grep -v 'remark:' || true; } >&2
-    bin_path=$(cd "$package" && swift build -c "$product_configuration" --show-bin-path)
-    cp "$bin_path/$product" "$output"
+    local package=$1 product=$2 product_configuration=$3 output=$4 architecture bin_path
+    local slices=()
+    for architecture in "${architectures[@]}"; do
+        # The beta toolchain prints a "remark:" line per prebuilt module; drop them, keep everything else.
+        (cd "$package" && swift build -c "$product_configuration" --arch "$architecture" --product "$product" 2>&1) |
+            { grep -v 'remark:' || true; } >&2
+        bin_path=$(cd "$package" && swift build -c "$product_configuration" --arch "$architecture" --show-bin-path)
+        slices+=("$bin_path/$product")
+    done
+    if [ "${#slices[@]}" -eq 1 ]; then
+        cp "${slices[0]}" "$output"
+    else
+        lipo -create "${slices[@]}" -output "$output"
+    fi
 }
 
 sign() {
