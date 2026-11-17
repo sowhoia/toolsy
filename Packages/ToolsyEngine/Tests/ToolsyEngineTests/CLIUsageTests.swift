@@ -60,7 +60,7 @@ struct ValidationJSON: Decodable, Equatable {
             #expect(result.error.contains("usage: toolsy-mod"), "\(arguments)")
         }
         let wrong = try await toolsyMod(["pack", "a", "--force"])
-        #expect(wrong.error == "toolsy-mod: unknown option --force for pack\nusage: toolsy-mod pack <folder> [-o <file.toolsymod>]\nRun \"toolsy-mod help pack\" for details.\n")
+        #expect(wrong.error == "toolsy-mod: unknown option --force for pack\nusage: toolsy-mod pack <folder> [-o <file.toolsymod>] [--sign <key>]\nRun \"toolsy-mod help pack\" for details.\n")
     }
 
     @Test func printsTheVersionItShipsWith() async throws {

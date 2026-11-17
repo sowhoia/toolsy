@@ -4,11 +4,11 @@ import ToolsyShared
 extension ModPackage {
     /// Runs every check `validate` runs and also returns the package's warnings: things that are valid but
     /// almost always a mistake, each a sentence that starts with the path of what it is about. Sorted.
-    public static func inspect(_ package: URL) async throws -> (manifest: ModManifest, warnings: [String]) {
+    public static func inspect(_ package: URL) async throws -> (manifest: ModManifest, warnings: [String], signature: ModSignature?) {
         let scratch = try temporaryDirectory(appropriateFor: nil)
         defer { remove(scratch) }
-        let (manifest, payload) = try await read(package, scratch: scratch)
-        return (manifest, manifest.warnings(files: payload))
+        let (manifest, payload, signature) = try await read(package, scratch: scratch)
+        return (manifest, manifest.warnings(files: payload), signature)
     }
 }
 

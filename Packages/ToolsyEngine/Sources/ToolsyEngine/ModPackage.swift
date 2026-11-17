@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import ToolsyShared
 
@@ -15,7 +16,8 @@ public enum ModPackage {
     /// `.DS_Store` files, with executable bits preserved, and the same bytes for the same files. An existing
     /// `archive` is replaced; it must be a `.toolsymod` file, so a mistyped `-o` never replaces a folder or
     /// some other file of the author's.
-    public static func pack(_ folder: URL, to archive: URL) async throws -> ModManifest {
+    /// With `signingKey` the archive also holds `.toolsy-signature`, the key's signature of the files.
+    public static func pack(_ folder: URL, to archive: URL, signingKey: Curve25519.Signing.PrivateKey? = nil) async throws -> ModManifest {
         guard isDirectory(folder) else {
             throw EngineError("\(folder.lastPathComponent) is not a folder")
         }
@@ -29,11 +31,16 @@ public enum ModPackage {
         // Next to the archive, so the finished zip can be moved into place atomically.
         let scratch = try temporaryDirectory(appropriateFor: archive.deletingLastPathComponent())
         defer { remove(scratch) }
-        let (manifest, payload) = try await read(folder, scratch: scratch)
+        let (manifest, payload, _) = try await read(folder, scratch: scratch)
         let contents = scratch.appending(path: "contents", directoryHint: .isDirectory)
         try write(payload, to: contents)
+        var paths = payload.files.keys.sorted()
+        if let signingKey {
+            try ModSignature.file(signing: payload.digest, with: signingKey).write(to: contents.appending(path: ModSignature.fileName))
+            paths.append(ModSignature.fileName)
+        }
         let zip = scratch.appending(path: "mod.zip")
-        try await writeArchive(payload, from: contents, to: zip, failure: "\(archive.lastPathComponent) could not be written")
+        try await writeArchive(paths, from: contents, to: zip, failure: "\(archive.lastPathComponent) could not be written")
         try place(zip, at: archive)
         return manifest
     }
@@ -42,8 +49,7 @@ public enum ModPackage {
     /// archive and anyone can check a published one against its sources: entries in path order, no folder
     /// entries, no owners or extra timestamps (`-X`), and one fixed date. Zip keeps that date as local time,
     /// so zip is told it is in UTC.
-    private static func writeArchive(_ payload: ModPayload, from contents: URL, to archive: URL, failure: String) async throws {
-        let paths = payload.files.keys.sorted()
+    private static func writeArchive(_ paths: [String], from contents: URL, to archive: URL, failure: String) async throws {
         let fixedDate = Date(timeIntervalSinceReferenceDate: 0)
         for path in paths {
             try FileManager.default.setAttributes([.modificationDate: fixedDate], ofItemAtPath: contents.appending(path: path).path(percentEncoded: false))
@@ -72,14 +78,16 @@ public enum ModPackage {
 
     /// Reads a package and checks it completely: manifest, templates and expressions, file rules, programs.
     /// `scratch` is an empty directory the package may be unpacked into.
-    static func read(_ package: URL, scratch: URL) async throws -> (manifest: ModManifest, payload: ModPayload) {
+    static func read(_ package: URL, scratch: URL) async throws -> (manifest: ModManifest, payload: ModPayload, signature: ModSignature?) {
         let payload: ModPayload
+        var signature: ModSignature?
         if isDirectory(package) {
-            payload = try ModPayload(directory: package, skipping: isAuthoringLeftover)
+            // A folder is never signed; a signature left in one (an archive unpacked by hand) vouches for nothing.
+            payload = try ModPayload(directory: package, skipping: { isAuthoringLeftover($0) || $0 == ModSignature.fileName })
         } else {
             switch package.pathExtension.lowercased() {
             case ToolsyPaths.modFileExtension:
-                payload = try await unpack(package, into: scratch.appending(path: "unpacked", directoryHint: .isDirectory))
+                (payload, signature) = try await unpack(package, into: scratch.appending(path: "unpacked", directoryHint: .isDirectory))
             case "json":
                 payload = try ModPayload(files: [ModManifest.fileName: Data(contentsOf: package)], executables: [])
             default:
@@ -89,17 +97,17 @@ public enum ModPackage {
         let manifest = try ModManifest.load(from: payload.manifestData)
         try manifest.validateTemplatesAndExpressions()
         try manifest.validatePrograms(in: payload)
-        return (manifest, payload)
+        return (manifest, payload, signature)
     }
 
     /// Unpacks and checks `package` into a new staging directory next to `modsDirectory`; the checked copy
     /// is at `<staging>/mod/`, and `payload` holds the same bytes. Nothing is left behind when a check fails.
-    static func stage(_ package: URL, nextTo modsDirectory: URL) async throws -> (manifest: ModManifest, payload: ModPayload, staging: URL) {
+    static func stage(_ package: URL, nextTo modsDirectory: URL) async throws -> (manifest: ModManifest, payload: ModPayload, signature: ModSignature?, staging: URL) {
         let staging = try temporaryDirectory(appropriateFor: modsDirectory)
         do {
-            let (manifest, payload) = try await read(package, scratch: staging)
+            let (manifest, payload, signature) = try await read(package, scratch: staging)
             try write(payload, to: PreparedInstall.modDirectory(in: staging))
-            return (manifest, payload, staging)
+            return (manifest, payload, signature, staging)
         } catch {
             remove(staging)
             throw error
@@ -159,7 +167,7 @@ public enum ModPackage {
         }
     }
 
-    private static func unpack(_ archive: URL, into directory: URL) async throws -> ModPayload {
+    private static func unpack(_ archive: URL, into directory: URL) async throws -> (payload: ModPayload, signature: ModSignature?) {
         let name = archive.lastPathComponent
         try await checkDeclaredSize(of: archive)
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -181,7 +189,15 @@ public enum ModPackage {
             defer { group.cancelAll() }
             try await group.next()
         }
-        return try ModPayload(directory: modRoot(in: directory))
+        let root = try modRoot(in: directory)
+        let payload = try ModPayload(directory: root, skipping: { $0 == ModSignature.fileName })
+        let signatureFile = root.appending(path: ModSignature.fileName)
+        var info = stat()
+        guard lstat(signatureFile.path(percentEncoded: false), &info) == 0 else { return (payload, nil) }
+        guard info.st_mode & S_IFMT == S_IFREG, info.st_size <= ModSignature.maxFileSize else {
+            throw EngineError("\(ModSignature.fileName) in \(name) is not a signature")
+        }
+        return (payload, try ModSignature.verify(Data(contentsOf: signatureFile), digest: payload.digest))
     }
 
     /// Whether what has been unpacked into `directory` so far stays within the limits of a mod.
@@ -266,14 +282,29 @@ public struct PreparedInstall: Sendable {
     public let manifest: ModManifest
     /// A mod with the same id is installed; it will be replaced and keep its settings.
     public let replacesInstalledMod: Bool
-    /// Version of the installed mod being replaced, when it is loaded.
-    public let installedVersion: String?
+    /// The manifest of the installed mod being replaced, when it is loaded.
+    public let installedManifest: ModManifest?
+    /// The key that signed this package; nil when it is not signed.
+    public let signature: ModSignature?
+    /// The key that signed the copy installed under this id, when that copy came signed.
+    public let installedSignature: ModSignature?
     /// Temporary directory on the volume of the mods folder; holds the checked copy under `mod/`.
     let staging: URL
     /// For a mod with privileged commands: the checked bytes themselves, which is what the helper is asked
     /// to approve. `manifest` was read from them, so the user confirms exactly what will run as root,
     /// whatever happens to the files on disk in between.
     let approval: ModPayload?
+
+    /// Version of the installed mod being replaced, when it is loaded.
+    public var installedVersion: String? {
+        installedManifest?.version
+    }
+
+    /// The installed copy was signed, and this package is signed by another key or not at all: it may not come
+    /// from the same author, and the confirmation says so.
+    public var signerChanged: Bool {
+        installedSignature != nil && signature != installedSignature
+    }
 
     /// Commands that will run as root, sorted; the confirmation lists them.
     public var privilegedCommands: [String] {

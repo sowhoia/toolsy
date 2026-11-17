@@ -39,6 +39,20 @@ settings.
 
 Installed mods live in `~/Library/Application Support/Toolsy/Mods/<id>/`.
 
+### Signing
+
+An author can sign a package so that users see who vouches for it and notice an update from
+someone else. `toolsy-mod keygen author.key` makes a key (keep the file private and backed up) and
+prints its fingerprint, such as `7F3A 9C21 44B0 E1D2`; `toolsy-mod pack my-mod --sign author.key`
+writes the signed package.
+
+The signature is an Ed25519 signature of the files' digest, stored in the archive as
+`.toolsy-signature`. It is not installed and not part of the mod. A package whose files do not
+match its signature is refused. The confirmation shows the fingerprint of a signed package, and
+Toolsy remembers which key signed each installed mod: an update signed by another key, or not
+signed at all, comes with a warning that it may not be from the same author. Removing the mod
+forgets the key. A folder or a lone manifest is never signed.
+
 ### toolsy-mod
 
 `toolsy-mod` writes, checks, runs and packs mods without the app. It ships inside it
@@ -56,10 +70,11 @@ toolsy-mod pack my-mod -o my-mod.toolsymod
 | Command | What it does |
 | --- | --- |
 | `new <id> [--template T] [--name N] [-o F]` | Writes a folder (`./<id>` unless `-o`; never over an existing one) holding a mod that validates and works as it is: `mod.json`, its script and a `README.md` saying how to try it. Templates: `basic` (a value kept fresh by `refresh`, a stepper setting, a button; the default), `switch` (`enable`/`disable` of a lasting effect, with `refresh` reporting `enabled`), `service` (a service feeding a chart and the status), `widget` (a dashboard widget with a gauge and `detail`, system events, a notification). |
-| `validate <mod> [--json]` | Takes a folder, a `.toolsymod` file or a lone manifest and runs every check installing runs. Prints `OK <id> <version>`, or the error naming the field on standard error. Then [warnings](#warnings), one per line on standard error after `warning: `. |
+| `validate <mod> [--json]` | Takes a folder, a `.toolsymod` file or a lone manifest and runs every check installing runs. Prints `OK <id> <version>`, then `signed with key <fingerprint>` for a [signed](#signing) package, or the error naming the field on standard error. Then [warnings](#warnings), one per line on standard error after `warning: `. |
 | `run <folder> <command> [options]` | Validates the mod, runs one command exactly as Toolsy does and reports what Toolsy would make of it, see [Running a command](#running-a-command). |
 | `preview <mod> [--state J] [--language L]` | Takes a folder, a `.toolsymod` file or a lone manifest and prints what the page and the widgets show for a state, as an outline: each control with its rendered text and bound value, `[hidden]` when its `when` is false (or nothing inside a section or row is shown), `[disabled]`, a picker's options, a list's rows, each widget's title, value, gauge or chart and `detail`. `--language` shows the mod through its table for that language. Runs nothing. |
-| `pack <folder> [-o file.toolsymod]` | Validates the folder and writes it as a package (`./<id>.toolsymod` unless `-o`), without `.DS_Store` files. The same files always give the same bytes, so a published package can be checked against its sources. `-o` must end in `.toolsymod` and replaces only an earlier package. Prints `OK <id> <version> <file>`. |
+| `pack <folder> [-o file.toolsymod] [--sign key]` | Validates the folder and writes it as a package (`./<id>.toolsymod` unless `-o`), without `.DS_Store` files. The same files always give the same bytes, so a published package can be checked against its sources. `-o` must end in `.toolsymod` and replaces only an earlier package. `--sign` [signs](#signing) it with a key from `keygen`. Prints `OK <id> <version> <file>`, then `signed with key <fingerprint>` when signed. |
+| `keygen <file>` | Writes a new signing key to a file readable by you only, never over an existing one, and prints `OK <fingerprint>`. Keep it private and backed up. |
 
 `--state` takes a JSON object merged over the state a mod starts with, its `settings` plus
 `"enabled": false`; `null` removes a key. Exit status: `0` success, `1` the mod or the run failed (a

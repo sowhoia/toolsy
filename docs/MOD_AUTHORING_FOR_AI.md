@@ -939,10 +939,11 @@ option is an error.
 | Command | What it does | Prints |
 | --- | --- | --- |
 | `new <id> [--template <template>] [--name <name>] [-o <folder>]` | Writes a new mod folder (`./<id>` unless `-o`) that validates and works as it is: `mod.json`, one script, `README.md`. Never overwrites anything. Templates: `basic` (the default), `switch`, `service`, `widget`. The default name is made from the id (`my-mod` → `My mod`). | `OK <id> <folder>`, the files, a next step |
-| `validate <mod> [--json]` | Every check installing runs, then [warnings](#warnings). | `OK <id> <version>` on standard output, or the error on standard error; then each warning on standard error after `warning: ` |
+| `validate <mod> [--json]` | Every check installing runs, then [warnings](#warnings). | `OK <id> <version>` on standard output (then `signed with key <fingerprint>` for a signed package), or the error on standard error; then each warning on standard error after `warning: ` |
 | `run <folder> <command> [options]` | Validates the mod and runs one command exactly as Toolsy does, then reports what Toolsy would make of it. Takes a folder only. | a report, see below |
 | `preview <mod> [--state <json>] [--language <code>]` | Validates the mod and prints what its page and widgets show for a state, as an outline. Runs nothing. | the outline |
-| `pack <folder> [-o <file.toolsymod>]` | Validates the folder and writes the package (`./<id>.toolsymod` unless `-o`), without `.DS_Store`, `.git`, `.hg`, `.svn` or `.toolsymod` files, executable bits kept, the same bytes for the same files. `-o` must end in `.toolsymod`; it replaces an earlier package, never a folder. | `OK <id> <version> <file>` |
+| `pack <folder> [-o <file.toolsymod>] [--sign <key>]` | Validates the folder and writes the package (`./<id>.toolsymod` unless `-o`), without `.DS_Store`, `.git`, `.hg`, `.svn` or `.toolsymod` files, executable bits kept, the same bytes for the same files. `-o` must end in `.toolsymod`; it replaces an earlier package, never a folder. `--sign` signs the package with a key made by `keygen`; use it only with a key the user gave you. | `OK <id> <version> <file>`, then `signed with key <fingerprint>` when signed |
+| `keygen <file>` | Makes a signing key for the user, readable by them only, never over an existing file. Do not make one unless the user asks: a key is theirs to keep and back up. | `OK <fingerprint>` |
 | `help [<command>]` | Explains a command; without one, lists them. | to standard output |
 
 Exit status: `0` success; `1` the mod or the run failed (a validation error, a command that exited

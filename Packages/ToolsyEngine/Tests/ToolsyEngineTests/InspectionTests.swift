@@ -14,7 +14,7 @@ import ToolsyShared
     }
 
     @Test func aWellMadeModHasNoWarnings() async throws {
-        let (manifest, warnings) = try await ModPackage.inspect(Self.repository.appending(path: "Mods/showcase"))
+        let (manifest, warnings, _) = try await ModPackage.inspect(Self.repository.appending(path: "Mods/showcase"))
         #expect(manifest.id == "showcase")
         #expect(warnings == [])
     }

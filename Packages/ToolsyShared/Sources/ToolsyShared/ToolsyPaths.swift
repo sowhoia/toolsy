@@ -33,4 +33,10 @@ public struct ToolsyDirectories: Sendable, Equatable {
     public var data: URL {
         root.appending(path: "Data", directoryHint: .isDirectory)
     }
+
+    /// One file per mod installed from a signed package, named by mod id: the public key that signed it,
+    /// so that an update signed by another key, or not signed at all, stands out.
+    public var signers: URL {
+        root.appending(path: "Signers", directoryHint: .isDirectory)
+    }
 }

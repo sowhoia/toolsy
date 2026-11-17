@@ -37,16 +37,24 @@ func perform(_ arguments: [String]) async throws -> Int32 {
     case "preview":
         let arguments = try Arguments(rest, command: command, options: ["--state", "--language"])
         return try await PreviewCommand(arguments).run()
+    case "keygen":
+        let file = absolute(try Arguments(rest, command: command).positionals(1...1, "a file to write the key to")[0])
+        print("OK \(try ModSigningKey.generate(at: file).fingerprint)")
+        return 0
     case "pack":
-        let arguments = try Arguments(rest, command: command, options: ["-o"])
+        let arguments = try Arguments(rest, command: command, options: ["-o", "--sign"])
         let folder = absolute(try arguments.positionals(1...1, "a mod folder")[0])
         let archive = if let output = arguments.value("-o") {
             absolute(output)
         } else {
             absolute("\(try await ModPackage.validate(folder).id).toolsymod")
         }
-        let manifest = try await ModPackage.pack(folder, to: archive)
+        let key = try arguments.value("--sign").map { try ModSigningKey.load(from: absolute($0)) }
+        let manifest = try await ModPackage.pack(folder, to: archive, signingKey: key)
         print("OK \(manifest.id) \(manifest.version) \(archive.path(percentEncoded: false))")
+        if let key {
+            print("signed with key \(ModSignature(publicKey: key.publicKey.rawRepresentation).fingerprint)")
+        }
         return 0
     case "--version":
         _ = try Arguments(rest, command: command).positionals(0...0, "")
@@ -74,14 +82,15 @@ func validate(_ package: URL, json: Bool) async throws -> Int32 {
         let ok = true
         let id, version, name: String
         let commands, privilegedCommands, widgets, languages, warnings: [String]
+        let signer: String?
     }
     struct Invalid: Encodable {
         let ok = false
         let error: String
     }
-    let manifest: ModManifest, warnings: [String]
+    let manifest: ModManifest, warnings: [String], signature: ModSignature?
     do {
-        (manifest, warnings) = try await ModPackage.inspect(package)
+        (manifest, warnings, signature) = try await ModPackage.inspect(package)
     } catch where json {
         try printJSON(Invalid(error: error.localizedDescription))
         return 1
@@ -93,10 +102,14 @@ func validate(_ package: URL, json: Bool) async throws -> Int32 {
             privilegedCommands: manifest.commands.filter(\.value.privileged).keys.sorted(),
             widgets: manifest.widgets.map(\.id),
             languages: manifest.localizations.keys.sorted(),
-            warnings: warnings
+            warnings: warnings,
+            signer: signature?.fingerprint
         ))
     } else {
         print("OK \(manifest.id) \(manifest.version)")
+        if let signature {
+            print("signed with key \(signature.fingerprint)")
+        }
         warnings.forEach { printError("warning: \($0)") }
     }
     return 0

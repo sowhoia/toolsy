@@ -164,12 +164,14 @@ public final class ModStore {
     /// show `privilegedCommands`, and say that macOS will ask for the administrator password when
     /// `helperStatus` is not `.ready`.
     public func prepareInstall(from package: URL) async throws -> PreparedInstall {
-        let (manifest, payload, staging) = try await ModPackage.stage(package, nextTo: directories.mods)
+        let (manifest, payload, signature, staging) = try await ModPackage.stage(package, nextTo: directories.mods)
         return PreparedInstall(
             // What the confirmation shows is what the installed mod will be called.
             manifest: manifest.localized(for: languages),
             replacesInstalledMod: FileManager.default.fileExists(atPath: folder(of: manifest.id).path(percentEncoded: false)),
-            installedVersion: mod(id: manifest.id)?.manifest.version,
+            installedManifest: mod(id: manifest.id)?.manifest,
+            signature: signature,
+            installedSignature: recordedSigner(of: manifest.id),
             staging: staging,
             approval: manifest.requiresPrivileges ? payload : nil
         )
@@ -225,7 +227,32 @@ public final class ModStore {
             throw error
         }
         ModPackage.remove(prepared.staging)
+        if let signature = prepared.signature {
+            recordSigner(signature, of: id)
+        }
         return try await replace(id, after: previous)
+    }
+
+    /// The key that signed the installed copy of `id`, if it came signed.
+    private func recordedSigner(of id: String) -> ModSignature? {
+        let file = directories.signers.appending(path: id)
+        guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+        guard let key = Data(base64Encoded: text.trimmingCharacters(in: .whitespacesAndNewlines)), key.count == 32 else {
+            logger.error("mod \(id, privacy: .public): the recorded signing key is unreadable")
+            return nil
+        }
+        return ModSignature(publicKey: key)
+    }
+
+    /// Remembers who signed the copy of `id` just installed. The mod is installed either way; without the record
+    /// only the comparison of its next update is lost, so a failure is logged.
+    private func recordSigner(_ signature: ModSignature, of id: String) {
+        do {
+            try FileManager.default.createDirectory(at: directories.signers, withIntermediateDirectories: true)
+            try Data(signature.publicKey.base64EncodedString().utf8).write(to: directories.signers.appending(path: id), options: .atomic)
+        } catch {
+            logger.error("mod \(id, privacy: .public): the signing key was not recorded: \(error.localizedDescription)")
+        }
     }
 
     /// Makes a request the helper refuses while a privileged command of the mod runs. Such a command may
@@ -294,7 +321,7 @@ public final class ModStore {
     /// `name` is a mod id or, for a folder that never loaded, the name of that folder under `Mods/`.
     private func deleteFiles(of name: String) throws {
         for location in [folder(of: name), PersistedState.file(for: name, in: directories),
-                         directories.data.appending(path: name, directoryHint: .isDirectory)] {
+                         directories.data.appending(path: name, directoryHint: .isDirectory), directories.signers.appending(path: name)] {
             do {
                 try FileManager.default.removeItem(at: location)
             } catch let error as CocoaError where error.code == .fileNoSuchFile {

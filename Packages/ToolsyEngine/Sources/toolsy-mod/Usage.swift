@@ -1,6 +1,6 @@
 /// What `help` prints. Each command's text starts with its synopsis, which usage errors repeat.
 enum Usage {
-    static let commands = ["new", "validate", "run", "preview", "pack", "help"]
+    static let commands = ["new", "validate", "run", "preview", "pack", "keygen", "help"]
 
     static let overview = """
         usage: toolsy-mod <command> [<arguments>]
@@ -12,6 +12,7 @@ enum Usage {
           run <folder> <command>   run one command of a mod as Toolsy does and report what it did
           preview <folder>         print what the mod's page and widgets show for a state
           pack <folder>            check a mod folder and pack it into a .toolsymod file
+          keygen <file>            make a key to sign the mods you pack
           help [<command>]         explain a command
           --version                print the version of toolsy-mod, which is that of its Toolsy
 
@@ -41,13 +42,15 @@ enum Usage {
         case "validate": """
             usage: toolsy-mod validate <folder | file.toolsymod | manifest.json> [--json]
 
-            Runs every check installing the mod runs. Prints "OK <id> <version>" on standard output, or the
+            Runs every check installing the mod runs. Prints "OK <id> <version>" on standard output, then
+            "signed with key <fingerprint>" when a .toolsymod file is signed and its signature matches, or the
             error naming the offending field on standard error. Warnings (valid, but almost always a mistake)
             follow on standard error, one per line after "warning: "; they never change the exit status.
 
               --json    print one JSON object instead:
                         {"ok": true, "id", "version", "name", "commands", "privilegedCommands", "widgets",
-                         "languages", "warnings"} or {"ok": false, "error"}
+                         "languages", "warnings", "signer"} or {"ok": false, "error"}; "signer", the key's
+                         fingerprint, is there only for a signed .toolsymod file
             """
         case "run": """
             usage: toolsy-mod run <folder> <command> [--state <json>] [--key <key>] [--value <json>] [--event <event>] [--locale <code>] [--data <folder>] [--for <seconds>] [--as-user] [--json]
@@ -84,10 +87,23 @@ enum Usage {
                                  does for a user whose first language it is
             """
         case "pack": """
-            usage: toolsy-mod pack <folder> [-o <file.toolsymod>]
+            usage: toolsy-mod pack <folder> [-o <file.toolsymod>] [--sign <key>]
 
             Validates the folder and writes it as a .toolsymod archive (default: ./<id>.toolsymod), without
-            .DS_Store files and with executable bits kept. Prints "OK <id> <version> <archive>".
+            .DS_Store files, version control folders or other .toolsymod files, with executable bits kept.
+            The same files always give the same archive. Prints "OK <id> <version> <archive>".
+
+              -o <file>      where to write the archive; it must end in .toolsymod and replaces only an
+                             earlier archive
+              --sign <key>   sign the archive with a key made by keygen, and print "signed with key <fingerprint>"
+            """
+        case "keygen": """
+            usage: toolsy-mod keygen <file>
+
+            Makes a key for signing the mods you pack and writes it to <file>, readable by you only and never
+            over an existing file. Prints "OK <fingerprint>". Keep the file private and backed up: updates of a
+            signed mod are expected to be signed with the same key, and Toolsy warns when they are not.
+            Publish the fingerprint where users can compare it with the one Toolsy shows.
             """
         case "help": """
             usage: toolsy-mod help [<command>]
