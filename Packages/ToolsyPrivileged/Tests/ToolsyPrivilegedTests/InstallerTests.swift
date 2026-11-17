@@ -241,27 +241,6 @@ private func shell(_ command: String) throws -> (status: Int32, stderr: String) 
         #expect(try shell(InstallScript.removalCommand(layout: scratch.layout)).status == 0)
     }
 
-    @Test func theSameCommandSurvivesAppleScriptQuoting() async throws {
-        await loadScriptingAdditions()
-        let scratch = try ScratchInstall()
-        let source = AdministratorPrompt.appleScript(running: try scratch.installCommand(), withAdministratorPrivileges: false)
-        try await AdministratorPrompt.execute(source)
-        #expect(try String(contentsOfFile: scratch.layout.store + "/client-requirement", encoding: .utf8) == "cdhash H\"\(validHash)\"")
-        #expect(scratch.calls.count == 7)
-        #expect(AdministratorPrompt.appleScript(running: "x", withAdministratorPrivileges: true) == #"tell current application to do shell script "x" with administrator privileges"#)
-    }
-
-    @Test func mapsAppleScriptFailures() async throws {
-        await loadScriptingAdditions()
-        await #expect(throws: PrivilegedError.cancelled) {
-            try await AdministratorPrompt.execute("error number -128")
-        }
-        let error = await #expect(throws: PrivilegedError.self) {
-            try await AdministratorPrompt.execute(AdministratorPrompt.appleScript(running: "echo boom >&2; exit 3", withAdministratorPrivileges: false))
-        }
-        #expect(error?.localizedDescription.contains("boom") == true)
-    }
-
     @Test func installRunsTheScriptAndWaitsForTheNewHelper() async throws {
         let scratch = try ScratchInstall()
         let listener = ListenerBox()
@@ -318,6 +297,33 @@ private func shell(_ command: String) throws -> (status: Int32, stderr: String) 
         try process.run()
         process.waitUntilExit()
         #expect(text(output.fileHandleForReading.readDataToEndOfFile()).contains("CDHash=\(hash)\n"))
+    }
+}
+
+/// Every test that runs AppleScript, one at a time. NSAppleScript run on two threads at once mixes up what a
+/// script reports: `error number -128` on the prompt's queue came back as error 0, "No error.", when another
+/// test's `loadScriptingAdditions()` ran on the main thread meanwhile (2 of 60 runs of these two tests). In the
+/// app only the prompt's serial queue runs AppleScript.
+@Suite(.serialized) struct AdministratorPromptTests {
+    @Test func theSameCommandSurvivesAppleScriptQuoting() async throws {
+        await loadScriptingAdditions()
+        let scratch = try ScratchInstall()
+        let source = AdministratorPrompt.appleScript(running: try scratch.installCommand(), withAdministratorPrivileges: false)
+        try await AdministratorPrompt.execute(source)
+        #expect(try String(contentsOfFile: scratch.layout.store + "/client-requirement", encoding: .utf8) == "cdhash H\"\(validHash)\"")
+        #expect(scratch.calls.count == 7)
+        #expect(AdministratorPrompt.appleScript(running: "x", withAdministratorPrivileges: true) == #"tell current application to do shell script "x" with administrator privileges"#)
+    }
+
+    @Test func mapsAppleScriptFailures() async throws {
+        await loadScriptingAdditions()
+        await #expect(throws: PrivilegedError.cancelled) {
+            try await AdministratorPrompt.execute("error number -128")
+        }
+        let error = await #expect(throws: PrivilegedError.self) {
+            try await AdministratorPrompt.execute(AdministratorPrompt.appleScript(running: "echo boom >&2; exit 3", withAdministratorPrivileges: false))
+        }
+        #expect(error?.localizedDescription.contains("boom") == true)
     }
 }
 
