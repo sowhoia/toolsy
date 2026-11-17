@@ -5,15 +5,22 @@ import ToolsyShared
 
 /// What one optimisation achieved, measured rather than assumed.
 struct MemoryOptimization: Equatable {
-    /// How much more memory the system can hand out at once than before: the growth of free memory
-    /// (`MemoryReading.free`), never negative.
-    var freed: UInt64
-    /// "Memory used" just before and about a second after.
+    /// "Memory used" (`MemoryReading.used`) just before and about a second after.
     var usedBefore: UInt64
     var usedAfter: UInt64
+    /// Cached files (`MemoryReading.cachedFiles`) just before and about a second after.
+    var cachedBefore: UInt64
+    var cachedAfter: UInt64
     /// Which steps the helper could carry out; `isComplete` is false when the work was done in part.
     var report: MemoryReclaimReport
     var date: Date
+
+    /// The memory apps gave back: the fall of "Memory used", never negative. Free memory grows by far more,
+    /// but almost all of that is the flushed file cache, which was there for the taking before as well (the
+    /// system drops cached files whenever it needs room), so it is not counted as freed.
+    var freed: UInt64 {
+        usedBefore > usedAfter ? usedBefore - usedAfter : 0
+    }
 }
 
 /// The one-button memory optimisation of the Memory detail: reclaims what can be reclaimed without
@@ -94,8 +101,8 @@ final class MemoryOptimizer {
         try? await clock.sleep(for: Self.settleTime)
         guard let after = readMemory() else { return fail(String(localized: "Toolsy couldn’t read the memory usage.")) }
         show(.finished(MemoryOptimization(
-            freed: after.free > before.free ? after.free - before.free : 0,
-            usedBefore: before.used, usedAfter: after.used, report: report, date: .now
+            usedBefore: before.used, usedAfter: after.used, cachedBefore: before.cachedFiles, cachedAfter: after.cachedFiles,
+            report: report, date: .now
         )))
     }
 

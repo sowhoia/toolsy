@@ -346,3 +346,6 @@
 "“%@” couldn’t be asked to quit" = "Не удалось попросить «%@» завершиться";
 "It may have quit already." = "Возможно, оно уже завершилось.";
 "processes: %lld" = "процессов: %lld";
+
+/* Memory detail: the file cache an optimisation cleared, apart from what it freed */
+"Cached files: %@ → %@" = "Кэш файлов: %@ → %@";

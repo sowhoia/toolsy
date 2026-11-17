@@ -6,11 +6,16 @@ import ToolsyShared
 private let gigabyte: UInt64 = 1 << 30
 private let total = 16 * gigabyte
 
+/// Memory used falls by `freed` from 10 GB; the file cache falls from 5 GB to 1 GB.
 private func finished(freed: UInt64, cacheFlushed: Bool = true, warningSent: Bool = true) -> MemoryOptimizer.Phase {
-    .finished(MemoryOptimization(freed: freed, usedBefore: 10 * gigabyte, usedAfter: 9 * gigabyte,
+    .finished(MemoryOptimization(usedBefore: 10 * gigabyte, usedAfter: 10 * gigabyte - freed,
+                                 cachedBefore: 5 * gigabyte, cachedAfter: gigabyte,
                                  report: MemoryReclaimReport(diskCacheFlushed: cacheFlushed, pressureWarningSent: warningSent),
                                  date: .now))
 }
+
+private let usedLine = { (freed: UInt64) in "Memory used: \(Format.memory(10 * gigabyte)) → \(Format.memory(10 * gigabyte - freed))" }
+private let cacheLine = "Cached files: \(Format.memory(5 * gigabyte)) → \(Format.memory(gigabyte))"
 
 struct OptimizationMessageTests {
     @Test func beforeAndDuringTheRunItSaysWhatItDoes() {
@@ -24,14 +29,15 @@ struct OptimizationMessageTests {
         #expect(running.title == "Freeing memory…")
     }
 
-    @Test func aNoticeableGrowthIsReportedWithTheMeasuredUse() {
+    /// What apps gave back is the headline; the file cache that was cleared is stated apart, measured too.
+    @Test func aNoticeableFallOfMemoryUsedIsReportedWithTheMeasurements() {
         let message = OptimizationMessage(finished(freed: 2 * gigabyte), total: total)
         #expect(message.tone == .freed)
         #expect(message.title == "\(Format.memory(2 * gigabyte)) freed")
-        #expect(message.detail == "Memory used: \(Format.memory(10 * gigabyte)) → \(Format.memory(9 * gigabyte))")
+        #expect(message.detail == usedLine(2 * gigabyte) + "\n" + cacheLine)
     }
 
-    @Test func growthWithinTheNoiseIsNothingFreed() {
+    @Test func aFallWithinTheNoiseIsNothingFreed() {
         let threshold = OptimizationMessage.noticeable(total: total)
         #expect(threshold == total / 100)
         #expect(OptimizationMessage(finished(freed: threshold), total: total).tone == .freed)
@@ -39,8 +45,8 @@ struct OptimizationMessageTests {
             let message = OptimizationMessage(finished(freed: freed), total: total)
             #expect(message.tone == .nothingFreed, "\(freed)")
             #expect(message.title == "Nothing to free right now")
-            // What was measured is still shown.
-            #expect(message.detail?.hasPrefix("Memory used:") == true)
+            // What was measured is still shown, the 4 GB of cleared cache among it: not called freed.
+            #expect(message.detail == usedLine(freed) + "\n" + cacheLine)
         }
         // The threshold grows with the Mac's memory.
         #expect(OptimizationMessage(finished(freed: threshold), total: 64 * gigabyte).tone == .nothingFreed)
@@ -50,8 +56,9 @@ struct OptimizationMessageTests {
         let noWarning = OptimizationMessage(finished(freed: gigabyte, warningSent: false), total: total)
         #expect(noWarning.tone == .partial)
         #expect(noWarning.title == "Done in part: \(Format.memory(gigabyte)) freed")
-        #expect(noWarning.detail == "Apps couldn’t be asked to return memory.")
+        #expect(noWarning.detail == "Apps couldn’t be asked to return memory.\n" + cacheLine)
 
+        // The cache was not flushed: how it changed meanwhile is not the optimisation's doing.
         let noCacheFlush = OptimizationMessage(finished(freed: 0, cacheFlushed: false), total: total)
         #expect(noCacheFlush.tone == .partial)
         #expect(noCacheFlush.title == "Done in part: nothing freed")

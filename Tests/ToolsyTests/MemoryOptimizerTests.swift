@@ -99,8 +99,8 @@ private actor FakeHelper: PrivilegedExecuting, SystemMaintaining {
     func run(modID: String, command: String, input: CommandInput) -> CommandResult { CommandResult(exitCode: 0) }
 }
 
-private func reading(used: UInt64, free: UInt64) -> MemoryReading {
-    MemoryReading(used: used, total: 16 << 30, app: used, wired: 0, compressed: 0, cachedFiles: 2 << 30, free: free,
+private func reading(used: UInt64, free: UInt64, cached: UInt64 = 2 << 30) -> MemoryReading {
+    MemoryReading(used: used, total: 16 << 30, app: used, wired: 0, compressed: 0, cachedFiles: cached, free: free,
                   swapUsed: 0, pressure: .normal)
 }
 
@@ -122,8 +122,10 @@ private final class Fixture {
     let readings: Readings
     let optimizer: MemoryOptimizer
 
+    /// By default the optimisation turns 4 GB of cached files and 1 GB that apps gave back into free memory.
     init(_ helper: FakeHelper = FakeHelper(),
-         readings: [MemoryReading?] = [reading(used: 10 << 30, free: 1 << 30), reading(used: 9 << 30, free: 3 << 30)]) throws {
+         readings: [MemoryReading?] = [reading(used: 10 << 30, free: 1 << 30, cached: 5 << 30),
+                                       reading(used: 9 << 30, free: 6 << 30, cached: 1 << 30)]) throws {
         root = FileManager.default.temporaryDirectory.appending(path: "ToolsyTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         self.helper = helper
@@ -169,8 +171,10 @@ struct MemoryOptimizerTests {
             Issue.record("expected a result, got \(optimizer.phase)")
             return
         }
-        #expect(result.freed == 2 << 30)
+        // What apps gave back, not the 5 GB more of free memory, most of which was the file cache.
+        #expect(result.freed == 1 << 30)
         #expect(result.usedBefore == 10 << 30 && result.usedAfter == 9 << 30)
+        #expect(result.cachedBefore == 5 << 30 && result.cachedAfter == 1 << 30)
         #expect(result.report.isComplete)
         #expect(await fixture.helper.calls == ["reclaim"])
         #expect(fixture.panel.dialog == nil)
@@ -292,8 +296,10 @@ struct MemoryOptimizerTests {
         #expect(optimizer.phase == .failed(String(localized: "Memory couldn’t be freed. Try again in a moment.")))
     }
 
-    @Test func lessFreeMemoryAfterwardsIsNothingFreed() async throws {
-        let fixture = try Fixture(readings: [reading(used: 10 << 30, free: 3 << 30), reading(used: 11 << 30, free: 1 << 30)])
+    @Test func moreMemoryUsedAfterwardsIsNothingFreed() async throws {
+        // Free memory grew with the cleared cache, but apps took more meanwhile than they gave back.
+        let fixture = try Fixture(readings: [reading(used: 10 << 30, free: 1 << 30, cached: 5 << 30),
+                                             reading(used: 11 << 30, free: 4 << 30, cached: 1 << 30)])
         let optimizer = fixture.optimizer
         optimizer.optimize()
         try await fixture.pass(MemoryOptimizer.settleTime)

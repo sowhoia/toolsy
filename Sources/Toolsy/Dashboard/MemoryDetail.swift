@@ -17,9 +17,11 @@ struct OptimizationMessage: Equatable {
     var title: String
     var detail: String?
 
-    /// Free memory moves by itself: from one second to the next it changed by 12 MB at the median and
-    /// 117 MB at the 90th percentile on a 16 GB Mac at rest (`vm_stat 1`, 28 samples). Growth below 1 %
-    /// of the memory (164 MB there) is that noise, and too little to matter, so it is not called freed.
+    /// Memory used moves by itself, and free memory with it while the file cache stays put: from one second
+    /// to the next free memory changed by 12 MB at the median and 117 MB at the 90th percentile on a 16 GB
+    /// Mac at rest (`vm_stat 1`, 28 samples), and memory used by 52 MB and 176 MB on the same Mac in use
+    /// (30 samples). A fall below 1 % of the memory (164 MB there) is that noise, and too little to matter,
+    /// so it is not called freed.
     static func noticeable(total: UInt64) -> UInt64 {
         total / 100
     }
@@ -36,18 +38,24 @@ struct OptimizationMessage: Equatable {
             self.init(.failed, message)
         case .finished(let result):
             let freed = result.freed >= Self.noticeable(total: total) ? Format.memory(result.freed) : nil
+            // Apart from what was freed: cached files were there for the taking all along, so clearing them
+            // gains nothing, and the Mac reads those files from disk again when it needs them.
+            let cache = result.report.diskCacheFlushed
+                ? String(localized: "Cached files: \(Format.memory(result.cachedBefore)) → \(Format.memory(result.cachedAfter))") : nil
             if result.report.isComplete {
                 let used = String(localized: "Memory used: \(Format.memory(result.usedBefore)) → \(Format.memory(result.usedAfter))")
+                let detail = [used, cache].compactMap(\.self).joined(separator: "\n")
                 if let freed {
-                    self.init(.freed, String(localized: "\(freed) freed"), detail: used)
+                    self.init(.freed, String(localized: "\(freed) freed"), detail: detail)
                 } else {
-                    self.init(.nothingFreed, String(localized: "Nothing to free right now"), detail: used)
+                    self.init(.nothingFreed, String(localized: "Nothing to free right now"), detail: detail)
                 }
             } else {
+                let failure = result.report.diskCacheFlushed ? String(localized: "Apps couldn’t be asked to return memory.")
+                                                             : String(localized: "The disk cache couldn’t be cleared.")
                 self.init(.partial,
                           freed.map { String(localized: "Done in part: \($0) freed") } ?? String(localized: "Done in part: nothing freed"),
-                          detail: result.report.diskCacheFlushed ? String(localized: "Apps couldn’t be asked to return memory.")
-                                                                 : String(localized: "The disk cache couldn’t be cleared."))
+                          detail: [failure, cache].compactMap(\.self).joined(separator: "\n"))
             }
         }
     }
