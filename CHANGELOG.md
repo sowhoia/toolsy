@@ -5,6 +5,84 @@ All notable changes to Toolsy are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Dashboard
+
+- Alerts in Settings, each off until switched on: memory pressure getting high, the Mac getting hot,
+  the battery at 20 % or less on battery power, less than 10 GB free on the startup disk. Each
+  notifies once when its condition starts and again only after it has cleared. They follow the
+  system's events; only the disk is looked at, every 30 minutes while its alert is on.
+- The CPU detail lists other users' processes too (WindowServer, `mds_stores`, …), read with `ps`
+  while the list is shown.
+- The battery detail shows the cycle count and the full charge as a share of the design capacity.
+- Free Up Memory reports what the apps gave back (the fall of Memory used) and, apart, how far the
+  file cache shrank, instead of the rise of free memory, which was mostly the flushed cache.
+- Read-ahead file pages are no longer counted as both cached files and free memory.
+- The "Last minute" charts start afresh when the panel opens instead of running on from an earlier
+  opening.
+- The network detail finds the interface of an IPv6-only network and names adapters plugged in
+  after launch; GPU memory is shown in binary units like all other memory.
+- VoiceOver announces the result of Free Up Memory, a copy and a dialog, and reads the network chart
+  in the unit chosen for it.
+
+### Panel
+
+- A mod's file can be dropped on the open panel: a click elsewhere closes the panel on release, and
+  only away from it.
+- The panel closes when the displays or the Mac go to sleep or another user takes the Mac, so
+  nothing is measured while nobody can see it.
+- The page behind a dialog no longer takes Return or ⌘[; Esc while an input method composes text
+  goes to the field; after the open panel, the app that was active gets activation back.
+
+### Updates and settings
+
+- Toolsy checks GitHub for a new version shortly after it starts and about once a day, and shows one
+  in Settings with a link to it; nothing is downloaded by itself. The request identifies nothing but
+  the version of Toolsy. Switch it off in Settings, or check now.
+- Copy Diagnostics in Settings: text for a bug report, without mods' settings or output.
+
+### Mods
+
+- The install confirmation says of every mod that its programs run with your permissions, shows who
+  signed the package, and warns when an update is signed by another key, is not signed while the
+  installed version is, or names another author.
+- Signed packages: `toolsy-mod keygen` makes a key and `toolsy-mod pack --sign` signs with it. Toolsy
+  verifies the signature and refuses a package changed after it was signed.
+- `toolsy` in `mod.json` names the oldest Toolsy a mod works with; `toolsy-mod --version`.
+- What a command leaves running is stopped when it exits, so neither its timeout nor the helper's
+  lock is outlived by a process it started.
+- Every command gets `LANG=en_US.UTF-8`, in Toolsy and in `toolsy-mod run` alike. A state value over
+  32 KB, or past 256 KB of them, reaches commands only on standard input: one long value made every
+  command of its mod fail with "Argument list too long".
+- A package whose `when` or JSON is nested thousands of levels deep no longer crashes Toolsy before
+  its confirmation.
+- At most 64 lines of a service wait to be applied, where a runaway service could hold gigabytes.
+- Reloading, removing and updating one mod at the same time no longer runs two copies of it, revives
+  a mod being removed or deletes the update; the helper's status after an update is no longer
+  overwritten by an earlier check.
+
+### toolsy-mod
+
+- `pack -o` must name a `.toolsymod` file and replaces no folder: `-o dist` deleted a folder of that
+  name with everything in it. A packed folder leaves out `.git`, `.hg`, `.svn` and `.toolsymod` files,
+  and the same files always make the same archive.
+- An archive's folder entries no longer count against the file limit, and `--option=` with an empty
+  value no longer takes the next argument.
+
+### Build and release
+
+- The app, its helper, `toolsy-mod` and `vpn-protector` are universal binaries, for Intel Macs on
+  macOS 26 too; the bundle is 10.0 MB.
+- `scripts/release.sh` builds, checks, notarizes and packs a release with `SHA256SUMS`, and keeps the
+  debug symbols for crash reports.
+- `scripts/build-app.sh` stops when a build fails, where it packed the previous binaries, and signs
+  with a secure timestamp when given an identity.
+- CI on macOS 26; the helper's tests no longer fail now and then; ShellCheck finds nothing.
+- The example mods call `/usr/bin/jq` and pack reproducibly; the format document's examples check
+  their input before using it.
+- An MIT license and a security policy.
+
 ## [1.0.0] - 2026-11-16
 
 The first public release: a menu bar app for macOS 26 with a dashboard of the Mac and mods.

@@ -14,9 +14,10 @@ switched on needs, and a check for updates about once a day (which you can switc
 ## Install
 
 **From a release.** Download the release archive from the repository's Releases page, unzip it and
-move `Toolsy.app` to `/Applications`. If macOS refuses to open it the first time because it cannot
-check it for malicious software, open **System Settings → Privacy & Security** and click
-**Open Anyway**.
+move `Toolsy.app` to `/Applications`. It runs on Apple silicon and Intel Macs, and `SHA256SUMS`
+beside it lists the checksum of every file of the release. If macOS refuses to open it the first
+time because it cannot check it for malicious software, open **System Settings → Privacy &
+Security** and click **Open Anyway**.
 
 **From source.** Requires macOS 26 and Xcode 26 (or its command line tools).
 
@@ -175,8 +176,9 @@ Packages/ToolsyShared/   the contract: mod format, command protocol, process run
 Packages/ToolsyEngine/   mod runtime and the toolsy-mod tool
 Packages/ToolsyPrivileged/  the root helper, its XPC interface and client
 Mods/                    mods maintained here
-scripts/                 build-app.sh, build-mods.sh, install.sh, make-icon.swift
+scripts/                 build-app.sh, build-mods.sh, install.sh, release.sh, make-icon.swift
 docs/                    MOD_FORMAT.md, MOD_AUTHORING_FOR_AI.md, ARCHITECTURE.md
+.github/workflows/       ci.yml: what every push and pull request is checked with
 ```
 
 ```sh
@@ -187,8 +189,18 @@ swift test                                          # app
 scripts/build-app.sh --debug                        # build/Toolsy.app
 ```
 
-`scripts/build-app.sh` signs ad hoc by default; set `TOOLSY_SIGN_IDENTITY` to use a signing
-identity. `swift scripts/make-icon.swift` regenerates the app icon. Each mod in `Mods/` has a
+`scripts/build-app.sh` builds universal binaries (arm64 and x86_64) and keeps their debug symbols in
+`build/*.dSYM`; `--debug` builds for this Mac only. It signs ad hoc by default; set
+`TOOLSY_SIGN_IDENTITY` to a Developer ID Application identity to sign with it and a secure timestamp.
+`scripts/release.sh` makes a release from a commit tagged `vX.Y.Z` whose version Info.plist,
+`ToolsyVersion.swift` and the newest heading of the changelog agree on: it builds and checks the
+app, notarizes and staples it with the notarytool profile `TOOLSY_NOTARY_PROFILE`, packs the mods and
+writes the archive, `SHA256SUMS` and the release notes to `dist/release/`, keeping the debug symbols
+there unpublished; `--publish` creates the GitHub release (`--ad-hoc`, `--skip-notarization` and
+`--allow-beta` exist for trying it out). CI runs the four test suites, the tests of `vpn-protector`,
+ShellCheck, `scripts/build-mods.sh`, each mod's `test.sh` and a universal build on macOS 26. The mods'
+`build.sh` pack the same bytes from the same sources. `swift scripts/make-icon.swift` regenerates the
+app icon. Each mod in `Mods/` has a
 `test.sh` that runs its commands as Toolsy does. The engine's tests require every mod there (but
 `vpn-protector`, written in Russian) to translate all of its text into Russian, with an entry even
 for text that reads the same (`"macOS": "macOS"`). The mod format, the `toolsy-mod` command line and
@@ -196,3 +208,8 @@ the files on disk are contracts: existing mods and saved state must keep working
 
 The documentation is in English; the app is in English and Russian
 (`Resources/ru.lproj/Localizable.strings`).
+
+## License and security
+
+Toolsy is released under the [MIT License](LICENSE). To report a vulnerability, see
+[SECURITY.md](SECURITY.md).
