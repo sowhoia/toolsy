@@ -170,15 +170,22 @@ final class PanelController: NSObject, NSWindowDelegate {
     }
 
     /// Esc closes the dialog if one is shown, then leaves editing the dashboard, otherwise closes the
-    /// panel. Returns whether it was handled.
+    /// panel; while an input method composes text in a field, it is the field's. Returns whether it was
+    /// handled.
     private func handleKeyDown(isEscape: Bool, windowNumber: Int) -> Bool {
         guard isEscape, windowNumber == window.windowNumber else { return false }
-        if let dialog = state.dialog {
-            // Work in progress (installing while macOS asks for the password) cannot be cancelled here.
-            if !dialog.isProgress { state.dismissDialog(confirmed: false) }
-        } else if dashboard.isEditing {
+        // A field being edited has the window's field editor, a text view, as its first responder.
+        let composing = (window.firstResponder as? NSTextView)?.hasMarkedText() == true
+        switch EscapeAction(composingText: composing, dialog: state.dialog, isEditing: dashboard.isEditing, keepOpen: keepOpen) {
+        case .passOn:
+            return false
+        case .ignore:
+            break
+        case .cancelDialog:
+            state.dismissDialog(confirmed: false)
+        case .stopEditing:
             withAnimation(Motion.resolve(Motion.gentle, reduceMotion: reduceMotion)) { dashboard.isEditing = false }
-        } else if !keepOpen {
+        case .closePanel:
             hide()
         }
         return true

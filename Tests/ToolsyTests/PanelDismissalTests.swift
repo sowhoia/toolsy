@@ -73,3 +73,30 @@ struct OutsideDismissalTests {
         #expect(!beside && !over)
     }
 }
+
+struct EscapeActionTests {
+    private let question = ConfirmationRequest(title: "Remove “Timer”?", confirmTitle: "Remove")
+    private let progress = ConfirmationRequest(title: "Setting up Toolsy’s helper…", confirmTitle: "", isProgress: true)
+
+    @Test func escapeUndoesTheInnermostThing() {
+        #expect(EscapeAction(composingText: false, dialog: question, isEditing: true, keepOpen: false) == .cancelDialog)
+        #expect(EscapeAction(composingText: false, dialog: nil, isEditing: true, keepOpen: false) == .stopEditing)
+        #expect(EscapeAction(composingText: false, dialog: nil, isEditing: false, keepOpen: false) == .closePanel)
+    }
+
+    @Test func workInProgressAndAPanelKeptOpenStay() {
+        #expect(EscapeAction(composingText: false, dialog: progress, isEditing: false, keepOpen: false) == .ignore)
+        #expect(EscapeAction(composingText: false, dialog: nil, isEditing: false, keepOpen: true) == .ignore)
+        #expect(EscapeAction(composingText: false, dialog: question, isEditing: false, keepOpen: true) == .cancelDialog)
+    }
+
+    /// An input method composing text in a field (kana before conversion, an accent held down): Esc cancels
+    /// the composition, and nothing else.
+    @Test func textBeingComposedKeepsItsEscape() {
+        for dialog in [nil, question, progress] {
+            for isEditing in [false, true] {
+                #expect(EscapeAction(composingText: true, dialog: dialog, isEditing: isEditing, keepOpen: false) == .passOn)
+            }
+        }
+    }
+}

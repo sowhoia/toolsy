@@ -41,3 +41,28 @@ struct OutsideDismissal {
         return isWaitingForRelease && !frame.contains(pointer)
     }
 }
+
+/// What Esc does in the panel.
+enum EscapeAction: Equatable {
+    /// Esc is not the panel's: an input method is composing text in the focused field, and Esc cancels the
+    /// composition.
+    case passOn
+    /// Esc is the panel's but does nothing: a notice of work in progress cannot be cancelled, and a panel
+    /// kept open (`--keep-open`) does not close.
+    case ignore
+    case cancelDialog
+    case stopEditing
+    case closePanel
+
+    init(composingText: Bool, dialog: ConfirmationRequest?, isEditing: Bool, keepOpen: Bool) {
+        if composingText {
+            self = .passOn
+        } else if let dialog {
+            self = dialog.isProgress ? .ignore : .cancelDialog
+        } else if isEditing {
+            self = .stopEditing
+        } else {
+            self = keepOpen ? .ignore : .closePanel
+        }
+    }
+}
