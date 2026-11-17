@@ -171,8 +171,12 @@ page.
 of the widgets on the dashboard (`shownMetrics`, set by the dashboard): a metric that is not placed
 costs nothing. Rates (CPU, network, disk) take a fresh baseline whenever sampling starts; slow
 readings are taken less often (battery every 5 seconds, storage every 30, the primary interface's
-name and address every 10 and only while something shows them). GPU utilisation and disk activity
-come from the I/O Registry; the dashboard offers only the metrics this Mac reports.
+name and address every 10 and only while something shows them). A chart's history starts empty with
+its metric, so samples of an earlier opening never read as if they ran on into the new ones. GPU
+utilisation, disk activity and the battery's health (its full charge over its design capacity, and
+its cycles) come from the I/O Registry; the dashboard offers only the metrics this Mac reports. The
+primary interface comes from the store's global IPv4 entry, or its IPv6 one on a network without
+IPv4, and the interfaces' localized names are read again when one is asked for that they lack.
 
 `ProcessMonitor` lists the user's apps by memory and CPU for the memory and CPU details. It is
 demand-driven like the system monitor: views that show a list start and stop it (counted, so several
@@ -180,14 +184,37 @@ can want it), and it samples only while one wants it and the panel is visible, e
 the main thread, with libproc. It groups processes the way a person thinks of apps: everything inside
 one outermost `.app` bundle, XPC services with the app macOS holds responsible for them, and every
 other process on its own. Memory is the physical footprint (Activity Monitor's Memory column), CPU is
-per core. It can ask a regular app (not Toolsy or Finder) to quit the normal way, after a
-confirmation in the panel.
+per core. libproc tells a process that is not root nothing about other users' processes, so while a
+CPU list is shown each sample also runs `/bin/ps` (setuid root) once for their CPU time and reads the
+kernel's process table for their owner and start: every other user's process (WindowServer,
+`mds_stores`) is an entry of its own, never quit. Their memory is unknown, so the memory list ranks
+the user's processes alone. It can ask a regular app (not Toolsy or Finder) to quit the normal way,
+after a confirmation in the panel.
 
 `MemoryOptimizer` drives the memory detail's **Free Up Memory** button. With the helper ready it asks
 it to reclaim memory (below); with the helper missing or outdated it first asks in the panel and
 installs it through `ModStore`, so the mods' access is refreshed too, and a dismissed password prompt
-is an answer, not an error. The result is measured: free memory before and a second after, never
-negative, the change of memory used, and the helper's report of which steps it carried out.
+is an answer, not an error. The result is measured, before and a second after: what it calls freed
+is the fall of memory used (never negative), what the apps gave back; the cached files are reported
+apart, since clearing them frees nothing the system could not take at once; and the helper reports
+which steps it carried out.
+
+## Alerts, updates and the panel
+
+`SystemAlerts` watches only the alerts switched on in Settings (`Settings.json` in the data root): a
+memory-pressure dispatch source, the thermal state notification and power-source notifications are
+created when their alert is switched on and released when it is switched off; the startup disk,
+which reports nothing, is read at start, on wake and every 30 minutes through
+`NSBackgroundActivityScheduler`. Each alert notifies once per episode and re-arms only past a margin,
+and the pressure Toolsy's own memory reclaim holds is no episode. `UpdateChecker` asks GitHub's API
+for the latest release shortly after launch and about daily through `NSBackgroundActivityScheduler`
+while its setting is on (never on scratch data), compares the tag as a semantic version and only
+links to the release page. `ModNotifier` posts both in groups of their own.
+
+The panel closes when nobody can see it: the displays or the Mac going to sleep, the session
+switching to another user. An outside press of the left button closes it on release, and only away
+from the glass, so a file dragged from Finder can be dropped on it. After its open panel made Toolsy
+the active app, activation goes back to the app that had it once the panel closes.
 
 ## Privileged execution
 
@@ -278,7 +305,9 @@ Removing it (from Settings) needs no password: the helper deletes its own files.
 
 ## Performance rules
 
-- No polling while the panel is closed, except what an enabled mod explicitly declares.
+- No polling while the panel is closed, except what an enabled mod explicitly declares, the disk
+  alert while it is on (every 30 minutes), and the check for updates (about daily, unless off),
+  both coalesced by `NSBackgroundActivityScheduler`.
 - System metrics are sampled only while the panel is visible, and only those a widget on the
   dashboard shows; processes only while a list of them is on screen.
 - Charts are drawn with paths; no charting framework is loaded.
