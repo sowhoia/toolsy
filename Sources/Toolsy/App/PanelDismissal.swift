@@ -66,3 +66,22 @@ enum EscapeAction: Equatable {
         }
     }
 }
+
+/// The moments after which nobody can be looking at the panel: the displays went to sleep (a locked screen
+/// too, once its displays sleep), the Mac is going to sleep, or the session was switched to another user. A
+/// panel left open would otherwise keep the Mac's readings and the mods' refresh commands running all night.
+enum Absence {
+    static let notifications = [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                                NSWorkspace.sessionDidResignActiveNotification]
+
+    /// Calls `handler` on each of them, posted to `center` (the workspace's). The observers are never removed:
+    /// the panel controller lives as long as the app.
+    static func observe(in center: NotificationCenter = NSWorkspace.shared.notificationCenter,
+                        _ handler: @escaping @MainActor () -> Void) {
+        for name in notifications {
+            _ = center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { handler() }
+            }
+        }
+    }
+}

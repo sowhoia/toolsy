@@ -100,3 +100,30 @@ struct EscapeActionTests {
         }
     }
 }
+
+/// Counts the times nobody could see the panel.
+private final class Closings {
+    private(set) var count = 0
+    func close() { count += 1 }
+}
+
+@MainActor
+struct AbsenceTests {
+    @Test func thePanelClosesWhenNobodyCanSeeIt() async throws {
+        // A center of the test's own: what it posts reaches nothing else.
+        let center = NotificationCenter()
+        let closings = Closings()
+        Absence.observe(in: center, closings.close)
+        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                     NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.didWakeNotification,
+                     NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+            center.post(name: name, object: nil)
+        }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while closings.count < 3, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(closings.count == 3, "the displays or the Mac going to sleep, or another user's session; not waking")
+    }
+}

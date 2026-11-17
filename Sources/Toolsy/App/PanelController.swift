@@ -5,6 +5,7 @@ import SwiftUI
 /// Control Center), can still become key so text fields work, floats above full-screen apps on
 /// every Space, and is dismissed by outside clicks, Esc or another app taking focus. A press outside
 /// that may start a drag to the panel closes it only once released elsewhere (`OutsideDismissal`).
+/// It also closes when nobody can be looking at it any more (`Absence`).
 final class PanelController: NSObject, NSWindowDelegate {
     private let state: PanelState
     private let keepOpen: Bool
@@ -33,6 +34,7 @@ final class PanelController: NSObject, NSWindowDelegate {
         state.addVisibilityHandler { [monitor] visible in
             visible ? monitor.start() : monitor.stop()
         }
+        Absence.observe { [weak self] in self?.hide() }
         // A display that was unplugged or rearranged invalidates where an open panel was placed.
         // The controller lives as long as the app, so the observer is never removed.
         _ = NotificationCenter.default.addObserver(
