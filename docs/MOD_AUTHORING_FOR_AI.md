@@ -416,10 +416,10 @@ else is inherited:
 | `TOOLSY_KEY` | The state key of the control that started the command: the bound key of a toggle, slider, stepper, picker or input, the `bind` of a list whose row was clicked. Absent otherwise (a button sets none). |
 | `TOOLSY_VALUE` | The control's new value, a button's `value`, or the clicked row's `id`, as text (`true`/`false`, `7`, `2.5`, the string itself). Absent when there is none. |
 | `TOOLSY_LOCALE` | The language the mod is shown in, lowercase BCP 47: the first of the user's preferred languages the mod has text in, as the system names it (`ru`, `en-us`, `zh-hans-cn`, `ru-us`), or the manifest's `language` when it has text in none of them. Compare its first part, `${TOOLSY_LOCALE%%-*}`, so that what a command reports matches the page. |
-| `TOOLSY_STATE_<key>` | One per state key whose value is a string, number or boolean, as text: strings as they are, whole numbers without a decimal point (`3`, not `3.0`), `true`/`false`. Keys holding arrays, objects or `null` have no variable. `TOOLSY_STATE_enabled` is the switch. |
+| `TOOLSY_STATE_<key>` | One per state key whose value is a string, number or boolean, as text: strings as they are, whole numbers without a decimal point (`3`, not `3.0`), `true`/`false`. Keys holding arrays, objects or `null` have no variable, nor does a value longer than 32 KB, and once the variables together reach 256 KB (in key order) the rest have none: read such values from standard input. `TOOLSY_STATE_enabled` is the switch. |
 | `PATH` | `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`; for privileged commands `/usr/bin:/bin:/usr/sbin:/sbin`. |
 | `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `SHELL` | The user's; for privileged commands root's (`HOME` is `/var/root`). |
-| `LANG` | The user's, or `en_US.UTF-8` when Toolsy has none (it usually has none: apps started at login get no `LANG`). |
+| `LANG` | Always `en_US.UTF-8`, in Toolsy and in `toolsy-mod run` alike, so numbers are written with a decimal point. The user's language is `TOOLSY_LOCALE`. |
 
 Toolsy never puts a value into a command line: user input cannot inject shell syntax unless the mod
 itself evaluates it. The state is a snapshot taken when the command starts.

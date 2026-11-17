@@ -84,14 +84,24 @@ public enum CommandEnvironment {
     /// Homebrew directories are writable by the user, so they are never on root's search path.
     static let systemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
     static let userPath = "/opt/homebrew/bin:/usr/local/bin:" + systemPath
-    static let inheritedVariables = ["HOME", "USER", "LOGNAME", "TMPDIR", "SHELL", "LANG"]
+    static let inheritedVariables = ["HOME", "USER", "LOGNAME", "TMPDIR", "SHELL"]
+    /// The same for every command wherever it is started: Toolsy at login has no `LANG`, toolsy-mod in a
+    /// terminal has the user's, and with a comma for the decimal point a mod's patches stop being JSON.
+    /// A UTF-8 locale keeps tools from mangling non-ASCII text; `TOOLSY_LOCALE` says the user's language.
+    static let locale = "en_US.UTF-8"
+    /// The environment counts against the system's 1 MB limit for starting a program (`ARG_MAX`): one long
+    /// value, such as a captured log, kept every command of its mod from starting at all. Longer values,
+    /// and values past the total, reach a command only through its standard input.
+    public static let maxStateVariableBytes = 32 * 1024
+    public static let maxStateVariablesBytes = 256 * 1024
 
     public static func variables(
         modID: String,
         modDirectory: URL,
         dataDirectory: URL,
         input: CommandInput,
-        privileged: Bool
+        privileged: Bool,
+        inheriting inherited: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String: String] {
         var variables: [String: String]
         if privileged {
@@ -99,16 +109,12 @@ public enum CommandEnvironment {
             variables = ["HOME": "/var/root", "USER": "root", "LOGNAME": "root", "PATH": systemPath,
                          "TMPDIR": NSTemporaryDirectory(), "SHELL": "/bin/sh"]
         } else {
-            let inherited = ProcessInfo.processInfo.environment
             variables = ["PATH": userPath]
             for name in inheritedVariables {
                 variables[name] = inherited[name]
             }
         }
-        // Apps started by launchd have no locale; without one many tools mangle non-ASCII text.
-        if variables["LANG"] == nil {
-            variables["LANG"] = "en_US.UTF-8"
-        }
+        variables["LANG"] = locale
         variables["TOOLSY_MOD_ID"] = modID
         variables["TOOLSY_MOD_DIR"] = modDirectory.path(percentEncoded: false)
         variables["TOOLSY_DATA_DIR"] = dataDirectory.path(percentEncoded: false)
@@ -119,8 +125,16 @@ public enum CommandEnvironment {
         // For a privileged command the input was decoded from what a user-level process sent, so the locale is
         // checked here again: only a well-formed code passes.
         variables["TOOLSY_LOCALE"] = input.locale.flatMap(CommandInput.languageTag)
-        for (key, value) in input.state where value.isScalar {
-            variables["TOOLSY_STATE_\(key)"] = value.text
+        // In key order, so which values fit does not change from run to run.
+        var exported = 0
+        for (key, value) in input.state.sorted(by: { $0.key < $1.key }) where value.isScalar {
+            let name = "TOOLSY_STATE_\(key)"
+            let text = value.text
+            // `name=text` and the terminating NUL, as the kernel counts them.
+            let size = name.utf8.count + text.utf8.count + 2
+            guard text.utf8.count <= maxStateVariableBytes, exported + size <= maxStateVariablesBytes else { continue }
+            exported += size
+            variables[name] = text
         }
         return variables
     }

@@ -124,7 +124,60 @@ final class TemporaryDirectory {
         #expect(variables["TOOLSY_STATE_nothing"] == nil)
         #expect(variables["PATH"]?.hasPrefix("/opt/homebrew/bin:") == true)
         #expect(variables["HOME"] == ProcessInfo.processInfo.environment["HOME"])
-        #expect(variables["LANG"] != nil)
+        #expect(variables["LANG"] == "en_US.UTF-8")
+    }
+
+    /// Started from a terminal, toolsy-mod passed the terminal's locale, and `printf %.1f` wrote "36,6" there
+    /// while the same command in Toolsy, started at login without `LANG`, wrote "36.6".
+    @Test func usesOneLocaleWhereverItRuns() {
+        let inherited = ["LANG": "ru_RU.UTF-8", "HOME": "/Users/someone", "SECRET": "x"]
+        for privileged in [false, true] {
+            let variables = CommandEnvironment.variables(
+                modID: "demo", modDirectory: URL(filePath: "/mods/demo"), dataDirectory: URL(filePath: "/data/demo"),
+                input: input, privileged: privileged, inheriting: inherited
+            )
+            #expect(variables["LANG"] == "en_US.UTF-8")
+            #expect(variables["SECRET"] == nil)
+            #expect(variables["HOME"] == (privileged ? "/var/root" : "/Users/someone"))
+        }
+    }
+
+    @Test func leavesLongValuesToStandardInput() {
+        let limit = CommandEnvironment.maxStateVariableBytes
+        func variables(_ state: ModState) -> [String: String] {
+            CommandEnvironment.variables(
+                modID: "demo", modDirectory: URL(filePath: "/mods/demo"), dataDirectory: URL(filePath: "/data/demo"),
+                input: CommandInput(event: .refresh, command: "status", state: state), privileged: false
+            )
+        }
+        let one = variables(["short": "x", "fits": .string(String(repeating: "a", count: limit)),
+                             "long": .string(String(repeating: "a", count: limit + 1))])
+        #expect(one["TOOLSY_STATE_short"] == "x")
+        #expect(one["TOOLSY_STATE_fits"]?.utf8.count == limit)
+        #expect(one["TOOLSY_STATE_long"] == nil)
+
+        // Together they stop at the total, in key order.
+        let keys = (0..<12).map { "k\($0 < 10 ? "0" : "")\($0)" }
+        let many = variables(Dictionary(uniqueKeysWithValues: keys.map { ($0, JSONValue.string(String(repeating: "b", count: limit))) }))
+        let exported = keys.filter { many["TOOLSY_STATE_\($0)"] != nil }
+        #expect(!exported.isEmpty && exported.count < keys.count)
+        #expect(exported == Array(keys.prefix(exported.count)))
+        let total = exported.reduce(0) { $0 + "TOOLSY_STATE_\($1)".utf8.count + limit + 2 }
+        #expect(total <= CommandEnvironment.maxStateVariablesBytes)
+    }
+
+    /// A captured value of a megabyte made every command of its mod fail with "Argument list too long".
+    @Test func aCommandStartsWhateverItsStateHolds() async throws {
+        let state: ModState = ["log": .string(String(repeating: "x", count: 1024 * 1024)), "host": "a"]
+        let environment = CommandEnvironment.variables(
+            modID: "demo", modDirectory: URL(filePath: "/tmp"), dataDirectory: URL(filePath: "/tmp"),
+            input: CommandInput(event: .refresh, command: "status", state: state), privileged: false
+        )
+        let result = try await ProcessRunner.run(ProcessRunner.Request(
+            executable: URL(filePath: "/bin/sh"), arguments: ["-c", #"printf '%s' "$TOOLSY_STATE_host""#], environment: environment
+        ))
+        #expect(result.succeeded)
+        #expect(String(decoding: result.stdout, as: UTF8.self) == "a")
     }
 
     @Test func rootNeverSearchesUserWritableDirectories() {

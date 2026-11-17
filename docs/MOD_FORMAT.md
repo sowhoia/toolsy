@@ -202,9 +202,10 @@ nothing else:
 | `TOOLSY_KEY` | State key of the control that started the command, if any. |
 | `TOOLSY_VALUE` | New value of that control, or the button's `value`, as text. |
 | `TOOLSY_LOCALE` | The language the mod is shown in, as a lowercase BCP 47 code: the first of the user's preferred languages the mod has text in, as the system names it (`ru-ru`, `en-us`, `zh-hans-cn`), or the mod's own `language` when it has text in none of them (see [Localization](#localization)). Compare its first part (`${TOOLSY_LOCALE%%-*}`) to pick a language, so that what a command reports matches the page. |
-| `TOOLSY_STATE_<key>` | One per state key holding a string, number or boolean, as text (`true`/`false` for booleans). |
+| `TOOLSY_STATE_<key>` | One per state key holding a string, number or boolean, as text (`true`/`false` for booleans). A value longer than 32 KB has none, nor do the values in key order past 256 KB in all: read them from [standard input](#input). |
 | `PATH` | `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin` — for privileged commands only the system directories. |
-| `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `SHELL`, `LANG` | The user's; for privileged commands root's. |
+| `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `SHELL` | The user's; for privileged commands root's. |
+| `LANG` | `en_US.UTF-8`, so that numbers have a decimal point; the user's language is `TOOLSY_LOCALE`. |
 
 Values never reach a command through string interpolation, so user input cannot inject shell
 syntax. Read it from the variables (quoted: `"$TOOLSY_VALUE"`) or from standard input.
