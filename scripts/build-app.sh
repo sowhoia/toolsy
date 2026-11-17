@@ -2,7 +2,8 @@
 # Builds build/Toolsy.app from the Swift packages.
 #
 #   scripts/build-app.sh             release build for Apple silicon and Intel Macs (universal), with
-#                                    the helper and toolsy-mod embedded
+#                                    the helper and toolsy-mod embedded and the debug symbols of all
+#                                    three next to the app (build/*.dSYM)
 #   scripts/build-app.sh --debug     debug build of the app for this Mac's architecture only (faster
 #                                    to compile)
 #   scripts/build-app.sh --app-only  skip the embedded tools (UI work that does not need them)
@@ -22,7 +23,8 @@ for argument in "$@"; do
     esac
 done
 identity=${TOOLSY_SIGN_IDENTITY:--}
-app="$root/build/Toolsy.app"
+build="$root/build"
+app="$build/Toolsy.app"
 # macOS 26 runs on Intel Macs too.
 if [ "$configuration" = release ]; then
     architectures=(arm64 x86_64)
@@ -57,6 +59,13 @@ sign() {
     codesign --force --options runtime "$timestamp" --sign "$identity" "$@"
 }
 
+# A release keeps the debug symbols of BINARY, before they are stripped, as build/NAME.dSYM: crash
+# reports of the shipped build are symbolicated with them. They do not go into the bundle.
+keep_symbols() {
+    [ "$configuration" = release ] || return 0
+    dsymutil "$1" -o "$build/$2.dSYM"
+}
+
 # A release binary carries its whole symbol table, more than half of its size, and nothing reads it
 # at run time. Stripping breaks the linker's ad hoc signature, which is removed first so that strip
 # does not warn about it; the real signature comes afterwards.
@@ -65,11 +74,22 @@ slim() {
     strip -rSTx "$1"
 }
 
+# Builds a command line tool in release and signs it into Contents/Helpers.
+embed_tool() {
+    local package=$1 product=$2 identifier=$3
+    local tool="$app/Contents/Helpers/$product"
+    build_product "$package" "$product" release "$tool"
+    keep_symbols "$tool" "$product"
+    slim "$tool"
+    sign --identifier "$identifier" "$tool"
+}
+
 # Whatever an earlier build left must not pass for this one's, whichever step fails.
-rm -rf "$app"
+rm -rf "$app" "$build/Toolsy.app.dSYM" "$build/ToolsyHelper.dSYM" "$build/toolsy-mod.dSYM"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Helpers"
 build_product "$root" Toolsy "$configuration" "$app/Contents/MacOS/Toolsy"
 if [ "$configuration" = release ]; then
+    keep_symbols "$app/Contents/MacOS/Toolsy" Toolsy.app
     slim "$app/Contents/MacOS/Toolsy"
 fi
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
@@ -79,13 +99,8 @@ if [ -f "$root/Resources/AppIcon.icns" ]; then
 fi
 
 if [ "$app_only" = false ]; then
-    build_product "$root/Packages/ToolsyPrivileged" ToolsyHelper release "$app/Contents/Helpers/ToolsyHelper"
-    slim "$app/Contents/Helpers/ToolsyHelper"
-    sign --identifier app.toolsy.helper "$app/Contents/Helpers/ToolsyHelper"
-
-    build_product "$root/Packages/ToolsyEngine" toolsy-mod release "$app/Contents/Helpers/toolsy-mod"
-    slim "$app/Contents/Helpers/toolsy-mod"
-    sign --identifier app.toolsy.mod-tool "$app/Contents/Helpers/toolsy-mod"
+    embed_tool "$root/Packages/ToolsyPrivileged" ToolsyHelper app.toolsy.helper
+    embed_tool "$root/Packages/ToolsyEngine" toolsy-mod app.toolsy.mod-tool
 fi
 
 # The hardened runtime (and no get-task-allow) keeps other processes of the user from
