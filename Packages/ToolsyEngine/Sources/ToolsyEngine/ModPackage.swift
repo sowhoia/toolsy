@@ -12,10 +12,19 @@ public enum ModPackage {
     }
 
     /// Validates `folder`, then writes it to `archive` as a zip with `mod.json` at the root, without
-    /// `.DS_Store` files and with executable bits preserved. An existing `archive` is replaced.
+    /// `.DS_Store` files, with executable bits preserved, and the same bytes for the same files. An existing
+    /// `archive` is replaced; it must be a `.toolsymod` file, so a mistyped `-o` never replaces a folder or
+    /// some other file of the author's.
     public static func pack(_ folder: URL, to archive: URL) async throws -> ModManifest {
         guard isDirectory(folder) else {
             throw EngineError("\(folder.lastPathComponent) is not a folder")
+        }
+        guard archive.pathExtension.lowercased() == ToolsyPaths.modFileExtension else {
+            throw EngineError("\(archive.lastPathComponent) is not a .\(ToolsyPaths.modFileExtension) file name")
+        }
+        var info = stat()
+        if lstat(archive.path(percentEncoded: false), &info) == 0, info.st_mode & S_IFMT != S_IFREG {
+            throw EngineError("\(archive.lastPathComponent) exists and is not a file")
         }
         // Next to the archive, so the finished zip can be moved into place atomically.
         let scratch = try temporaryDirectory(appropriateFor: archive.deletingLastPathComponent())
@@ -24,10 +33,41 @@ public enum ModPackage {
         let contents = scratch.appending(path: "contents", directoryHint: .isDirectory)
         try write(payload, to: contents)
         let zip = scratch.appending(path: "mod.zip")
-        try await ditto(["-c", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl", contents.path(percentEncoded: false), zip.path(percentEncoded: false)],
-                        failure: "\(archive.lastPathComponent) could not be written")
+        try await writeArchive(payload, from: contents, to: zip, failure: "\(archive.lastPathComponent) could not be written")
         try place(zip, at: archive)
         return manifest
+    }
+
+    /// Writes `payload`, already materialised in `contents`, so that the same files always give the same
+    /// archive and anyone can check a published one against its sources: entries in path order, no folder
+    /// entries, no owners or extra timestamps (`-X`), and one fixed date. Zip keeps that date as local time,
+    /// so zip is told it is in UTC.
+    private static func writeArchive(_ payload: ModPayload, from contents: URL, to archive: URL, failure: String) async throws {
+        let paths = payload.files.keys.sorted()
+        let fixedDate = Date(timeIntervalSinceReferenceDate: 0)
+        for path in paths {
+            try FileManager.default.setAttributes([.modificationDate: fixedDate], ofItemAtPath: contents.appending(path: path).path(percentEncoded: false))
+        }
+        let result = try await ProcessRunner.run(ProcessRunner.Request(
+            executable: URL(filePath: "/usr/bin/zip"),
+            arguments: ["-X", "-D", "-q", "-@", archive.path(percentEncoded: false)],
+            environment: ["TZ": "UTC0"],
+            currentDirectory: contents,
+            stdin: Data(paths.map { $0 + "\n" }.joined().utf8),
+            timeout: 60
+        ))
+        guard result.succeeded else {
+            throw EngineError("\(failure): \(lastNonEmptyLine(result.stderr) ?? "zip exited with status \(result.exitCode)")")
+        }
+    }
+
+    /// What lies around in an author's working folder but is never part of the mod: version control
+    /// metadata, and packed mods, such as the previous `toolsy-mod pack` written into that folder.
+    static func isAuthoringLeftover(_ relativePath: String) -> Bool {
+        let components = relativePath.split(separator: "/")
+        guard let name = components.last else { return false }
+        return (components.count == 1 && [".git", ".hg", ".svn"].contains(name))
+            || name.lowercased().hasSuffix(".\(ToolsyPaths.modFileExtension)")
     }
 
     /// Reads a package and checks it completely: manifest, templates and expressions, file rules, programs.
@@ -35,7 +75,7 @@ public enum ModPackage {
     static func read(_ package: URL, scratch: URL) async throws -> (manifest: ModManifest, payload: ModPayload) {
         let payload: ModPayload
         if isDirectory(package) {
-            payload = try ModPayload(directory: package)
+            payload = try ModPayload(directory: package, skipping: isAuthoringLeftover)
         } else {
             switch package.pathExtension.lowercased() {
             case ToolsyPaths.modFileExtension:
@@ -147,12 +187,15 @@ public enum ModPackage {
     /// Whether what has been unpacked into `directory` so far stays within the limits of a mod.
     private static func holdsNoMoreThanAMod(_ directory: URL) -> Bool {
         // A directory that is not there yet holds nothing.
-        guard let entries = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else { return true }
+        guard let entries = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey]) else { return true }
         var fileCount = 0, byteCount = 0
         for case let entry as URL in entries {
-            fileCount += 1
             // An entry that vanished or cannot be read counts as empty here; `ModPayload` reads everything strictly afterwards.
-            byteCount += (try? entry.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            let values = try? entry.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
+            // The limit is on files, as `ModPayload` counts them; folders hold nothing of their own.
+            guard values?.isDirectory != true else { continue }
+            fileCount += 1
+            byteCount += values?.fileSize ?? 0
             guard fileCount <= ModPayload.maxFileCount, byteCount <= ModPayload.maxTotalBytes else { return false }
         }
         return true
@@ -170,9 +213,16 @@ public enum ModPackage {
         ))
         // "3 files, 377708 bytes uncompressed, 105668 bytes compressed:  72.0%"
         guard let totals = String(decoding: result.stdout, as: UTF8.self).firstMatch(of: /(\d+) files?, (\d+) bytes uncompressed/),
-              let fileCount = Int(totals.1), let byteCount = Int(totals.2) else {
+              let byteCount = Int(totals.2) else {
             throw EngineError("\(name) is not a zip archive")
         }
+        // zipinfo counts every entry. The limit is on files, as `ModPayload` counts them, so folder entries and
+        // the resource forks Finder's Compress adds under `__MACOSX/` are not counted against it.
+        let names = try await ProcessRunner.run(ProcessRunner.Request(
+            executable: URL(filePath: "/usr/bin/zipinfo"), arguments: ["-1", archive.path(percentEncoded: false)]
+        ))
+        let fileCount = String(decoding: names.stdout, as: UTF8.self).split(separator: "\n")
+            .filter { !$0.hasSuffix("/") && !$0.hasPrefix("__MACOSX/") }.count
         guard fileCount <= ModPayload.maxFileCount, byteCount <= ModPayload.maxTotalBytes else {
             throw EngineError("\(name) declares \(fileCount) files and \(byteCount) bytes, more than a mod may hold")
         }

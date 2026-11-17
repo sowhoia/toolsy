@@ -32,7 +32,8 @@ Install a mod by dropping it on the Toolsy menu bar icon or panel, with the **+*
 double-clicking a `.toolsymod` file. Remove it from its page in the panel.
 
 Rules for the contents: regular files and folders only (no symbolic links), at most 2 000 files
-and 64 MB, paths must be relative and must not differ only by letter case. Executable bits are
+and 64 MB, paths must be relative and must not differ only by letter case. A folder is read
+without its `.git`, `.hg` and `.svn` folders and without `.toolsymod` files in it. Executable bits are
 preserved. Installing a mod with an `id` that is already installed replaces it and keeps its
 settings.
 
@@ -57,7 +58,7 @@ toolsy-mod pack my-mod -o my-mod.toolsymod
 | `validate <mod> [--json]` | Takes a folder, a `.toolsymod` file or a lone manifest and runs every check installing runs. Prints `OK <id> <version>`, or the error naming the field on standard error. Then [warnings](#warnings), one per line on standard error after `warning: `. |
 | `run <folder> <command> [options]` | Validates the mod, runs one command exactly as Toolsy does and reports what Toolsy would make of it, see [Running a command](#running-a-command). |
 | `preview <mod> [--state J] [--language L]` | Takes a folder, a `.toolsymod` file or a lone manifest and prints what the page and the widgets show for a state, as an outline: each control with its rendered text and bound value, `[hidden]` when its `when` is false (or nothing inside a section or row is shown), `[disabled]`, a picker's options, a list's rows, each widget's title, value, gauge or chart and `detail`. `--language` shows the mod through its table for that language. Runs nothing. |
-| `pack <folder> [-o file.toolsymod]` | Validates the folder and writes it as a package (`./<id>.toolsymod` unless `-o`), without `.DS_Store` files. Prints `OK <id> <version> <file>`. |
+| `pack <folder> [-o file.toolsymod]` | Validates the folder and writes it as a package (`./<id>.toolsymod` unless `-o`), without `.DS_Store` files. The same files always give the same bytes, so a published package can be checked against its sources. `-o` must end in `.toolsymod` and replaces only an earlier package. Prints `OK <id> <version> <file>`. |
 
 `--state` takes a JSON object merged over the state a mod starts with, its `settings` plus
 `"enabled": false`; `null` removes a key. Exit status: `0` success, `1` the mod or the run failed (a

@@ -60,8 +60,9 @@ public struct ModPayload: Sendable, Equatable {
         self.executables = executables
     }
 
-    /// Reads a mod directory. Symbolic links and special files are refused rather than followed.
-    public init(directory: URL) throws {
+    /// Reads a mod directory. Symbolic links and special files are refused rather than followed. Entries for
+    /// which `skipped` holds (relative paths, folders with everything in them) are left out.
+    public init(directory: URL, skipping skipped: (String) -> Bool = { _ in false }) throws {
         let root = directory.path(percentEncoded: false)
         guard let enumerator = FileManager.default.enumerator(atPath: root) else {
             throw ModPayloadError("cannot read \(root)")
@@ -74,6 +75,10 @@ public struct ModPayload: Sendable, Equatable {
             var info = stat()
             guard lstat(path, &info) == 0 else {
                 throw ModPayloadError("cannot read \(relative): \(String(cString: strerror(errno)))")
+            }
+            if skipped(relative) {
+                if info.st_mode & S_IFMT == S_IFDIR { enumerator.skipDescendants() }
+                continue
             }
             switch info.st_mode & S_IFMT {
             case S_IFDIR: continue

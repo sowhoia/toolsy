@@ -940,7 +940,7 @@ option is an error.
 | `validate <mod> [--json]` | Every check installing runs, then [warnings](#warnings). | `OK <id> <version>` on standard output, or the error on standard error; then each warning on standard error after `warning: ` |
 | `run <folder> <command> [options]` | Validates the mod and runs one command exactly as Toolsy does, then reports what Toolsy would make of it. Takes a folder only. | a report, see below |
 | `preview <mod> [--state <json>] [--language <code>]` | Validates the mod and prints what its page and widgets show for a state, as an outline. Runs nothing. | the outline |
-| `pack <folder> [-o <file.toolsymod>]` | Validates the folder and writes the package (`./<id>.toolsymod` unless `-o`), without `.DS_Store`, executable bits kept, replacing an existing file. | `OK <id> <version> <file>` |
+| `pack <folder> [-o <file.toolsymod>]` | Validates the folder and writes the package (`./<id>.toolsymod` unless `-o`), without `.DS_Store`, `.git`, `.hg`, `.svn` or `.toolsymod` files, executable bits kept, the same bytes for the same files. `-o` must end in `.toolsymod`; it replaces an earlier package, never a folder. | `OK <id> <version> <file>` |
 | `help [<command>]` | Explains a command; without one, lists them. | to standard output |
 
 Exit status: `0` success; `1` the mod or the run failed (a validation error, a command that exited

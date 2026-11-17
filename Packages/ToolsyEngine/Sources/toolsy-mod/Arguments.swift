@@ -29,7 +29,7 @@ struct Arguments {
                 positionals += rest
                 break
             }
-            let parts = argument.split(separator: "=", maxSplits: 1).map(String.init)
+            let parts = argument.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
             let name = parts[0]
             if switches.contains(name) {
                 guard parts.count == 1 else { throw UsageError(message: "\(name) takes no value", command: command) }

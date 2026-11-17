@@ -69,6 +69,10 @@ struct ValidationJSON: Decodable, Equatable {
         #expect(try await toolsyMod(["pack", "-o=out.toolsymod", "mod"], in: directory.url).status == 0)
         #expect(FileManager.default.fileExists(atPath: directory.url.appending(path: "out.toolsymod").path(percentEncoded: false)))
         #expect(try await toolsyMod(["validate", "--json", "mod"], in: directory.url).status == 0)
+        // An empty value after "=" is that value, not the next argument.
+        let empty = try await toolsyMod(["pack", "-o=", "mod"], in: directory.url)
+        #expect(empty.status == 1 && empty.error.contains("is not a .toolsymod file name"), "\(empty)")
+        #expect(try await toolsyMod(["validate", "mod", "--json="], in: directory.url).status == 2)
         // After "--" everything is a positional, even what looks like an option.
         try writeMod(manifest(id: "dash"), in: directory, folder: "-mod")
         #expect(try await toolsyMod(["validate", "--", "-mod"], in: directory.url) == (0, "OK dash 1.0\n", ""))
