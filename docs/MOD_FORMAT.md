@@ -651,10 +651,16 @@ A service that feeds a chart:
 ```sh
 #!/bin/sh
 # watch.sh — one JSON patch per line
+set -eu
+host=${TOOLSY_STATE_host-}
+# A name or an IPv4 address; "--" also keeps ping from taking it for an option.
+case $host in
+  '' | -* | *[!A-Za-z0-9.-]*) echo "Host: expected a name or an address, got «${host}»" >&2; exit 1 ;;
+esac
 while :; do
-  ms=$(ping -c 1 -t 2 "$TOOLSY_STATE_host" 2>/dev/null | sed -n 's/.*time=\([0-9.]*\).*/\1/p')
+  ms=$(/sbin/ping -c 1 -t 2 -- "$host" 2>/dev/null | /usr/bin/sed -n 's/.*time=\([0-9.]*\).*/\1/p')
   if [ -n "$ms" ]; then
-    echo "{\"ms\": $ms, \"status\": \"$ms ms\", \"level\": \"ok\"}"
+    /usr/bin/jq -n -c --argjson ms "$ms" --arg status "$ms ms" '{ms: $ms, status: $status, level: "ok"}'
   else
     echo '{"status": "No reply", "level": "warn"}'
   fi
@@ -714,7 +720,9 @@ address=
 [ -z "$interface" ] || address=$(/sbin/ifconfig "$interface" | /usr/bin/awk '$1 == "inet" { print $2; exit }')
 if [ "${1-}" = changed ]; then
   [ "$address" != "${TOOLSY_STATE_address-}" ] || exit 0      # empty output changes nothing
-  changes=$(( ${TOOLSY_STATE_changes:-0} + 1 ))
+  changes=${TOOLSY_STATE_changes:-0}
+  case $changes in *[!0-9]*) changes=0 ;; esac                # $(( )) would run code hidden in it
+  changes=$((changes + 1))
   case ${TOOLSY_LOCALE-} in
     ru | ru-*) text="Новый адрес: ${address:-нет сети}" ;;
     *) text="New address: ${address:-offline}" ;;

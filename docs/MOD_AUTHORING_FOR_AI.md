@@ -1119,7 +1119,9 @@ non-ASCII character as part of the name and fails with `unbound variable`.
 Always quote expansions: `"$folder"`, never `$folder` (a space splits it into two arguments, a `*`
 expands to file names). MUST NOT use `eval`, `sh -c "$text"`, backticks or `$(…)` around input, or
 `xargs` without `-0`. Pass input to programs as separate arguments (`--arg name "$value"`, `--`
-before a path that may start with `-`).
+before a path that may start with `-`). MUST NOT put a value into `$(( ))` before `case` has checked
+that it is digits: the shell evaluates the text of a variable there as an expression, so a setting
+such as `a[$(touch /tmp/x)]` runs the command.
 
 ### Emitting JSON
 
