@@ -275,17 +275,22 @@ struct MacAlertSourceTests {
         memory.start { readings.append($0) }
         heat.start { readings.append($0) }
         disk.start { readings.append($0) }
-        let deadline = ContinuousClock.now + .seconds(10)
+        // The disk is read at utility priority, which a busy Mac (the whole suite running) can hold back for a while.
+        let deadline = ContinuousClock.now + .seconds(30)
         while !readings.contains(where: { if case .freeSpace = $0 { true } else { false } }), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
         memory.stop()
         heat.stop()
         disk.stop()
+        let reported = readings.count
         #expect(readings.contains { if case .memoryPressure = $0 { true } else { false } })
         #expect(readings.contains(.thermal(ProcessInfo.processInfo.thermalState)))
+        // The system may also run the disk's scheduled reading at once, beside the one of the start.
         let free = readings.compactMap { if case .freeSpace(let bytes) = $0 { bytes } else { nil } }
-        #expect(free.count == 1 && free[0] > 0)
+        #expect(!free.isEmpty && free.allSatisfy { $0 > 0 })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(readings.count == reported, "a stopped source reports nothing more")
 
         if BatteryReader.isPresent {
             var battery: [AlertCondition] = []
