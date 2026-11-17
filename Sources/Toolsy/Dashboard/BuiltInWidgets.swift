@@ -208,9 +208,11 @@ private struct BatteryDetail: View {
                             if let cycles = battery.cycleCount {
                                 DetailFact(label: String(localized: "Cycles"), value: "\(cycles)")
                             }
+                            // Not called "Maximum capacity": macOS works that figure out its own way, and the same
+                            // name beside another number would read as a mistake.
                             if let capacity = battery.maximumCapacity {
-                                DetailFact(label: String(localized: "Maximum capacity"), value: Format.percent(capacity))
-                                    .help(String(localized: "What the battery holds when full, compared with when it was new"))
+                                DetailFact(label: String(localized: "Full charge"), value: String(localized: "\(Format.percent(capacity)) of design"))
+                                    .help(String(localized: "What the battery reports it holds when full, as a share of what it was designed to hold. Battery Health in System Settings is worked out by macOS and can show another figure."))
                             }
                         }
                     }

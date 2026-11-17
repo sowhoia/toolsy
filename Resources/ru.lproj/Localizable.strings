@@ -351,5 +351,6 @@
 "Cached files: %@ → %@" = "Кэш файлов: %@ → %@";
 
 /* Battery detail: the battery's health */
-"Maximum capacity" = "Максимальная ёмкость";
-"What the battery holds when full, compared with when it was new" = "Сколько вмещает полностью заряженный аккумулятор по сравнению с новым";
+"Full charge" = "Полный заряд";
+"%@ of design" = "%@ от проектной";
+"What the battery reports it holds when full, as a share of what it was designed to hold. Battery Health in System Settings is worked out by macOS and can show another figure." = "Сколько аккумулятор, по его же данным, вмещает при полном заряде — в доле от проектной ёмкости. «Состояние аккумулятора» в Системных настройках macOS считает по-своему, и число там может быть другим.";
