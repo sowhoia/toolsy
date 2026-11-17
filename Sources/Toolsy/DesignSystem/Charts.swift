@@ -33,6 +33,10 @@ struct SampleHistory: Equatable {
         values.append(value)
         if values.count > capacity { values.removeFirst(values.count - capacity) }
     }
+
+    mutating func removeAll() {
+        values.removeAll()
+    }
 }
 
 /// A line, area or bar chart of one to six series, drawn with paths (no chart framework).

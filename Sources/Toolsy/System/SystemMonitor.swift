@@ -11,7 +11,8 @@ enum SystemMetric: String, CaseIterable, Sendable {
 ///
 /// Readings are kept when sampling stops, so reopening the panel shows the last values at once
 /// instead of zeros; each start takes a fresh baseline for the rate-based readings (CPU,
-/// network, disk) and replaces the stale values a quarter of a second later.
+/// network, disk) and replaces the stale values a quarter of a second later. The charts' histories
+/// are not kept: samples from an earlier opening would read as if they ran on into the new ones.
 @Observable
 final class SystemMonitor {
     let device = DeviceInfo.current()
@@ -137,22 +138,28 @@ final class SystemMonitor {
         schedule(after: 1)
     }
 
-    /// Starts sampling a metric: a fresh baseline for a rate, the current value of anything else.
-    /// Slow values are read here and then only every few seconds.
+    /// Starts sampling a metric: a fresh baseline for a rate, the current value of anything else, and
+    /// an empty chart history. Slow values are read here and then only every few seconds.
     private func begin(_ metric: SystemMetric) {
         switch metric {
         case .cpu:
             cpuSampler.reset()
             _ = cpuSampler.sample()
+            cpuHistory.removeAll()
         case .network:
             networkSampler.reset()
             _ = networkSampler.sample()
+            downloadHistory.removeAll()
+            uploadHistory.removeAll()
             interface = networkSampler.primaryInterface()
         case .disk:
             diskSampler.reset()
             _ = diskSampler.sample()
+            diskReadHistory.removeAll()
+            diskWriteHistory.removeAll()
         case .gpu:
             gpu = gpuReader?.read()
+            gpuHistory.removeAll()
         case .memory:
             memory = MemoryReading.read()
         case .battery:

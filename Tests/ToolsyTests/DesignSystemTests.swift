@@ -47,6 +47,8 @@ struct SampleHistoryTests {
         var history = SampleHistory(capacity: 3)
         for value in [1.0, 2, 3, 4, .nan, 5] { history.append(value) }
         #expect(history.values == [3, 4, 5])
+        history.removeAll()
+        #expect(history.values.isEmpty && history.capacity == 3)
     }
 }
 
