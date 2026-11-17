@@ -91,3 +91,48 @@ struct StepDecimalsTests {
         #expect(formatNumber(2, step: 1.5) == one(2))
     }
 }
+
+/// The interfaces the system knows, as `InterfaceNames` reads them.
+private final class KnownInterfaces {
+    var names = ["en0": "Wi-Fi"]
+    private(set) var reads = 0
+
+    func read() -> [String: String] {
+        reads += 1
+        return names
+    }
+}
+
+struct PrimaryInterfaceTests {
+    @Test func theIPv4EntryNamesItAndTheIPv6OneOnANetworkWithoutIPv4() {
+        let ipv4: [String: Any] = ["PrimaryInterface": "en0", "Router": "192.168.0.1"]
+        let ipv6: [String: Any] = ["PrimaryInterface": "en7", "Router": "fe80::1"]
+        #expect(NetworkSampler.primaryInterfaceName(ipv4: ipv4, ipv6: ipv6) == "en0")
+        #expect(NetworkSampler.primaryInterfaceName(ipv4: nil, ipv6: ipv6) == "en7")
+        #expect(NetworkSampler.primaryInterfaceName(ipv4: ["Router": "192.168.0.1"], ipv6: ipv6) == "en7")
+        #expect(NetworkSampler.primaryInterfaceName(ipv4: nil, ipv6: nil) == nil)
+        #expect(NetworkSampler.primaryInterfaceName(ipv4: "en0", ipv6: ["PrimaryInterface": 7]) == nil)
+    }
+
+    @Test func namesAreReadAgainForAnInterfaceTheyLack() {
+        let known = KnownInterfaces()
+        var names = InterfaceNames(read: known.read)
+        #expect(names.displayName(of: "en0") == "Wi-Fi")
+        #expect(names.displayName(of: "en0") == "Wi-Fi")
+        #expect(known.reads == 1, "read once")
+
+        // An adapter plugged in after the names were read.
+        known.names["en7"] = "USB 10/100/1000 LAN"
+        #expect(names.displayName(of: "en7") == "USB 10/100/1000 LAN")
+        #expect(known.reads == 2)
+
+        // A tunnel never has a name of its own: it is a VPN, and not worth reading the names again for.
+        #expect(names.displayName(of: "utun4") == "VPN")
+        #expect(names.displayName(of: "ipsec0") == "VPN")
+        #expect(known.reads == 2)
+
+        // Still unknown after reading again: its BSD name.
+        #expect(names.displayName(of: "en9") == "en9")
+        #expect(known.reads == 3)
+    }
+}

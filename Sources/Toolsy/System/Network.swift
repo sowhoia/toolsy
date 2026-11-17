@@ -15,7 +15,7 @@ struct NetworkInterface: Equatable {
 final class NetworkSampler {
     private var previous: (counters: [String: Counters], time: ContinuousClock.Instant)?
     private let store = SCDynamicStoreCreate(nil, "Toolsy" as CFString, nil, nil)
-    private var displayNames: [String: String]?
+    private var interfaceNames = InterfaceNames()
 
     struct Counters {
         var received: UInt64
@@ -87,20 +87,21 @@ final class NetworkSampler {
     /// The primary interface from the system configuration store, with its localized name
     /// ("Wi-Fi") and IPv4 address (or a global IPv6 address if it has no IPv4).
     func primaryInterface() -> NetworkInterface? {
-        guard let store,
-              let global = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any],
-              let bsdName = global["PrimaryInterface"] as? String else { return nil }
-        if displayNames == nil {
-            let interfaces = SCNetworkInterfaceCopyAll() as? [SCNetworkInterface] ?? []
-            displayNames = Dictionary(interfaces.compactMap { interface in
-                guard let bsd = SCNetworkInterfaceGetBSDName(interface) as String?,
-                      let name = SCNetworkInterfaceGetLocalizedDisplayName(interface) as String? else { return nil }
-                return (bsd, name)
-            }, uniquingKeysWith: { first, _ in first })
+        guard let store else { return nil }
+        let global = { (key: String) in SCDynamicStoreCopyValue(store, key as CFString) }
+        guard let bsdName = Self.primaryInterfaceName(ipv4: global("State:/Network/Global/IPv4"),
+                                                      ipv6: global("State:/Network/Global/IPv6")) else { return nil }
+        return NetworkInterface(bsdName: bsdName, displayName: interfaceNames.displayName(of: bsdName),
+                                address: Self.address(of: bsdName))
+    }
+
+    /// The primary interface named by the store's global IPv4 entry, or by its IPv6 entry on a network
+    /// that gives the Mac no IPv4.
+    static func primaryInterfaceName(ipv4: Any?, ipv6: Any?) -> String? {
+        for global in [ipv4, ipv6] {
+            if let name = (global as? [String: Any])?["PrimaryInterface"] as? String { return name }
         }
-        let isTunnel = ["utun", "ipsec", "ppp"].contains { bsdName.hasPrefix($0) }
-        let displayName = displayNames?[bsdName] ?? (isTunnel ? "VPN" : bsdName)
-        return NetworkInterface(bsdName: bsdName, displayName: displayName, address: Self.address(of: bsdName))
+        return nil
     }
 
     private static func address(of interface: String) -> String? {
@@ -121,5 +122,34 @@ final class NetworkSampler {
             if ipv6 == nil, !text.hasPrefix("fe80") { ipv6 = text }
         }
         return ipv6
+    }
+}
+
+/// The localized names of the network interfaces ("Wi-Fi", "USB 10/100/1000 LAN") by BSD name. They are read
+/// once, and again when an interface is asked for that they lack, such as an adapter plugged in since.
+struct InterfaceNames {
+    private var names: [String: String]?
+    private let read: @MainActor () -> [String: String]
+
+    init(read: @escaping @MainActor () -> [String: String] = InterfaceNames.readLocalizedNames) {
+        self.read = read
+    }
+
+    /// The localized name of `bsdName`; "VPN" for a tunnel, which has none; else the BSD name itself.
+    mutating func displayName(of bsdName: String) -> String {
+        let isTunnel = ["utun", "ipsec", "ppp"].contains { bsdName.hasPrefix($0) }
+        if names == nil || (names?[bsdName] == nil && !isTunnel) {
+            names = read()
+        }
+        return names?[bsdName] ?? (isTunnel ? "VPN" : bsdName)
+    }
+
+    static func readLocalizedNames() -> [String: String] {
+        let interfaces = SCNetworkInterfaceCopyAll() as? [SCNetworkInterface] ?? []
+        return Dictionary(interfaces.compactMap { interface in
+            guard let bsd = SCNetworkInterfaceGetBSDName(interface) as String?,
+                  let name = SCNetworkInterfaceGetLocalizedDisplayName(interface) as String? else { return nil }
+            return (bsd, name)
+        }, uniquingKeysWith: { first, _ in first })
     }
 }
