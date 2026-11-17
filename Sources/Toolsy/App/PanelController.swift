@@ -19,6 +19,8 @@ final class PanelController: NSObject, NSWindowDelegate {
     /// Greater than zero while the panel presents its own modal window (an `NSOpenPanel`);
     /// focus moving there must not close the panel.
     private var modalDepth = 0
+    /// The app that was active before the open panel made Toolsy active; it gets activation back.
+    private var appActiveBeforeModal: NSRunningApplication?
 
     init(state: PanelState, options: LaunchOptions, mods: ModsModel, loginItem: LoginItem,
          dashboard: DashboardStore, processes: ProcessMonitor, memoryOptimizer: MemoryOptimizer) {
@@ -94,6 +96,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             self.window.orderOut(nil)
             self.state.show(.root)
             self.state.setVisible(false)
+            self.handActivationBack()
         }
     }
 
@@ -237,14 +240,34 @@ final class PanelController: NSObject, NSWindowDelegate {
         modalDepth += 1
         defer {
             modalDepth -= 1
-            window.makeKey()
+            // The panel may have closed meanwhile, when the Mac went to sleep.
+            if state.isPresented { window.makeKey() } else { handActivationBack() }
         }
         openPanel.level = NSWindow.Level(rawValue: window.level.rawValue + 1)
+        // The open panel needs Toolsy active. The app that was active gets that back once the panel closes,
+        // not as soon as the open panel does: its window would take the keyboard from the panel, which
+        // needs it for what follows (Return confirms the installation), and the panel would close.
+        if !NSApp.isActive, let app = NSWorkspace.shared.frontmostApplication,
+           app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            appActiveBeforeModal = app
+        }
         NSApp.activate()
         let response = await withCheckedContinuation { continuation in
             openPanel.begin { continuation.resume(returning: $0) }
         }
         return response == .OK ? openPanel.urls : []
+    }
+
+    /// With the panel closed, Toolsy has no window to take keystrokes, so after an open panel made it the
+    /// active app, the app that was active before gets activation back: Toolsy yields to it, then asks it to
+    /// activate (cooperative activation). Not if another app has taken activation meanwhile, such as the one
+    /// whose window was clicked to close the panel, nor while the open panel is still up.
+    private func handActivationBack() {
+        guard modalDepth == 0, let app = appActiveBeforeModal else { return }
+        appActiveBeforeModal = nil
+        guard NSApp.isActive, !app.isTerminated else { return }
+        NSApp.yieldActivation(to: app)
+        app.activate(from: .current, options: [])
     }
 }
 
