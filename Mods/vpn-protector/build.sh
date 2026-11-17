@@ -1,8 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 # Builds the release binary and packs the installable mod:
 #   build/vpn-protector/            mod.json, bin/vpn-protector (universal: arm64 and x86_64)
 #   build/vpn-protector.toolsymod   the same files zipped, mod.json at the archive root
-set -eu
+# The archive depends on nothing but those two files.
+set -euo pipefail
 cd "$(dirname "$0")"
 
 stage=build/vpn-protector
@@ -26,6 +27,9 @@ mkdir -p "$stage/bin"
 cp mod.json "$stage/mod.json"
 lipo -create "$arm64" "$x86_64" -output "$stage/bin/vpn-protector"
 chmod 755 "$stage/bin/vpn-protector"
+# Modes and times are part of the archive: 755 for folders and programs, 644 for the rest, one date.
+chmod -R u=rwX,go=rX "$stage"
+find "$stage" -exec touch -h -t 198001010000 {} +
 
 # Every program the manifest starts must be in the staged mod.
 /usr/bin/jq -r '.commands[] | .exec // empty' mod.json | sort -u | while IFS= read -r file; do
@@ -35,5 +39,6 @@ chmod 755 "$stage/bin/vpn-protector"
     fi
 done
 
-(cd "$stage" && zip -q -X -r "../$(basename "$archive")" .)
+# Files in a fixed order, without folder entries or extra attributes (owner, more times).
+(cd "$stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | zip -q -X -D "../$(basename "$archive")" -@)
 echo "$archive"

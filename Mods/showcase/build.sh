@@ -1,17 +1,22 @@
-#!/bin/sh
+#!/bin/bash
 # Packs the installable mod:
 #   build/showcase/            mod.json, scripts/
 #   build/showcase.toolsymod   the same files zipped, mod.json at the archive root
-set -eu
+# The same sources give the same archive, byte for byte.
+set -euo pipefail
 cd "$(dirname "$0")"
 
 stage=build/showcase
 archive=build/showcase.toolsymod
 
 rm -rf "$stage" "$archive"
-mkdir -p "$stage/scripts"
+mkdir -p "$stage"
 cp mod.json "$stage/mod.json"
-cp scripts/lib.sh scripts/service.sh scripts/refresh.sh scripts/action.sh "$stage/scripts/"
+cp -R scripts "$stage/scripts"
+find "$stage" -name .DS_Store -delete
+# Modes and times are part of the archive: 755 for folders and programs, 644 for the rest, one date.
+chmod -R u=rwX,go=rX "$stage"
+find "$stage" -exec touch -h -t 198001010000 {} +
 
 # Every program the manifest starts must be in the staged mod.
 /usr/bin/jq -r '.commands[] | .exec // empty' mod.json | sort -u | while IFS= read -r file; do
@@ -21,5 +26,6 @@ cp scripts/lib.sh scripts/service.sh scripts/refresh.sh scripts/action.sh "$stag
     fi
 done
 
-(cd "$stage" && zip -q -X -r "../$(basename "$archive")" .)
+# Files in a fixed order, without folder entries or extra attributes (owner, more times).
+(cd "$stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | zip -q -X -D "../$(basename "$archive")" -@)
 echo "$archive"
