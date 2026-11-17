@@ -39,8 +39,8 @@ items() {
         inside { sub(/^[^:]*: /, ""); print }'
 }
 
-interface= service= kind= hardware= method= router= router6= servers= domains=
-ipv4= mask= ipv6= linklocal= mac= mtu= report=null problem=
+interface='' service='' kind='' hardware='' method='' router='' router6='' servers='' domains=''
+ipv4='' mask='' ipv6='' linklocal='' mac='' mtu='' report=null problem=''
 
 global4=$(show State:/Network/Global/IPv4)
 global6=$(show State:/Network/Global/IPv6)

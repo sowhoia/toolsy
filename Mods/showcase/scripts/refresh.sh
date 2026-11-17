@@ -2,6 +2,7 @@
 # Refresh: the computer's name, boot time and uptime, the network interfaces for the picker fed from
 # state, and the top processes for the list and the bar chart.
 set -eu
+# shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
 case ${TOOLSY_STATE_order-} in

@@ -2,6 +2,7 @@
 # The showcase service: prints one JSON patch per second while the mod is on. Toolsy restarts
 # it whenever a setting changes, so the settings are read once at start.
 set -eu
+# shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
 amplitude=${TOOLSY_STATE_amplitude-}

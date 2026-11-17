@@ -22,6 +22,7 @@ problem() {
 environment() {
     name=$1
     shift
+    # shellcheck disable=SC2046 # one assignment per line; the callers set IFS to a newline
     set -- $($jq -r '(.settings // {}) | to_entries[] | "TOOLSY_STATE_\(.key)=\(.value)"' mod.json) TOOLSY_STATE_enabled=false "$@"
     set -- PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" LANG=en_US.UTF-8 \
         TOOLSY_MOD_ID="$id" TOOLSY_MOD_DIR="$mod" TOOLSY_DATA_DIR="$data" TOOLSY_EVENT=command \
@@ -30,6 +31,7 @@ environment() {
 }
 
 # run COMMAND [VAR=VALUE…]: runs a command of mod.json; leaves stdout, stderr and status in $data.
+# shellcheck disable=SC2016 # $name in the jq programs is jq's variable
 run() {
     name=$1
     program=$($jq -r --arg name "$name" '.commands[$name].exec' mod.json)
@@ -39,7 +41,7 @@ run() {
     old_ifs=$IFS
     IFS='
 '
-    # shellcheck disable=SC2046 # split into one word per line on purpose
+    # shellcheck disable=SC2046,SC2086 # split into one word per line on purpose
     env -i $(environment "$@") "$mod/$program" $args >"$data/out" 2>"$data/err" </dev/null || status=$?
     IFS=$old_ifs
 }
@@ -227,10 +229,6 @@ fixture strange State:/Network/Global/IPv4 <<'FIXTURE'
 FIXTURE
 mkdir -p "$data/offline"
 
-on() {
-    printf '%s\n' "$stubbed" "FIXTURES=$data/$1"
-}
-
 expect '.interface == "en0" and .kind == "Wi-Fi" and .address == "192.0.2.10" and .ipv4 == "192.0.2.10"
     and .mask == "255.255.255.0" and .router == "192.0.2.1" and .router6 == "fe80::1"
     and .ipv6 == "2001:db8::10" and .ipv6All == [{"title": "2001:db8::20", "subtitle": "Temporary"}, {"title": "2001:db8::10", "subtitle": "Stable"}]
@@ -238,29 +236,31 @@ expect '.interface == "en0" and .kind == "Wi-Fi" and .address == "192.0.2.10" an
     and .configMethod == "DHCP" and .mac == "00:00:5e:00:53:01" and .mtu == 1500
     and .channel == "36" and .band == "5" and .width == "80" and .phyMode == "802.11ax" and .txRate == 1200
     and .signal == -58 and .noise == -92 and .signalLevel == "ok" and .security == "WPA3 Personal"
-    and .wifiProblem == null and .status == "Wi-Fi · 192.0.2.10" and .level == "ok" and .headline == "192.0.2.10"' read $(on wifi) TOOLSY_EVENT=refresh
+    and .wifiProblem == null and .status == "Wi-Fi · 192.0.2.10" and .level == "ok" and .headline == "192.0.2.10"' read "$stubbed" FIXTURES="$data/wifi" TOOLSY_EVENT=refresh
 keys=$($jq -c keys "$data/out")
-expect '.ipv6All[0].subtitle == "Временный" and .ipv6All[1].subtitle == "Постоянный"' read $(on wifi) TOOLSY_EVENT=network TOOLSY_LOCALE=ru-ru
-expect '.channel == "6" and .band == "2" and .width == "20" and .signalLevel == "error" and .security == "None"' read $(on weak) TOOLSY_EVENT=wake
-expect '.security == "Нет"' read $(on weak) TOOLSY_LOCALE=ru
-expect '.address == "192.0.2.10" and .dns != null and .channel == null and .signal == null and (.wifiProblem | startswith("Wi-Fi details could not be read"))' read $(on no-profile)
+expect '.ipv6All[0].subtitle == "Временный" and .ipv6All[1].subtitle == "Постоянный"' read "$stubbed" FIXTURES="$data/wifi" TOOLSY_EVENT=network TOOLSY_LOCALE=ru-ru
+expect '.channel == "6" and .band == "2" and .width == "20" and .signalLevel == "error" and .security == "None"' read "$stubbed" FIXTURES="$data/weak" TOOLSY_EVENT=wake
+expect '.security == "Нет"' read "$stubbed" FIXTURES="$data/weak" TOOLSY_LOCALE=ru
+expect '.address == "192.0.2.10" and .dns != null and .channel == null and .signal == null and (.wifiProblem | startswith("Wi-Fi details could not be read"))' read "$stubbed" FIXTURES="$data/no-profile"
 expect '.interface == "en7" and .kind == "Desk \"LAN\" \\ 🙂" and .ipv4 == null and .mask == null and .router == null
     and .address == "2001:db8::7" and .ipv6 == "2001:db8::7" and .ipv6All == [{"title": "2001:db8::7", "subtitle": "Assigned"}]
     and .linkLocal == null and .dns == null and .configMethod == "Manually" and .mtu == 9000
-    and .channel == null and .wifiProblem == null and .status == "Desk \"LAN\" \\ 🙂 · 2001:db8::7"' read $(on ipv6)
-expect '.configMethod == "Вручную"' read $(on ipv6) TOOLSY_LOCALE=ru
-expect '.interface == "utun4" and .kind == "VPN" and .address == "192.0.2.66" and .mask == "255.255.255.255" and .mac == null and .configMethod == null' read $(on vpn)
+    and .channel == null and .wifiProblem == null and .status == "Desk \"LAN\" \\ 🙂 · 2001:db8::7"' read "$stubbed" FIXTURES="$data/ipv6"
+expect '.configMethod == "Вручную"' read "$stubbed" FIXTURES="$data/ipv6" TOOLSY_LOCALE=ru
+expect '.interface == "utun4" and .kind == "VPN" and .address == "192.0.2.66" and .mask == "255.255.255.255" and .mac == null and .configMethod == null' read "$stubbed" FIXTURES="$data/vpn"
 expect '.interface == null and .address == null and .dns == null and .signal == null and .status == "Not connected" and .level == "off"
-    and .headline == "Offline"' read $(on offline)
+    and .headline == "Offline"' read "$stubbed" FIXTURES="$data/offline"
 [ "$($jq -c keys "$data/out")" = "$keys" ] || problem "offline: reports other keys than online, so stale values would stay: $($jq -c keys "$data/out")"
-expect '.status == "Нет подключения" and .headline == "Нет сети"' read $(on offline) TOOLSY_LOCALE=ru
-expect '.status == "Not connected"' read $(on offline) TOOLSY_LOCALE="$(printf 'Ли "Ко" \\ \001 🙂')"
-expect_failure read $(on vanished)
-expect_failure read $(on strange)
+expect '.status == "Нет подключения" and .headline == "Нет сети"' read "$stubbed" FIXTURES="$data/offline" TOOLSY_LOCALE=ru
+expect '.status == "Not connected"' read "$stubbed" FIXTURES="$data/offline" TOOLSY_LOCALE="$(printf 'Ли "Ко" \\ \001 🙂')"
+expect_failure read "$stubbed" FIXTURES="$data/vanished"
+expect_failure read "$stubbed" FIXTURES="$data/strange"
 
 # This Mac, as it is: one valid patch. Its values are this Mac's own and are not printed.
 label="read on this Mac"
+# shellcheck disable=SC2162 # "read" is the command of mod.json, not the shell's read
 run read
+# shellcheck disable=SC2016 # $keys is jq's variable
 if [ "$status" -ne 0 ]; then
     problem "$label: exit $status: $(tail -n 1 "$data/err")"
 elif ! $jq -e -s --argjson keys "$keys" 'length == 1 and (.[0] | keys == $keys and (.status | type) == "string"

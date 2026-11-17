@@ -20,11 +20,13 @@ problem() {
 # run COMMAND [VAR=VALUE…]: runs a command of mod.json with the settings as TOOLSY_STATE_*,
 # overridden by the extra assignments. A command with "stdin" reads $data/in, which the caller
 # writes. Leaves stdout, stderr and status in $data.
+# shellcheck disable=SC2016 # $name in the jq program is jq's variable
 run() {
     name=$1
     shift
     definition=$($jq -c --arg name "$name" '.commands[$name]' mod.json)
     [ "$definition" != null ] || { problem "$name: not in mod.json"; return; }
+    # shellcheck disable=SC2046 # one word per setting: no setting of this manifest contains a space
     set -- $($jq -r '.settings | to_entries[] | "TOOLSY_STATE_\(.key)=\(.value)"' mod.json) TOOLSY_STATE_enabled=false "$@"
     set -- PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" LANG=en_US.UTF-8 \
         TOOLSY_MOD_ID=showcase TOOLSY_MOD_DIR="$mod" TOOLSY_DATA_DIR="$data" TOOLSY_EVENT=command \
@@ -39,6 +41,7 @@ run() {
         env -i "$@" "$mod/$program" $args >"$data/out" 2>"$data/err" <"$input" || status=$?
     else
         script=$(printf '%s' "$definition" | $jq -r '.shell')
+        # shellcheck disable=SC2086 # args in this manifest contain no spaces
         env -i "$@" /bin/sh -c "$script" toolsy $args >"$data/out" 2>"$data/err" <"$input" || status=$?
     fi
 }
@@ -110,6 +113,7 @@ expect_service() {
     fi
 }
 
+# shellcheck disable=SC2016 # $(x) and `y` are meant literally: text that must never run
 odd=$(printf 'Ли "Ко" \\ \t\001 \377 🙂 $(x) `y`')
 
 # check JQ-CHECK: the last output satisfies JQ-CHECK.

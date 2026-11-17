@@ -9,6 +9,7 @@ jq=/usr/bin/jq
 id=$($jq -r .id mod.json)
 data=$(mktemp -d)
 services=
+# shellcheck disable=SC2154 # pid is the variable of the trap's own loop
 trap 'for pid in $services; do kill -TERM -- "-$pid" 2>/dev/null || true; done; rm -rf "$data"' EXIT
 # Background jobs get process groups of their own, as Toolsy gives its services.
 set -m
@@ -24,6 +25,7 @@ problem() {
 environment() {
     name=$1
     shift
+    # shellcheck disable=SC2046 # one assignment per line; the callers set IFS to a newline
     set -- $($jq -r '(.settings // {}) | to_entries[] | "TOOLSY_STATE_\(.key)=\(.value)"' mod.json) TOOLSY_STATE_enabled=false "$@"
     set -- PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" LANG=en_US.UTF-8 \
         TOOLSY_MOD_ID="$id" TOOLSY_MOD_DIR="$mod" TOOLSY_DATA_DIR="$data" TOOLSY_EVENT=command \
@@ -32,6 +34,7 @@ environment() {
 }
 
 # run COMMAND [VAR=VALUE…]: runs a command of mod.json; leaves stdout, stderr and status in $data.
+# shellcheck disable=SC2016 # $name in the jq programs is jq's variable
 run() {
     name=$1
     program=$($jq -r --arg name "$name" '.commands[$name].exec' mod.json)
@@ -41,7 +44,7 @@ run() {
     old_ifs=$IFS
     IFS='
 '
-    # shellcheck disable=SC2046 # split into one word per line on purpose
+    # shellcheck disable=SC2046,SC2086 # split into one word per line on purpose
     env -i $(environment "$@") "$mod/$program" $args >"$data/out" 2>"$data/err" </dev/null || status=$?
     IFS=$old_ifs
 }
@@ -112,6 +115,7 @@ exits_within() {
 }
 
 now=$(date +%s)
+# shellcheck disable=SC2016 # $(x) and `y` are meant literally: text that must never run
 odd=$(printf 'Ли "Ко" \\ \t\001 \377 🙂 $(x) `y`')
 running="TOOLSY_STATE_enabled=true"
 

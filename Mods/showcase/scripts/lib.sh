@@ -1,4 +1,5 @@
 # Helpers shared by the showcase scripts. Sourced, not executed.
+# shellcheck shell=sh
 
 # awk functions that turn text into a JSON string literal: quotes, backslashes and control
 # characters are escaped. Run text through `utf8` first; JSON parsers reject invalid UTF-8.

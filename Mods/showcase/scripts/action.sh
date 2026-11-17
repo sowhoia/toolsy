@@ -1,6 +1,7 @@
 #!/bin/sh
 # Commands started by the controls of the showcase page and by system events. $1 names the action.
 set -eu
+# shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
 value=${TOOLSY_VALUE-}
