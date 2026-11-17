@@ -35,7 +35,10 @@ build_product() {
 }
 
 sign() {
-    codesign --force --options runtime --timestamp=none --sign "$identity" "$@"
+    # Notarization requires a secure timestamp, which an ad hoc signature cannot have.
+    local timestamp=--timestamp
+    [ "$identity" != - ] || timestamp=--timestamp=none
+    codesign --force --options runtime "$timestamp" --sign "$identity" "$@"
 }
 
 # A release binary carries its whole symbol table, more than half of its size, and nothing reads it
