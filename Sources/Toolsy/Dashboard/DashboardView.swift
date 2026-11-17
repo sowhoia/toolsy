@@ -245,7 +245,7 @@ private struct WidgetGrid: View {
             WidgetOptions(widget: widget) { remove(widget) }
         } else {
             switch widget.info.content {
-            case .metric(let metric): MetricDetail(metric: metric, chartStyle: widget.chartStyle)
+            case .metric(let metric): MetricDetail(metric: metric, chartStyle: widget.chartStyle, rateUnit: widget.rateUnit)
             case .mod(let mod, let modWidget): ModWidgetDetail(mod: mod, widget: modWidget)
             }
         }

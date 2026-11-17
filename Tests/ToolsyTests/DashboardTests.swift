@@ -378,6 +378,12 @@ struct GPUAndDiskReadingTests {
         #expect(Format.bitRate(0) != Format.rate(0))
     }
 
+    /// The network widget's tile and its detail (which VoiceOver reads) both follow the user's choice.
+    @Test func networkRatesFollowTheChosenUnit() {
+        #expect(Format.rate(150_000, in: .bits) == Format.bitRate(150_000))
+        #expect(Format.rate(150_000, in: .bytes) == Format.rate(150_000))
+    }
+
     @Test func zeroIsWrittenAsADigit() {
         // ByteCountFormatter spells zero out in English ("Zero KB") unless told not to.
         let zero = 0.formatted()

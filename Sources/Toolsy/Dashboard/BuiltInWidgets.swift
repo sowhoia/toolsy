@@ -27,6 +27,7 @@ struct MetricFace: View {
 struct MetricDetail: View {
     let metric: SystemMetric
     let chartStyle: ChartStyle
+    let rateUnit: RateUnit
 
     var body: some View {
         Tile {
@@ -34,7 +35,7 @@ struct MetricDetail: View {
             case .cpu: CPUDetail(style: chartStyle)
             case .memory: MemoryDetail()
             case .battery: BatteryDetail()
-            case .network: NetworkDetail(style: chartStyle)
+            case .network: NetworkDetail(style: chartStyle, unit: rateUnit)
             case .storage: StorageDetail()
             case .gpu: GPUDetail(style: chartStyle)
             case .disk: DiskDetail(style: chartStyle)
@@ -224,10 +225,6 @@ private struct BatteryDetail: View {
 
 // MARK: Network
 
-private func rate(_ bytesPerSecond: Double, in unit: RateUnit) -> String {
-    unit == .bits ? Format.bitRate(bytesPerSecond) : Format.rate(bytesPerSecond)
-}
-
 private struct NetworkFace: View {
     let size: WidgetSize
     let style: ChartStyle
@@ -246,13 +243,14 @@ private struct NetworkFace: View {
     /// Both directions, or in a one-column tile, where they do not fit side by side, their sum.
     private var value: String {
         guard let down = monitor.downloadRate, let up = monitor.uploadRate else { return "—" }
-        if size == .small { return rate(down + up, in: unit) }
-        return "↓\u{2009}\(rate(down, in: unit))  ↑\u{2009}\(rate(up, in: unit))"
+        if size == .small { return Format.rate(down + up, in: unit) }
+        return "↓\u{2009}\(Format.rate(down, in: unit))  ↑\u{2009}\(Format.rate(up, in: unit))"
     }
 }
 
 private struct NetworkDetail: View {
     let style: ChartStyle
+    let unit: RateUnit
     @Environment(SystemMonitor.self) private var monitor
 
     var body: some View {
@@ -260,7 +258,9 @@ private struct NetworkDetail: View {
             SeriesChart(String(localized: "Last minute"),
                         series: [ChartSeries(String(localized: "Download"), tint: .cyan, values: monitor.downloadHistory.values),
                                  ChartSeries(String(localized: "Upload"), tint: .orange, values: monitor.uploadHistory.values)],
-                        style: style, min: 0, capacity: 60, height: 44, showsReadout: false)
+                        style: style, min: 0, capacity: 60, height: 44, showsReadout: false,
+                        // Not shown, but VoiceOver reads the newest values.
+                        format: { Format.rate($0, in: unit) })
             if let interface = monitor.interface {
                 ValueRow(interface.displayName, value: interface.address ?? interface.bsdName,
                          icon: interface.displayName == "Wi-Fi" ? "wifi" : "network", copyable: interface.address != nil)

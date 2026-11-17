@@ -21,6 +21,11 @@ enum Format {
         return String(localized: "\(amount)/s")
     }
 
+    /// A network rate in the unit the user chose for the network widget.
+    static func rate(_ bytesPerSecond: Double, in unit: RateUnit) -> String {
+        unit == .bits ? bitRate(bytesPerSecond) : rate(bytesPerSecond)
+    }
+
     private static let memoryFormatter = byteCountFormatter(.memory)
     private static let fileFormatter = byteCountFormatter(.file)
     /// A rate is never counted in single bytes: below a kilobyte a second the digits only flicker.
