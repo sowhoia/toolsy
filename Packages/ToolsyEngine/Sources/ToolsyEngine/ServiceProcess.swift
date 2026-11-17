@@ -15,6 +15,10 @@ final class ServiceProcess: Sendable {
     static let maxLineLength = 256 * 1024
     /// Enough for the 2 000 characters a `CommandRun` keeps, even when each takes four bytes.
     static let errorTailLength = 8 * 1024
+    /// Lines waiting to be applied. A service that prints faster than its patches are applied loses the oldest
+    /// waiting ones; with `maxLineLength` this keeps what waits under 16 MB, where 10 000 waiting lines let a
+    /// runaway service hold 2.5 GB of the app's memory.
+    static let maxWaitingLines = 64
 
     let events: AsyncStream<Event>
     private let continuation: AsyncStream<Event>.Continuation
@@ -26,13 +30,14 @@ final class ServiceProcess: Sendable {
     struct Output {
         var pendingLine = Data()
         var droppingLine = false
+        var reportedDroppedLines = false
         var errorTail = Data()
         var streamIsOpen = [true, true]
     }
 
     init(executable: URL, arguments: [String], environment: [String: String], directory: URL, input: Data?) throws {
         // A flood of lines must not grow memory without bound; the exit event is the newest and always kept.
-        (events, continuation) = AsyncStream.makeStream(of: Event.self, bufferingPolicy: .bufferingNewest(10_000))
+        (events, continuation) = AsyncStream.makeStream(of: Event.self, bufferingPolicy: .bufferingNewest(Self.maxWaitingLines))
         process.executableURL = executable
         process.arguments = arguments
         process.environment = environment
@@ -87,7 +92,10 @@ final class ServiceProcess: Sendable {
                 if index == 0 {
                     // Yielding under the lock keeps lines in order across handler invocations.
                     for line in output.lines(appending: chunk) {
-                        continuation.yield(.line(line))
+                        if case .dropped = continuation.yield(.line(line)), !output.reportedDroppedLines {
+                            output.reportedDroppedLines = true
+                            logger.notice("a service prints faster than its lines are applied; the oldest waiting lines are dropped")
+                        }
                     }
                 } else {
                     output.errorTail.append(contentsOf: chunk)

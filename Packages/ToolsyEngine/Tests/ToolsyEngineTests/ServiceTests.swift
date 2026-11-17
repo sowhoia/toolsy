@@ -245,6 +245,28 @@ private let onScript = logLine + "; log enable"
         await harness.store.shutdown()
     }
 
+    /// Ten thousand lines could wait to be applied, 256 KB each: a runaway service held gigabytes of the app.
+    @Test func boundsTheLinesWaitingToBeApplied() async throws {
+        let service = try ServiceProcess(
+            executable: URL(filePath: "/bin/sh"), arguments: ["-c", "i=0; while [ $i -lt 1000 ]; do echo '{}'; i=$((i + 1)); done"],
+            environment: ["PATH": "/usr/bin:/bin"], directory: URL(filePath: "/"), input: nil
+        )
+        // Nothing is read until the service has printed everything and exited.
+        try await Task.sleep(for: .seconds(1))
+        var lines = 0
+        var exited = false
+        for await event in service.events {
+            switch event {
+            case .line: lines += 1
+            case .exit(let status, _): exited = status == 0
+            }
+        }
+        #expect(exited)
+        // The oldest were dropped, and no more waited than the bound allows.
+        #expect(lines < 1000)
+        #expect(lines <= ServiceProcess.maxWaitingLines)
+    }
+
     @Test func neverSignalsReservedProcessGroups() async {
         // As a negated target, 0 is the caller's own group and 1 is every process it may signal.
         for pid in [Int32(0), 1, -5] {
