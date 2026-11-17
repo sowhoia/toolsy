@@ -38,10 +38,11 @@ import ToolsyShared
             "StandardErrorPath": log.path(percentEncoded: false),
         ]
         try PropertyListSerialization.data(fromPropertyList: job, format: .xml, options: 0).write(to: plist)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: plist.path(percentEncoded: false))
     }
 
     private func prepareStore(_ store: URL, requirement: String, user: uid_t = getuid()) throws {
-        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
         for (name, contents) in [(HelperConstants.clientRequirementFileName, requirement), (HelperConstants.clientUserFileName, "\(user)")] {
             let file = store.appending(path: name)
             try Data(contents.utf8).write(to: file)

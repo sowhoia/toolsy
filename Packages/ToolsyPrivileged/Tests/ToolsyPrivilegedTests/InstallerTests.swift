@@ -51,7 +51,10 @@ private final class ScratchInstall {
             launchctl: launchctl.path(percentEncoded: false),
             chown: chown.path(percentEncoded: false)
         )
-        try FileManager.default.createDirectory(atPath: root + "/Library/Application Support", withIntermediateDirectories: true)
+        // As on a Mac, whatever the umask: the removal test expects exactly this mode back.
+        try FileManager.default.createDirectory(
+            atPath: root + "/Library/Application Support", withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755]
+        )
     }
 
     func installCommand(cdhash: String = validHash, clientUID: uid_t = 501) throws -> String {

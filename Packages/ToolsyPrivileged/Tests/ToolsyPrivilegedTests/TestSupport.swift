@@ -7,12 +7,15 @@ import ToolsyHelperXPC
 import ToolsyShared
 
 /// A scratch directory removed when the test ends.
+///
+/// Fixtures give what they create explicit modes, never ones the umask decides: a test of the store changes the
+/// umask of the whole process while other suites run, and the store refuses folders and files others could write.
 final class TemporaryDirectory {
     let url: URL
 
     init() throws {
         url = URL.temporaryDirectory.appending(path: "toolsy-privileged-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
     }
 
     deinit {
@@ -26,8 +29,11 @@ final class TemporaryDirectory {
     @discardableResult
     func write(_ contents: String, to relativePath: String) throws -> URL {
         let file = url.appending(path: relativePath)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755]
+        )
         try Data(contents.utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path(percentEncoded: false))
         return file
     }
 }
@@ -147,7 +153,7 @@ enum ProbeMod {
 
 func makeStore(in directory: TemporaryDirectory) throws -> ModStore {
     let root = directory.path("store")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
     return try ModStore(root: root, ownerUID: getuid())
 }
 
