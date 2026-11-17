@@ -13,8 +13,8 @@ struct MemoryReadingTests {
         #expect(Double(parts) > Double(memory.total) * 0.85)
     }
 
-    /// Cached files are what `vm_stat` calls file-backed plus purgeable pages, and free memory is its free
-    /// plus speculative pages. Both are read moments apart, so they agree only roughly.
+    /// Cached files are what `vm_stat` calls file-backed plus purgeable pages (the speculative ones among the
+    /// file-backed), and free memory is its free pages. Both are read moments apart, so they agree only roughly.
     @Test func agreesWithVMStat() async throws {
         let memory = try #require(MemoryReading.read())
         let result = try await ProcessRunner.run(ProcessRunner.Request(executable: URL(filePath: "/usr/bin/vm_stat"), timeout: 10))
@@ -25,7 +25,7 @@ struct MemoryReadingTests {
             return try #require(UInt64(line.dropFirst(label.count + 1).trimmingCharacters(in: .whitespaces).dropLast()))
         }
         let cached = (try pages("File-backed pages") + pages("Pages purgeable")) * pageSize
-        let free = (try pages("Pages free") + pages("Pages speculative")) * pageSize
+        let free = try pages("Pages free") * pageSize
         func near(_ value: UInt64, _ expected: UInt64) -> Bool {
             abs(Double(value) - Double(expected)) < max(Double(expected) * 0.05, 256 * 1024 * 1024)
         }

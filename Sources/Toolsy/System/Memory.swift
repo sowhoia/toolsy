@@ -23,8 +23,8 @@ struct MemoryReading: Equatable {
     /// "Cached Files" as Activity Monitor shows them: file-backed pages plus purgeable memory. Not part
     /// of `used`; the system drops these pages when it needs room, and a memory optimisation flushes them.
     var cachedFiles: UInt64
-    /// What the system can hand out at once, without reclaiming anything: free pages, including the
-    /// speculative ones read ahead from files (the kernel counts those as free).
+    /// What the system can hand out at once, without reclaiming anything: free pages. The speculative ones,
+    /// read ahead from files, which the kernel counts as free too, are counted once, with the cached files.
     var free: UInt64
     var swapUsed: UInt64
     var pressure: MemoryPressure
@@ -48,10 +48,12 @@ struct MemoryReading: Equatable {
         let app = (anonymous > purgeable ? anonymous - purgeable : 0) * page
         let wired = UInt64(stats.wire_count) * page
         let compressed = UInt64(stats.compressor_page_count) * page
-        // `external_page_count` includes the speculative pages; `free_count` does too (vm_stat prints
-        // "Pages free" as free_count minus speculative_count).
+        // `external_page_count` includes the speculative pages, and `free_count` does too (vm_stat prints
+        // "Pages free" as free_count minus speculative_count). Counted in both, a few gigabytes of read-ahead
+        // made the parts of the memory add up to more than the Mac has.
         let cachedFiles = (UInt64(stats.external_page_count) + purgeable) * page
-        let free = UInt64(stats.free_count) * page
+        let speculative = UInt64(stats.speculative_count)
+        let free = (UInt64(stats.free_count) > speculative ? UInt64(stats.free_count) - speculative : 0) * page
 
         let swap = Sysctl.value("vm.swapusage", as: xsw_usage.self)
         return MemoryReading(
