@@ -354,3 +354,17 @@
 "Full charge" = "Полный заряд";
 "%@ of design" = "%@ от проектной";
 "What the battery reports it holds when full, as a share of what it was designed to hold. Battery Health in System Settings is worked out by macOS and can show another figure." = "Сколько аккумулятор, по его же данным, вмещает при полном заряде — в доле от проектной ёмкости. «Состояние аккумулятора» в Системных настройках macOS считает по-своему, и число там может быть другим.";
+/* Settings: alerts about the Mac */
+"Alerts" = "Оповещения";
+"A notification when it happens, and again only once it has passed. Nothing is watched for an alert that is off." = "Уведомление приходит, когда это случается, и снова — только после того, как всё вернулось в норму. Для выключенного оповещения ничего не отслеживается.";
+"Memory pressure is high" = "Высокая нагрузка на память";
+"The Mac is hot" = "Mac перегревается";
+"Battery at %@ or less" = "Заряд аккумулятора %@ или меньше";
+"Less than %@ free on the startup disk" = "На загрузочном диске свободно меньше %@";
+"Toolsy may not show notifications. Allow them in System Settings → Notifications." = "Toolsy не разрешено показывать уведомления. Разрешите их в Системных настройках → Уведомления.";
+"Apps may slow down. Toolsy’s Memory details show which apps use the most." = "Приложения могут замедлиться. В подробностях памяти в Toolsy видно, какие из них занимают больше всего.";
+"macOS slows it down to cool it. Toolsy’s CPU details show which apps work the hardest." = "macOS замедляет его, чтобы охладить. В подробностях ЦП в Toolsy видно, какие приложения нагружают его сильнее всего.";
+"Battery is low" = "Низкий заряд аккумулятора";
+"%@ left. Connect the power adapter." = "Осталось %@. Подключите адаптер питания.";
+"Startup disk is almost full" = "Загрузочный диск почти заполнен";
+"%@ free. Apps may fail to save their work." = "Свободно %@. Приложениям может не хватить места, чтобы сохранить работу.";

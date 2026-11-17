@@ -137,6 +137,34 @@ struct ModNotifierTests {
         await fixture.cleanUp()
     }
 
+    @Test func toolsysOwnNotificationsAreAGroupOfTheirOwnAndOpenTheDashboard() async throws {
+        let fixture = try Fixture(center: FakeCenter(status: .authorized), notifying: [:])
+        await fixture.notifier.show(title: "Memory pressure is high", body: "Apps may slow down.", topic: .alerts, id: "memoryPressure")
+        await fixture.notifier.show(title: "Memory pressure is high", body: "Apps may slow down.", topic: .alerts, id: "memoryPressure")
+        let added = fixture.center.added
+        #expect(added.map(\.content.threadIdentifier) == ["toolsy:alerts", "toolsy:alerts"])
+        #expect(added.map(\.identifier) == ["toolsy:alerts:memoryPressure", "toolsy:alerts:memoryPressure"],
+                "an alert that comes back replaces its earlier notification")
+        #expect(added.allSatisfy { $0.content.sound == nil })
+        #expect(!ModManifest.isValidID("toolsy:alerts"), "no mod can take the group")
+
+        fixture.mods.start()
+        await fixture.notifier.open(thread: "toolsy:alerts")
+        await fixture.notifier.open(thread: "gone")
+        #expect(fixture.opened == [.root, nil])
+        await fixture.cleanUp()
+    }
+
+    @Test func aRefusalIsReadWithoutAskingOrAskedFor() async throws {
+        let fixture = try Fixture(center: FakeCenter(status: .notDetermined, answer: false), notifying: [:])
+        #expect(await !fixture.notifier.isRefused(askingFirst: false), "a user who never answered has not refused")
+        #expect(fixture.center.authorizationRequests.isEmpty)
+        #expect(await fixture.notifier.isRefused(askingFirst: true))
+        #expect(fixture.center.authorizationRequests == [[.alert]])
+        #expect(await fixture.notifier.isRefused(askingFirst: false))
+        await fixture.cleanUp()
+    }
+
     @Test func aClickOpensTheModsPageWhileItIsInstalled() async throws {
         let fixture = try Fixture(center: FakeCenter(status: .authorized), notifying: ["vpn": #""Connected""#])
         // A click can be what launched Toolsy: it waits for the mods to load.

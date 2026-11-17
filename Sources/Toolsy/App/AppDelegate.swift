@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Mods' system events and notifications.
     let systemEvents: SystemEventMonitor
     let notifier: ModNotifier
+    /// Toolsy's own preferences and its alerts about the Mac.
+    let settings: AppSettings
+    let alerts: SystemAlerts
 
     private let options: LaunchOptions
     private var statusItem: NSStatusItem?
@@ -52,14 +55,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         privileged = HelperClient()
         #endif
         let store = ModStore(directories: directories, privileged: privileged)
-        dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"),
-                                   hasBattery: !options.simulateNoBattery && BatteryReader.isPresent)
+        let hasBattery = !options.simulateNoBattery && BatteryReader.isPresent
+        dashboard = DashboardStore(file: directories.root.appending(path: "Dashboard.json"), hasBattery: hasBattery)
         mods = ModsModel(store: store, directories: directories, panel: panelState, dashboard: dashboard)
         processes = ProcessMonitor(panel: panelState)
         memoryOptimizer = MemoryOptimizer(helper: privileged, store: store, panel: panelState)
         loginItem = LoginItem(canChange: options.managesLoginItem)
         systemEvents = SystemEventMonitor(observing: { store.observedEvents }, post: { store.post($0) })
         notifier = ModNotifier(center: ModNotifier.center(for: options), mods: mods)
+        settings = AppSettings(file: directories.root.appending(path: "Settings.json"))
+        alerts = SystemAlerts(
+            settings: settings, hasBattery: hasBattery,
+            isReclaimingMemory: { [memoryOptimizer] in memoryOptimizer.isBusy },
+            post: { [notifier] alert, title, body in
+                Task { await notifier.show(title: title, body: body, topic: .alerts, id: alert.rawValue) }
+            },
+            isRefused: { [notifier] askingFirst in await notifier.isRefused(askingFirst: askingFirst) }
+        )
         super.init()
         notifier.openPanel = { [weak self] page in self?.openPanel(on: page) }
         mods.presentPanel = { [weak self] in self?.openPanel(on: nil) }
@@ -96,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Loading mods reads their folders and restarts services; the menu bar icon does not wait for it.
         mods.start()
         systemEvents.start()
+        alerts.start()
         loginItem.registerOnFirstLaunch()
         if options.openAtLaunch {
             // The menu bar places the new status item asynchronously; open once it has a frame.
@@ -124,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isTerminating else { return .terminateLater }
         isTerminating = true
         systemEvents.stop()
+        alerts.stop()
         Task {
             await mods.shutdown(within: .seconds(4))
             NSApp.reply(toApplicationShouldTerminate: true)
@@ -193,7 +207,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makePanelController() -> PanelController {
         let controller = PanelController(state: panelState, options: options, mods: mods, loginItem: loginItem,
-                                         dashboard: dashboard, processes: processes, memoryOptimizer: memoryOptimizer)
+                                         dashboard: dashboard, processes: processes, memoryOptimizer: memoryOptimizer,
+                                         alerts: alerts)
         panelController = controller
         return controller
     }

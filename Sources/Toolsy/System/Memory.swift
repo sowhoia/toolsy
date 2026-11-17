@@ -2,6 +2,15 @@ import Darwin
 
 enum MemoryPressure: Equatable {
     case normal, warning, critical
+
+    /// The kernel's level now.
+    static func read() -> MemoryPressure {
+        switch Sysctl.value("kern.memorystatus_vm_pressure_level", as: Int32.self) {
+        case 4: .critical
+        case 2: .warning
+        default: .normal
+        }
+    }
 }
 
 struct MemoryReading: Equatable {
@@ -44,16 +53,10 @@ struct MemoryReading: Equatable {
         let cachedFiles = (UInt64(stats.external_page_count) + purgeable) * page
         let free = UInt64(stats.free_count) * page
 
-        let pressure: MemoryPressure
-        switch Sysctl.value("kern.memorystatus_vm_pressure_level", as: Int32.self) {
-        case 4: pressure = .critical
-        case 2: pressure = .warning
-        default: pressure = .normal
-        }
         let swap = Sysctl.value("vm.swapusage", as: xsw_usage.self)
         return MemoryReading(
             used: app + wired + compressed, total: total, app: app, wired: wired, compressed: compressed,
-            cachedFiles: cachedFiles, free: free, swapUsed: swap?.xsu_used ?? 0, pressure: pressure
+            cachedFiles: cachedFiles, free: free, swapUsed: swap?.xsu_used ?? 0, pressure: .read()
         )
     }
 }

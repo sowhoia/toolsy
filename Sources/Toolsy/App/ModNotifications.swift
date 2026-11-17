@@ -20,9 +20,23 @@ extension UNUserNotificationCenter: UserNotificationCenter {
 }
 
 /// Shows the notifications mods ask for (`notify` in a patch, already rate-limited by the store) as system
-/// notifications, one group per mod, and opens the panel on the mod's page when the user clicks one.
-/// Permission is asked the first time a mod notifies; while it is refused, notifications are dropped.
+/// notifications, one group per mod, and opens the panel on the mod's page when the user clicks one. Toolsy's own
+/// notifications (`Topic`) go the same way, each kind a group of its own.
+/// Permission is asked the first time a notification arrives; while it is refused, notifications are dropped.
 final class ModNotifier: NSObject {
+    /// Toolsy's own kinds of notification. Each is a group, as a mod is, named so that no mod's id can take it: ids
+    /// have no colon.
+    enum Topic: String {
+        /// Alerts about the Mac; a click opens the dashboard.
+        case alerts = "toolsy:alerts"
+
+        var page: PanelPage {
+            switch self {
+            case .alerts: .root
+            }
+        }
+    }
+
     let center: any UserNotificationCenter
     /// Shows the panel on a page (nil: the page it would open on); set by the app delegate.
     var openPanel: (PanelPage?) -> Void = { _ in }
@@ -63,6 +77,28 @@ final class ModNotifier: NSObject {
         }
     }
 
+    /// Shows one of Toolsy's own notifications. It replaces the one with the same `id` if that is still shown, so
+    /// an alert that comes back is listed once.
+    func show(title: String, body: String, topic: Topic, id: String) async {
+        guard await isAllowed() else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.threadIdentifier = topic.rawValue
+        do {
+            try await center.add(UNNotificationRequest(identifier: "\(topic.rawValue):\(id)", content: content, trigger: nil))
+        } catch {
+            logger.error("\(topic.rawValue, privacy: .public): the notification was not shown: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Whether the user turned Toolsy's notifications off. With `askingFirst`, a user who never answered is asked
+    /// now; without, that counts as not refused.
+    func isRefused(askingFirst: Bool) async -> Bool {
+        if askingFirst { return !(await isAllowed()) }
+        return await center.authorizationStatus() == .denied
+    }
+
     /// Whether notifications may be shown now, asking the user if they never answered.
     private func isAllowed() async -> Bool {
         let allowed: Bool
@@ -88,7 +124,7 @@ final class ModNotifier: NSObject {
             reportedRefusal = false
         } else if !reportedRefusal {
             reportedRefusal = true
-            logger.notice("notifications of mods are dropped: Toolsy may not show notifications")
+            logger.notice("notifications are dropped: Toolsy may not show notifications")
         }
         return allowed
     }
@@ -100,6 +136,15 @@ final class ModNotifier: NSObject {
         // Groups a mod's notifications, and names the mod a click opens.
         content.threadIdentifier = notification.modID
         return UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+    }
+
+    /// A click on a notification of the group `thread`: Toolsy's own open their page, a mod's its page.
+    func open(thread: String) async {
+        if let topic = Topic(rawValue: thread) {
+            openPanel(topic.page)
+        } else {
+            await open(modID: thread)
+        }
     }
 
     /// A click on a notification of `modID`: its page if the mod is still installed, else the panel as it opens.
@@ -119,8 +164,7 @@ extension ModNotifier: UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
-        let modID = response.notification.request.content.threadIdentifier
-        await open(modID: modID)
+        await open(thread: response.notification.request.content.threadIdentifier)
     }
 }
 
@@ -137,7 +181,7 @@ final class LoggedNotifications: UserNotificationCenter {
 
     func add(_ request: UNNotificationRequest) async throws {
         let content = request.content
-        logger.notice("mod \(content.threadIdentifier, privacy: .public) notified: \(content.title, privacy: .public): \(content.body, privacy: .public)")
+        logger.notice("\(content.threadIdentifier, privacy: .public) notified: \(content.title, privacy: .public): \(content.body, privacy: .public)")
         #if DEBUG
         shown.append(request)
         FileHandle.standardOutput.write(Data("SCRIPT NOTIFY \(content.threadIdentifier) “\(content.title)” “\(content.body)”\n".utf8))
