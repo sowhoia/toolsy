@@ -15,10 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Mods' system events and notifications.
     let systemEvents: SystemEventMonitor
     let notifier: ModNotifier
-    /// Toolsy's own preferences, its alerts about the Mac and its check for updates.
+    /// Toolsy's own preferences, its alerts about the Mac, its check for updates and their installation.
     let settings: AppSettings
     let alerts: SystemAlerts
     let updates: UpdateChecker
+    let installer: UpdateInstaller
 
     private let options: LaunchOptions
     private var statusItem: NSStatusItem?
@@ -73,15 +74,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             isRefused: { [notifier] askingFirst in await notifier.isRefused(askingFirst: askingFirst) }
         )
-        updates = UpdateChecker(settings: settings, mayCheckAutomatically: options.checksForUpdates) { [notifier] release in
+        var fetchRelease: () async throws -> (Data, URLResponse) = { try await UpdateCheck.session.data(for: UpdateCheck.request()) }
+        var installation = UpdateInstaller.Environment.running(
+            isBusy: { [panelState, mods, memoryOptimizer] in
+                panelState.dialog != nil || mods.isInstalling || mods.isChangingHelper || memoryOptimizer.isBusy
+            },
+            restart: { [options, panelState] bundle in
+                try AppReplacement.relaunch(bundle, after: getpid(), arguments: options.relaunchArguments(openingPanel: panelState.isVisible))
+                Self.quit()
+            }
+        )
+        #if DEBUG
+        if let feed = options.updateFeed {
+            fetchRelease = DebugUpdateFeed.fetch(feed)
+            installation.trustedKey = DebugUpdateFeed.key(feed)
+            installation.download = DebugUpdateFeed.download(feed)
+        }
+        #endif
+        updates = UpdateChecker(settings: settings, mayCheckAutomatically: options.checksForUpdates, fetch: fetchRelease) { [notifier] release in
             let notification = UpdateCheck.notification(for: release)
             Task { await notifier.show(title: notification.title, body: notification.body, topic: .update, id: release.version.description) }
         }
+        installer = UpdateInstaller(environment: installation)
         super.init()
         notifier.openPanel = { [weak self] page in self?.openPanel(on: page) }
         mods.presentPanel = { [weak self] in self?.openPanel(on: nil) }
-        panelState.addVisibilityHandler { [dashboard] visible in
-            if !visible { dashboard.isEditing = false }  // closing the panel ends editing
+        panelState.addVisibilityHandler { [dashboard, updates] visible in
+            guard !visible else { return }
+            dashboard.isEditing = false  // closing the panel ends editing
+            updates.dismissUpdated()  // the panel has said that Toolsy was updated
         }
     }
 
@@ -215,7 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makePanelController() -> PanelController {
         let controller = PanelController(state: panelState, options: options, mods: mods, loginItem: loginItem,
                                          dashboard: dashboard, processes: processes, memoryOptimizer: memoryOptimizer,
-                                         alerts: alerts, updates: updates)
+                                         alerts: alerts, updates: updates, installer: installer)
         panelController = controller
         return controller
     }

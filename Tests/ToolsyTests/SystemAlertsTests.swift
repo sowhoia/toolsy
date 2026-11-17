@@ -317,6 +317,12 @@ struct AppSettingsTests {
         let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
         #expect(json["version"] as? Int == 1)
         #expect(json["alerts"] as? [String] == ["heat", "memoryPressure"])
+        settings.dismissedUpdate = "1.3.0"
+        settings.lastRunVersion = "1.2.0"
+        let reloaded = AppSettings(file: file)
+        #expect(reloaded.dismissedUpdate == "1.3.0")
+        #expect(reloaded.lastRunVersion == "1.2.0")
+        #expect(reloaded.alerts == [.heat, .memoryPressure])
     }
 
     @Test func aFileThatCannotBeUsedGivesTheDefaultsAndIsLeftAlone() throws {
@@ -326,7 +332,10 @@ struct AppSettingsTests {
         let file = folder.appending(path: "Settings.json")
         for content in [#"{"version": 2, "alerts": ["heat"]}"#, "not json", #"{"alerts": ["heat"]}"#] {
             try Data(content.utf8).write(to: file)
-            #expect(AppSettings(file: file).alerts.isEmpty, "\(content)")
+            let settings = AppSettings(file: file)
+            #expect(settings.alerts.isEmpty, "\(content)")
+            // What Toolsy notes by itself does not replace it either; only a change the user makes does.
+            settings.lastRunVersion = "1.2.0"
             #expect(try String(contentsOf: file, encoding: .utf8) == content)
         }
         // An alert this version does not know is skipped; the others load.

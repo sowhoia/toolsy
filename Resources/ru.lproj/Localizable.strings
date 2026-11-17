@@ -371,16 +371,46 @@
 
 /* Settings: checking for updates */
 "Updates" = "Обновления";
-"Toolsy asks GitHub for its latest release and sends nothing but its own version. Nothing is downloaded or installed by itself." = "Toolsy спрашивает у GitHub о последнем выпуске и не передаёт ничего, кроме номера своей версии. Сам он ничего не загружает и не устанавливает.";
+"Toolsy asks GitHub for its latest release and sends nothing but its own version. An update is downloaded only when you click Update and Restart, and installed only if Toolsy’s developer signed it." = "Toolsy спрашивает у GitHub о последнем выпуске и не передаёт ничего, кроме номера своей версии. Обновление загружается, только когда вы нажмёте «Обновить и перезапустить», и устанавливается, только если его подписал разработчик Toolsy.";
 "Check for Updates Automatically" = "Проверять обновления автоматически";
 "Toolsy is up to date" = "У вас последняя версия Toolsy";
 "Download Update" = "Скачать обновление";
 "Check Now" = "Проверить сейчас";
 "Toolsy %@ is available" = "Доступна версия Toolsy %@";
-"Click to download it in Toolsy’s settings." = "Нажмите, чтобы скачать её в настройках Toolsy.";
+"Click to update." = "Нажмите, чтобы обновить.";
 "Couldn’t reach GitHub. Check the internet connection." = "Не удалось связаться с GitHub. Проверьте подключение к интернету.";
 "GitHub limits how often it can be asked. Try again later." = "GitHub ограничивает частоту запросов. Попробуйте позже.";
 "GitHub’s answer wasn’t understood. Try again later." = "Не удалось разобрать ответ GitHub. Попробуйте позже.";
+
+/* Installing an update */
+"Update and Restart" = "Обновить и перезапустить";
+"What’s New" = "Что нового";
+"You have %@" = "У вас %@";
+"Hide until the next version. Settings still offers this one." = "Скрыть до следующей версии. В настройках это обновление останется.";
+"This release can’t be installed from here. Download it and replace Toolsy in Applications." = "Этот выпуск нельзя установить отсюда. Скачайте его и замените Toolsy в папке «Программы».";
+"Afterwards, macOS asks for your password once to update Toolsy’s helper." = "После этого macOS один раз запросит пароль, чтобы обновить помощник Toolsy.";
+"Downloading Toolsy %@…" = "Загрузка Toolsy %@…";
+"Installing Toolsy %@…" = "Установка Toolsy %@…";
+"Restarting Toolsy…" = "Перезапуск Toolsy…";
+"Toolsy %@ wasn’t installed" = "Toolsy %@ не установлен";
+"%@ of %@" = "%@ из %@";
+"Download progress" = "Ход загрузки";
+"Toolsy checks the update, puts it in place and restarts by itself." = "Toolsy проверит обновление, установит его и перезапустится сам.";
+"The new version opens in a moment." = "Новая версия откроется через несколько секунд.";
+"Try Again" = "Повторить";
+"Toolsy was updated to %@" = "Toolsy обновлён до версии %@";
+"from version %@" = "с версии %@";
+"The download stopped. Check the internet connection and try again." = "Загрузка прервалась. Проверьте подключение к интернету и попробуйте ещё раз.";
+"GitHub didn’t send the update. Try again later." = "GitHub не отдал обновление. Попробуйте позже.";
+"The downloaded file isn’t the update Toolsy’s developer signed. Nothing was changed." = "Загруженный файл — не то обновление, которое подписал разработчик Toolsy. Ничего не изменено.";
+"Toolsy %@ needs macOS %@ or later." = "Для Toolsy %@ нужна macOS %@ или новее.";
+"Toolsy %@ doesn’t run on this Mac." = "Toolsy %@ не работает на этом Mac.";
+"This copy of Toolsy can’t update itself. Download the update instead." = "Эта копия Toolsy не может обновиться сама. Скачайте обновление.";
+"macOS runs this copy of Toolsy from a temporary place. Move Toolsy to the Applications folder and open it from there to update it by itself." = "macOS запускает эту копию Toolsy из временного места. Переместите Toolsy в папку «Программы» и откройте его оттуда — тогда он сможет обновляться сам.";
+"Toolsy can’t update itself on the disk it’s on. Move it to the Applications folder, or download the update." = "На этом диске Toolsy не может обновиться сам. Переместите его в папку «Программы» или скачайте обновление.";
+"You can’t change the folder Toolsy is in. Download the update and replace Toolsy by hand." = "У вас нет прав менять папку, в которой лежит Toolsy. Скачайте обновление и замените Toolsy вручную.";
+"The update couldn’t be installed: %@" = "Не удалось установить обновление: %@";
+"Toolsy was updated but couldn’t restart. Quit Toolsy and open it again." = "Toolsy обновлён, но не смог перезапуститься. Закройте Toolsy и откройте его снова.";
 
 /* Settings: diagnostics for a bug report */
 "Copy Diagnostics" = "Скопировать диагностику";

@@ -12,7 +12,9 @@ private func version(_ tag: String) -> ReleaseVersion {
 }
 
 /// GitHub's answer for the latest release, cut down from a real one: the fields Toolsy reads among others it skips.
-private func answer(tag: String = "v1.2.0", page: String = "https://github.com/sowhoia/toolsy/releases/tag/v1.2.0") -> Data {
+/// Without `assets`, the release has the files `scripts/release.sh` attaches.
+private func answer(tag: String = "v1.2.0", page: String = "https://github.com/sowhoia/toolsy/releases/tag/v1.2.0",
+                    assets: String? = nil) -> Data {
     Data("""
     {
       "url": "https://api.github.com/repos/sowhoia/toolsy/releases/447671848",
@@ -25,9 +27,20 @@ private func answer(tag: String = "v1.2.0", page: String = "https://github.com/s
       "draft": false,
       "prerelease": false,
       "published_at": "2026-11-16T22:01:00Z",
-      "assets": [{"name": "Toolsy-1.2.0.zip", "browser_download_url": "https://github.com/sowhoia/toolsy/releases/download/v1.2.0/Toolsy-1.2.0.zip"}]
+      "assets": \(assets ?? releaseAssets(tag: tag))
     }
     """.utf8)
+}
+
+/// The files of a release as GitHub lists them: the app's archive, its update signature and a mod.
+private func releaseAssets(tag: String, folder: String = "https://github.com/sowhoia/toolsy/releases/download") -> String {
+    let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+    return """
+    [{"name": "Toolsy-\(version).zip", "label": "", "size": 2974702, "content_type": "application/zip",
+      "browser_download_url": "\(folder)/\(tag)/Toolsy-\(version).zip"},
+     {"name": "Toolsy-\(version).zip.sig", "size": 241, "browser_download_url": "\(folder)/\(tag)/Toolsy-\(version).zip.sig"},
+     {"name": "timer.toolsymod", "size": 4375, "browser_download_url": "\(folder)/\(tag)/timer.toolsymod"}]
+    """
 }
 
 struct ReleaseVersionTests {
@@ -94,6 +107,38 @@ struct LatestReleaseTests {
         #expect(failure(answer(page: "http://github.com/sowhoia/toolsy/releases/tag/v1.2.0")) != nil)
         #expect(failure(answer(page: "https://github.com.example.net/toolsy")) != nil)
         #expect(failure(answer(page: "file:///Applications")) != nil)
+    }
+
+    @Test func theAnswerNamesTheFilesToolsyInstalls() throws {
+        let release = try UpdateCheck.release(from: answer(), status: 200)
+        #expect(release.package == UpdatePackage(
+            archive: URL(string: "https://github.com/sowhoia/toolsy/releases/download/v1.2.0/Toolsy-1.2.0.zip")!,
+            signature: URL(string: "https://github.com/sowhoia/toolsy/releases/download/v1.2.0/Toolsy-1.2.0.zip.sig")!,
+            size: 2_974_702
+        ))
+    }
+
+    @Test func aReleaseWithoutBothFilesIsDownloadedFromItsPage() throws {
+        func package(_ assets: String) throws -> UpdatePackage? {
+            try UpdateCheck.release(from: answer(assets: assets), status: 200).package
+        }
+        let archive = #"{"name": "Toolsy-1.2.0.zip", "size": 2974702, "browser_download_url": "https://github.com/sowhoia/toolsy/releases/download/v1.2.0/Toolsy-1.2.0.zip"}"#
+        let signature = #"{"name": "Toolsy-1.2.0.zip.sig", "size": 241, "browser_download_url": "https://github.com/sowhoia/toolsy/releases/download/v1.2.0/Toolsy-1.2.0.zip.sig"}"#
+        #expect(try package("[\(archive), \(signature)]") != nil)
+        // Made by hand, as 1.0.0 was: the archive alone.
+        #expect(try package("[\(archive)]") == nil)
+        #expect(try package("[]") == nil)
+        #expect(try package("null") == nil)
+        // The files of another version.
+        #expect(try UpdateCheck.release(from: answer(tag: "v1.3.0", assets: "[\(archive), \(signature)]"), status: 200).package == nil)
+        // Files kept anywhere but this repository's releases, or not over HTTPS.
+        for folder in ["https://github.com/someone/toolsy/releases/download", "http://github.com/sowhoia/toolsy/releases/download",
+                       "https://objects.githubusercontent.com/sowhoia/toolsy/releases/download"] {
+            #expect(try package(releaseAssets(tag: "v1.2.0", folder: folder)) == nil, "\(folder)")
+        }
+        // A file with fields missing spoils nothing else; one that says it is empty is no file.
+        #expect(try package(#"[{"label": "notes"}, \#(archive), \#(signature)]"#) != nil)
+        #expect(try package("[\(archive.replacingOccurrences(of: "2974702", with: "0")), \(signature)]") == nil)
     }
 
     @Test func connectionErrorsMeanOffline() {
@@ -175,11 +220,11 @@ private final class UpdatesFixture {
         checker = UpdatesFixture.checker(settings: settings, recorder: recorder, running: running, mayCheckAutomatically: mayCheckAutomatically)
     }
 
-    /// Toolsy launched again on the same settings file.
-    func relaunch() {
+    /// Toolsy launched again on the same settings file, in `running` (updated or not).
+    func relaunch(running: String = "1.1.0") {
         checker.stop()
         settings = AppSettings(file: file)
-        checker = UpdatesFixture.checker(settings: settings, recorder: recorder, running: "1.1.0", mayCheckAutomatically: true)
+        checker = UpdatesFixture.checker(settings: settings, recorder: recorder, running: running, mayCheckAutomatically: true)
     }
 
     private static func checker(settings: AppSettings, recorder: UpdatesRecorder, running: String, mayCheckAutomatically: Bool) -> UpdateChecker {
@@ -286,6 +331,32 @@ struct UpdateCheckerTests {
         await next.work()
         await next.work()
         #expect(fixture.recorder.announced == ["1.2.0", "1.3.0"])
+        fixture.cleanUp()
+    }
+
+    @Test func aNewerVersionSaysOnceThatToolsyWasUpdated() {
+        let fixture = UpdatesFixture()
+        #expect(fixture.checker.updatedFrom == nil, "the first run knows of no version before it")
+        fixture.relaunch(running: "1.2.0")
+        #expect(fixture.checker.updatedFrom == version("1.1.0"))
+        fixture.checker.dismissUpdated()
+        #expect(fixture.checker.updatedFrom == nil)
+        fixture.relaunch(running: "1.2.0")
+        #expect(fixture.checker.updatedFrom == nil, "said once")
+        fixture.relaunch(running: "1.1.0")
+        #expect(fixture.checker.updatedFrom == nil, "going back is no update")
+        fixture.cleanUp()
+    }
+
+    @Test func anOfferPutAwayOnTheDashboardComesBackWithANewerVersion() throws {
+        let fixture = UpdatesFixture()
+        let release = try UpdateCheck.release(from: answer(), status: 200)
+        #expect(fixture.checker.isOfferedOnDashboard(release))
+        fixture.checker.putAwayOffer(of: release)
+        #expect(!fixture.checker.isOfferedOnDashboard(release))
+        fixture.relaunch()
+        #expect(!fixture.checker.isOfferedOnDashboard(release), "the choice is saved")
+        #expect(fixture.checker.isOfferedOnDashboard(try UpdateCheck.release(from: answer(tag: "v1.3.0"), status: 200)))
         fixture.cleanUp()
     }
 

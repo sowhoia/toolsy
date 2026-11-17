@@ -35,6 +35,8 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>ToolsyUpdatePublicKey</key>
+	<string>K5YMlIt9xYWhHWjBLxnx1gSJR8ltnI2naIBXf72dx5E=</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

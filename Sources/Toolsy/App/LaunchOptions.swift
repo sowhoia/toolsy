@@ -17,6 +17,7 @@ import ToolsyShared
 ///                            the current user and never shows the administrator prompt
 ///     --script <file>        run a scripted session (see DebugScript); the panel never becomes key
 ///                            unless the script asks for typing
+///     --update-feed <folder> look for updates in <folder> instead of on GitHub (see DebugUpdateFeed)
 struct LaunchOptions {
     var openAtLaunch = false
     var keepOpen = false
@@ -27,6 +28,7 @@ struct LaunchOptions {
     var dataRoot: URL?
     var simulateHelper = false
     var script: URL?
+    var updateFeed: URL?
     #endif
 
     /// Unknown `--` arguments are reported on stderr and otherwise ignored; arguments AppKit
@@ -68,6 +70,12 @@ struct LaunchOptions {
                 } else {
                     Self.warn("--script expects a file")
                 }
+            case "--update-feed":
+                if let path = remaining.popFirst() {
+                    updateFeed = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL
+                } else {
+                    Self.warn("--update-feed expects a folder")
+                }
             #endif
             case let other where other.hasPrefix("--"):
                 Self.warn("unknown argument \(other)")
@@ -102,6 +110,24 @@ struct LaunchOptions {
         #else
         return true
         #endif
+    }
+
+    /// The arguments that start the app again as this run was started, for the restart after an update; with
+    /// `openingPanel` the panel opens at once, as it was open when the update began. A debug run keeps its scratch data
+    /// and stand-ins, so the new version never touches the owner's mods.
+    func relaunchArguments(openingPanel: Bool) -> [String] {
+        var arguments: [String] = []
+        if openingPanel { arguments.append("--open") }
+        if keepOpen { arguments.append("--keep-open") }
+        if let appearance { arguments += ["--appearance", appearance == .darkAqua ? "dark" : "light"] }
+        if simulateNoBattery { arguments.append("--simulate-no-battery") }
+        #if DEBUG
+        if let dataRoot { arguments += ["--data-root", dataRoot.path(percentEncoded: false)] }
+        if simulateHelper { arguments.append("--simulate-helper") }
+        if let script { arguments += ["--script", script.path(percentEncoded: false)] }
+        if let updateFeed { arguments += ["--update-feed", updateFeed.path(percentEncoded: false)] }
+        #endif
+        return arguments
     }
 
     private static func warn(_ message: String) {

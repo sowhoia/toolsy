@@ -5,7 +5,7 @@ import ToolsyShared
 
 private let logger = Logger(subsystem: ToolsyPaths.bundleIdentifier, category: "settings")
 
-/// Toolsy's own choices beyond the dashboard and developer mode: the alerts about the Mac and the update check.
+/// Toolsy's own choices beyond the dashboard and developer mode: the alerts about the Mac and updates.
 /// Saved in `Settings.json` in the data root after every change, so a debug run on scratch data neither sees nor
 /// changes the user's. One instance lives for the life of the app.
 ///
@@ -30,14 +30,31 @@ final class AppSettings {
         didSet { if announcedVersion != oldValue { save() } }
     }
 
+    /// The version whose offer the user put away on the dashboard; Settings still offers it, and a newer one is offered
+    /// everywhere again.
+    var dismissedUpdate: String? {
+        didSet { if dismissedUpdate != oldValue { save() } }
+    }
+
+    /// The version of Toolsy that ran last, so that a newer one can say it was updated. Toolsy notes it by itself, so
+    /// noting it never replaces a file this version cannot use; a change the user makes does.
+    var lastRunVersion: String? {
+        didSet { if lastRunVersion != oldValue, !keepsUnusableFile { save() } }
+    }
+
     @ObservationIgnored let file: URL
+    /// A file is there that could not be used: damaged, or from a newer Toolsy.
+    @ObservationIgnored private let keepsUnusableFile: Bool
 
     init(file: URL) {
         self.file = file
         let saved = Self.load(file)
+        keepsUnusableFile = saved == nil && FileManager.default.fileExists(atPath: file.path(percentEncoded: false))
         alerts = saved?.alerts ?? []
         checksForUpdates = saved?.checksForUpdates ?? true
         announcedVersion = saved?.announcedVersion
+        dismissedUpdate = saved?.dismissedUpdate
+        lastRunVersion = saved?.lastRunVersion
     }
 
     // MARK: File
@@ -49,16 +66,21 @@ final class AppSettings {
         var alerts: Set<MacAlert>
         var checksForUpdates: Bool
         var announcedVersion: String?
+        var dismissedUpdate: String?
+        var lastRunVersion: String?
 
         private enum CodingKeys: String, CodingKey {
-            case version, alerts, checksForUpdates, announcedVersion
+            case version, alerts, checksForUpdates, announcedVersion, dismissedUpdate, lastRunVersion
         }
 
-        init(version: Int, alerts: Set<MacAlert>, checksForUpdates: Bool, announcedVersion: String?) {
+        init(version: Int, alerts: Set<MacAlert>, checksForUpdates: Bool, announcedVersion: String?, dismissedUpdate: String?,
+             lastRunVersion: String?) {
             self.version = version
             self.alerts = alerts
             self.checksForUpdates = checksForUpdates
             self.announcedVersion = announcedVersion
+            self.dismissedUpdate = dismissedUpdate
+            self.lastRunVersion = lastRunVersion
         }
 
         init(from decoder: any Decoder) throws {
@@ -67,6 +89,8 @@ final class AppSettings {
             alerts = Set(try container.decodeIfPresent([String].self, forKey: .alerts)?.compactMap(MacAlert.init(rawValue:)) ?? [])
             checksForUpdates = try container.decodeIfPresent(Bool.self, forKey: .checksForUpdates) ?? true
             announcedVersion = try container.decodeIfPresent(String.self, forKey: .announcedVersion)
+            dismissedUpdate = try container.decodeIfPresent(String.self, forKey: .dismissedUpdate)
+            lastRunVersion = try container.decodeIfPresent(String.self, forKey: .lastRunVersion)
         }
 
         func encode(to encoder: any Encoder) throws {
@@ -75,6 +99,8 @@ final class AppSettings {
             try container.encode(alerts.map(\.rawValue).sorted(), forKey: .alerts)
             try container.encode(checksForUpdates, forKey: .checksForUpdates)
             try container.encodeIfPresent(announcedVersion, forKey: .announcedVersion)
+            try container.encodeIfPresent(dismissedUpdate, forKey: .dismissedUpdate)
+            try container.encodeIfPresent(lastRunVersion, forKey: .lastRunVersion)
         }
     }
 
@@ -84,7 +110,7 @@ final class AppSettings {
 
     private func save() {
         let saved = SavedSettings(version: Self.version, alerts: alerts, checksForUpdates: checksForUpdates,
-                                  announcedVersion: announcedVersion)
+                                  announcedVersion: announcedVersion, dismissedUpdate: dismissedUpdate, lastRunVersion: lastRunVersion)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {

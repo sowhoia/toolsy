@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The page the panel opens on: the dashboard and the list of mods, or, while the dashboard is being
-/// edited, the dashboard and its editing tools.
+/// The page the panel opens on: an update when there is one, the dashboard and the list of mods, or, while the
+/// dashboard is being edited, the dashboard and its editing tools.
 struct RootPage: View {
     @Environment(PanelState.self) private var panel
     @Environment(DashboardStore.self) private var dashboard
@@ -9,6 +9,9 @@ struct RootPage: View {
 
     var body: some View {
         PageScaffold("Toolsy") {
+            if !dashboard.isEditing {
+                UpdateBanner()
+            }
             DashboardView()
                 .zIndex(1)  // a dragged tile floats above the editing tools
             if dashboard.isEditing {

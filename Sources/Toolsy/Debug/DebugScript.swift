@@ -29,6 +29,8 @@ import ToolsyShared
 ///               deviceline on|off
 ///     event launch|wake|network|power                     notifications
 ///     developer on|off               (developer mode, as the switch in Settings sets it)
+///     update check|install|wait|print (Check Now; start installing the release found; wait until that has
+///                                     failed or restarts Toolsy; print what the check found and the installation)
 ///
 /// Pages are root, settings, gallery and mod:<id>. Anchors are the names given with `debugAnchor`
 /// (`tile:<id>`, `widget:<widget>`, `widget-remove:<widget>`, `gallery:<widget>`, `edit-widgets`, `edit-done`,
@@ -321,6 +323,25 @@ private final class Runner {
             guard rest == "on" || rest == "off" else { throw ScriptError("developer on|off") }
             mods.developerMode = rest == "on"
             try await Task.sleep(for: .milliseconds(300))
+        case "update":
+            switch rest {
+            case "check":
+                await app.updates.checkNow()
+                printUpdate()
+            case "install":
+                guard case .available(let release) = app.updates.status else {
+                    say("UPDATE nothing to install")
+                    return
+                }
+                app.installer.install(release)
+            case "wait":
+                await app.installer.waitUntilDone()
+                printUpdate()
+            case "print":
+                printUpdate()
+            default:
+                throw ScriptError("update check|install|wait|print")
+            }
         case "print":
             say(rest)
         case "quit":
@@ -632,6 +653,12 @@ private final class Runner {
     }
 
     // MARK: Output
+
+    func printUpdate() {
+        let phase = app.installer.installation.map { "\($0.release.version) \($0.phase)" } ?? "none"
+        let updated = app.updates.updatedFrom.map { "from \($0)" } ?? "no"
+        say("UPDATE running=\(app.updates.running) status=\(app.updates.status) installation=\(phase) updated=\(updated)")
+    }
 
     func say(_ message: String) {
         FileHandle.standardOutput.write(Data("SCRIPT \(message)\n".utf8))

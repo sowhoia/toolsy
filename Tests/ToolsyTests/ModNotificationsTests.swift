@@ -141,7 +141,7 @@ struct ModNotifierTests {
         let fixture = try Fixture(center: FakeCenter(status: .authorized), notifying: [:])
         await fixture.notifier.show(title: "Memory pressure is high", body: "Apps may slow down.", topic: .alerts, id: "memoryPressure")
         await fixture.notifier.show(title: "Memory pressure is high", body: "Apps may slow down.", topic: .alerts, id: "memoryPressure")
-        await fixture.notifier.show(title: "Toolsy 1.2.0 is available", body: "Click to download it.", topic: .update, id: "1.2.0")
+        await fixture.notifier.show(title: "Toolsy 1.2.0 is available", body: "Click to update.", topic: .update, id: "1.2.0")
         let added = fixture.center.added
         #expect(added.map(\.content.threadIdentifier) == ["toolsy:alerts", "toolsy:alerts", "toolsy:update"])
         #expect(added.map(\.identifier) == ["toolsy:alerts:memoryPressure", "toolsy:alerts:memoryPressure", "toolsy:update:1.2.0"],
@@ -155,7 +155,8 @@ struct ModNotifierTests {
         await fixture.notifier.open(thread: "toolsy:alerts")
         await fixture.notifier.open(thread: "toolsy:update")
         await fixture.notifier.open(thread: "gone")
-        #expect(fixture.opened == [.root, .settings, nil])
+        // A new version is offered on the dashboard, where the panel opens.
+        #expect(fixture.opened == [.root, .root, nil])
         await fixture.cleanUp()
     }
 

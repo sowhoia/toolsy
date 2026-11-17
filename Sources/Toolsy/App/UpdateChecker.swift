@@ -6,7 +6,7 @@ private let logger = Logger(subsystem: ToolsyPaths.bundleIdentifier, category: "
 
 /// A version of Toolsy as its releases are tagged: "1.2.0", "v1.10.0", "1.2.0-beta.1". Ordered as semantic
 /// versions: number by number, and a pre-release before the release it leads to.
-struct ReleaseVersion: Comparable, CustomStringConvertible {
+nonisolated struct ReleaseVersion: Comparable, CustomStringConvertible, Sendable {
     /// Major, minor, patch.
     let numbers: [Int]
     /// The dot-separated identifiers after a hyphen; empty for a release.
@@ -57,7 +57,7 @@ struct ReleaseVersion: Comparable, CustomStringConvertible {
     }
 }
 
-private extension Character {
+private nonisolated extension Character {
     var isASCIIDigit: Bool { ("0"..."9").contains(self) }
     var isASCIILetter: Bool { ("a"..."z").contains(self) || ("A"..."Z").contains(self) }
 }
@@ -65,8 +65,22 @@ private extension Character {
 /// The latest release of Toolsy on GitHub.
 struct LatestRelease: Equatable {
     let version: ReleaseVersion
-    /// The release's page, where it is downloaded.
+    /// The release's page, where it is downloaded by hand.
     let page: URL
+    /// What Toolsy installs by itself; nil for a release without it, which is downloaded from its page.
+    let package: UpdatePackage?
+}
+
+/// The files of a release that Toolsy installs by itself, as `scripts/release.sh` makes them: the app archive and the
+/// release key's signature of it.
+struct UpdatePackage: Equatable {
+    let archive: URL
+    let signature: URL
+    /// The archive's size as GitHub reports it, to say how much the update downloads. The signed size is what is checked.
+    let size: Int64
+
+    static func archiveName(for version: ReleaseVersion) -> String { "Toolsy-\(version).zip" }
+    static func signatureName(for version: ReleaseVersion) -> String { archiveName(for: version) + ".sig" }
 }
 
 /// Why a check for updates failed.
@@ -103,15 +117,17 @@ enum UpdateCheck {
         return request
     }
 
-    /// No cookies, cache or credentials: nothing is kept from one check to the next.
-    static let session: URLSession = {
+    /// No cookies, cache or credentials: nothing is kept from one request to the next. Downloads of an update use it too.
+    nonisolated static func configuration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
         configuration.urlCache = nil
-        return URLSession(configuration: configuration)
-    }()
+        return configuration
+    }
+
+    static let session = URLSession(configuration: configuration())
 
     /// The release in GitHub's answer: `tag_name` must be a version and `html_url` a page on GitHub.
     static func release(from data: Data, status: Int) throws(UpdateCheckError) -> LatestRelease {
@@ -120,16 +136,51 @@ enum UpdateCheck {
         case 403, 429: throw .rateLimited
         default: throw .unexpected("HTTP status \(status)")
         }
-        struct Answer: Decodable {
-            var tag_name: String
-            var html_url: String
-        }
         guard let answer = try? JSONDecoder().decode(Answer.self, from: data) else { throw .unexpected("not a release") }
         guard let version = ReleaseVersion(answer.tag_name) else { throw .unexpected("tag \(answer.tag_name) is no version") }
         guard let page = URL(string: answer.html_url), page.scheme == "https", page.host() == "github.com" else {
             throw .unexpected("page \(answer.html_url) is not on GitHub")
         }
-        return LatestRelease(version: version, page: page)
+        let package = package(in: answer.assets ?? [], of: version)
+        if package == nil {
+            logger.notice("release \(version.description, privacy: .public) has no update package; it can only be downloaded from its page")
+        }
+        return LatestRelease(version: version, page: page, package: package)
+    }
+
+    private struct Answer: Decodable {
+        var tag_name: String
+        var html_url: String
+        var assets: [Asset]?
+    }
+
+    /// A file attached to the release. Every field may be missing: a file Toolsy does not need must not spoil the answer.
+    private struct Asset: Decodable {
+        var name: String?
+        var browser_download_url: String?
+        var size: Int64?
+    }
+
+    /// The archive and its signature among the release's files, each a download of this repository's releases.
+    private static func package(in assets: [Asset], of version: ReleaseVersion) -> UpdatePackage? {
+        func download(named name: String) -> (url: URL, size: Int64)? {
+            guard let asset = assets.first(where: { $0.name == name }), let link = asset.browser_download_url,
+                  let url = URL(string: link), isReleaseDownload(url), let size = asset.size, size > 0 else { return nil }
+            return (url, size)
+        }
+        guard let archive = download(named: UpdatePackage.archiveName(for: version)),
+              let signature = download(named: UpdatePackage.signatureName(for: version)) else { return nil }
+        return UpdatePackage(archive: archive.url, signature: signature.url, size: archive.size)
+    }
+
+    /// The page of the release of `version`, as GitHub names it by its tag.
+    static func page(of version: ReleaseVersion) -> URL {
+        URL(string: "https://github.com/sowhoia/toolsy/releases/tag/v\(version)")!
+    }
+
+    /// A file of one of this repository's releases, over HTTPS.
+    static func isReleaseDownload(_ url: URL) -> Bool {
+        url.scheme == "https" && url.host() == "github.com" && url.path().hasPrefix("/sowhoia/toolsy/releases/download/")
     }
 
     /// What an error of the request means: offline for every error of a missing or broken connection.
@@ -152,10 +203,10 @@ enum UpdateCheck {
         return release.version > announced
     }
 
-    /// The notification of a new version, which opens Settings when clicked.
+    /// The notification of a new version, which opens the panel on the offer to update when clicked.
     static func notification(for release: LatestRelease) -> (title: String, body: String) {
         (String(localized: "Toolsy \(release.version.description) is available"),
-         String(localized: "Click to download it in Toolsy’s settings."))
+         String(localized: "Click to update."))
     }
 }
 
@@ -164,10 +215,10 @@ protocol ScheduledActivity: AnyObject {
     func invalidate()
 }
 
-/// Looks for a new version of Toolsy on GitHub. It downloads and installs nothing: Settings shows a new version
-/// with a button that opens its page. While the setting is on, a check runs shortly after launch and then about
-/// once a day, and a newly found version is announced once by a notification; with it off nothing is scheduled.
-/// Only a check the user asked for reports a failure; an automatic one logs it.
+/// Looks for a new version of Toolsy on GitHub; `UpdateInstaller` installs one when the user asks. While the setting is
+/// on, a check runs shortly after launch and then about once a day, and a newly found version is announced once by a
+/// notification; with it off nothing is scheduled. Only a check the user asked for reports a failure; an automatic one
+/// logs it. It also remembers the version that ran last, to say once that Toolsy was updated.
 @Observable
 final class UpdateChecker {
     enum Status: Equatable {
@@ -186,6 +237,9 @@ final class UpdateChecker {
 
     private(set) var status: Status = .idle
 
+    /// The version that ran before this one, when Toolsy was updated since: the panel says so until it is dismissed.
+    private(set) var updatedFrom: ReleaseVersion?
+
     var checksAutomatically: Bool {
         get { settings.checksForUpdates }
         set {
@@ -195,7 +249,8 @@ final class UpdateChecker {
     }
 
     @ObservationIgnored private let settings: AppSettings
-    @ObservationIgnored private let running: ReleaseVersion
+    /// The version of this run.
+    @ObservationIgnored let running: ReleaseVersion
     @ObservationIgnored private let mayCheckAutomatically: Bool
     @ObservationIgnored private let fetch: () async throws -> (Data, URLResponse)
     @ObservationIgnored private let announce: (LatestRelease) -> Void
@@ -214,6 +269,10 @@ final class UpdateChecker {
         self.fetch = fetch
         self.announce = announce
         self.schedule = schedule
+        if let last = settings.lastRunVersion.flatMap(ReleaseVersion.init), last < running {
+            updatedFrom = last
+        }
+        settings.lastRunVersion = running.description
     }
 
     func start() {
@@ -279,6 +338,25 @@ final class UpdateChecker {
 
     func openPage(of release: LatestRelease) {
         NSWorkspace.shared.open(release.page)
+    }
+
+    /// The page of the running version, whose notes say what the update brought.
+    func openRunningVersionPage() {
+        NSWorkspace.shared.open(UpdateCheck.page(of: running))
+    }
+
+    func dismissUpdated() {
+        updatedFrom = nil
+    }
+
+    /// Whether the dashboard offers `release`: the user can put the offer away there until a newer version comes.
+    func isOfferedOnDashboard(_ release: LatestRelease) -> Bool {
+        guard let dismissed = settings.dismissedUpdate.flatMap(ReleaseVersion.init) else { return true }
+        return release.version > dismissed
+    }
+
+    func putAwayOffer(of release: LatestRelease) {
+        settings.dismissedUpdate = release.version.description
     }
 
     private func latestRelease() async -> Result<LatestRelease, UpdateCheckError> {

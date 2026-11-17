@@ -24,7 +24,7 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     init(state: PanelState, options: LaunchOptions, mods: ModsModel, loginItem: LoginItem,
          dashboard: DashboardStore, processes: ProcessMonitor, memoryOptimizer: MemoryOptimizer, alerts: SystemAlerts,
-         updates: UpdateChecker) {
+         updates: UpdateChecker, installer: UpdateInstaller) {
         self.state = state
         self.dashboard = dashboard
         keepOpen = options.keepOpen
@@ -58,6 +58,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             .environment(memoryOptimizer)
             .environment(alerts)
             .environment(updates)
+            .environment(installer)
         let hosting = PanelHostingView(rootView: root)
         // The window keeps the frame of its placement; the content never resizes it.
         hosting.sizingOptions = []
