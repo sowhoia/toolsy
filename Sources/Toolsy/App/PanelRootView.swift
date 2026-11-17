@@ -18,6 +18,9 @@ struct PanelRootView: View {
             .opacity(panel.dialog == nil ? 1 : 0.35)
             .blur(radius: panel.dialog == nil || reduceMotion ? 0 : 2)
             .allowsHitTesting(panel.dialog == nil)
+            // Its keyboard shortcuts too: Return would also press the page's default button (Done while the
+            // dashboard is edited), and ⌘[ would go back underneath the dialog. The dialog stays enabled.
+            .disabled(panel.dialog != nil)
             .accessibilityHidden(panel.dialog != nil)
             .overlay {
                 if panel.isDropTargeted {
