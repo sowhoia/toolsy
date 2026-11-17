@@ -136,3 +136,40 @@ struct PrimaryInterfaceTests {
         #expect(known.reads == 3)
     }
 }
+
+struct BatteryHealthTests {
+    /// The `AppleSmartBattery` entry of an Apple silicon MacBook (`ioreg -rn AppleSmartBattery`).
+    private let entry: [String: Int64] = ["DesignCapacity": 4629, "NominalChargeCapacity": 4399, "AppleRawMaxCapacity": 4272,
+                                          "MaxCapacity": 100, "CycleCount": 150]
+
+    @Test func maximumCapacityIsTheFullChargeOverTheDesignCapacity() {
+        #expect(BatteryReader.maximumCapacity { entry[$0] } == 4399.0 / 4629)
+        var raw = entry
+        raw["NominalChargeCapacity"] = nil
+        #expect(BatteryReader.maximumCapacity { raw[$0] } == 4272.0 / 4629, "without the normalized figure, the raw one")
+        // A new battery may hold a little more than it was designed for.
+        let new: [String: Int64] = ["DesignCapacity": 4629, "NominalChargeCapacity": 4700]
+        #expect(BatteryReader.maximumCapacity { new[$0] } == 4700.0 / 4629)
+    }
+
+    @Test func withoutBothCapacitiesItIsUnknown() {
+        let entries: [[String: Int64]] = [
+            ["DesignCapacity": 4629, "MaxCapacity": 100],  // only a percentage of the full charge
+            ["NominalChargeCapacity": 4399, "AppleRawMaxCapacity": 4272],
+            ["DesignCapacity": 0, "NominalChargeCapacity": 4399],
+            ["DesignCapacity": 4629, "NominalChargeCapacity": 0],
+            [:],
+        ]
+        for entry in entries {
+            #expect(BatteryReader.maximumCapacity { entry[$0] } == nil, "\(entry)")
+        }
+    }
+
+    @Test(.enabled("on a Mac with a battery") { await BatteryReader.isPresent })
+    func thisMacReportsItsBatteryHealth() throws {
+        let reading = try #require(BatteryReader().read())
+        let capacity = try #require(reading.maximumCapacity)
+        #expect((0.3...1.2).contains(capacity))
+        #expect(reading.cycleCount != nil)
+    }
+}

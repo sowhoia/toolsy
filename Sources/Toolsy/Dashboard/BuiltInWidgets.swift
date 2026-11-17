@@ -195,12 +195,25 @@ private struct BatteryDetail: View {
                         .foregroundStyle(.secondary)
                 }
                 LevelBar(fraction: Double(battery.percent) / 100, tint: batteryTint(battery), height: 6)
-                HStack(spacing: 12) {
-                    DetailFact(label: timeLabel(battery), value: time(battery) ?? "—")
-                    DetailFact(label: battery.watts.map { $0 >= 0 ? String(localized: "Charging power") : String(localized: "Power draw") }
-                                   ?? String(localized: "Power draw"),
-                               value: battery.watts.map(Format.watts) ?? "—")
-                    DetailFact(label: String(localized: "Cycles"), value: battery.cycleCount.map { "\($0)" } ?? "—")
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                    GridRow {
+                        DetailFact(label: timeLabel(battery), value: time(battery) ?? "—")
+                        DetailFact(label: battery.watts.map { $0 >= 0 ? String(localized: "Charging power") : String(localized: "Power draw") }
+                                       ?? String(localized: "Power draw"),
+                                   value: battery.watts.map(Format.watts) ?? "—")
+                    }
+                    // The battery's health, where it reports it.
+                    if battery.cycleCount != nil || battery.maximumCapacity != nil {
+                        GridRow {
+                            if let cycles = battery.cycleCount {
+                                DetailFact(label: String(localized: "Cycles"), value: "\(cycles)")
+                            }
+                            if let capacity = battery.maximumCapacity {
+                                DetailFact(label: String(localized: "Maximum capacity"), value: Format.percent(capacity))
+                                    .help(String(localized: "What the battery holds when full, compared with when it was new"))
+                            }
+                        }
+                    }
                 }
             }
         }

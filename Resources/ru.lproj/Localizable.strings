@@ -349,3 +349,7 @@
 
 /* Memory detail: the file cache an optimisation cleared, apart from what it freed */
 "Cached files: %@ → %@" = "Кэш файлов: %@ → %@";
+
+/* Battery detail: the battery's health */
+"Maximum capacity" = "Максимальная ёмкость";
+"What the battery holds when full, compared with when it was new" = "Сколько вмещает полностью заряженный аккумулятор по сравнению с новым";

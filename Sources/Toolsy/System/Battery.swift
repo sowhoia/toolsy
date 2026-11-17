@@ -11,12 +11,14 @@ struct BatteryReading: Equatable {
     var minutesToEmpty: Int?
     var minutesToFull: Int?
     var cycleCount: Int?
+    /// The charge the battery holds when full, as a fraction of what it held new (its design capacity).
+    var maximumCapacity: Double?
     /// Power flowing out of (negative) or into (positive) the battery, in watts.
     var watts: Double?
 }
 
 /// Reads the internal battery from IOKit power sources (charge, state, estimates) and the
-/// `AppleSmartBattery` registry entry (cycle count, voltage and current).
+/// `AppleSmartBattery` registry entry (cycle count, capacity, voltage and current).
 final class BatteryReader {
     private let service: io_service_t
 
@@ -52,8 +54,20 @@ final class BatteryReader {
             minutesToEmpty: minutes(kIOPSTimeToEmptyKey),
             minutesToFull: minutes(kIOPSTimeToFullChargeKey),
             cycleCount: property("CycleCount").map(Int.init),
+            maximumCapacity: Self.maximumCapacity(property),
             watts: voltage.flatMap { volts in amperage.map { Double(volts) * Double($0) / 1_000_000 } }
         )
+    }
+
+    /// The full charge capacity as a fraction of the design capacity, from the properties of the
+    /// `AppleSmartBattery` entry: its normalized full charge capacity, else the raw one, both in mAh like
+    /// the design capacity. Its `MaxCapacity` is no use: on Apple silicon it is the top of the charge's
+    /// percentage scale, always 100. Nil when the battery does not report them. Not clamped: a new battery
+    /// may hold a little more than it was designed for.
+    static func maximumCapacity(_ property: (String) -> Int64?) -> Double? {
+        guard let design = property("DesignCapacity"), design > 0,
+              let full = property("NominalChargeCapacity") ?? property("AppleRawMaxCapacity"), full > 0 else { return nil }
+        return Double(full) / Double(design)
     }
 
     /// The power source description of the internal battery.
