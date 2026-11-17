@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to a pull request makes the run of the older one pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: ShellCheck
+        run: |
+          command -v shellcheck > /dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install shellcheck
+          shellcheck --version
+          shellcheck -x scripts/*.sh Mods/*/*.sh Mods/*/scripts/*.sh
+
+      - name: Test the app
+        run: swift test
+
+      - name: Test ToolsyShared
+        working-directory: Packages/ToolsyShared
+        run: swift test
+
+      - name: Test ToolsyEngine
+        working-directory: Packages/ToolsyEngine
+        run: swift test
+
+      - name: Test ToolsyPrivileged
+        working-directory: Packages/ToolsyPrivileged
+        run: swift test
+
+      # These tests only parse settings; nothing in them runs the program or touches the firewall.
+      - name: Test vpn-protector's settings
+        working-directory: Mods/vpn-protector
+        run: swift test
+
+      - name: Pack and validate every mod
+        run: scripts/build-mods.sh
+
+      # Each test.sh runs its mod's commands the way Toolsy does. vpn-protector changes the firewall,
+      # so its commands never run here.
+      - name: Run the mods' commands
+        run: |
+          for test in Mods/*/test.sh; do
+            case $test in Mods/vpn-protector/*) continue ;; esac
+            echo "::group::$test"
+            "$test"
+            echo "::endgroup::"
+          done
+
+      - name: Build the app, universal and signed ad hoc
+        run: |
+          scripts/build-app.sh
+          for binary in build/Toolsy.app/Contents/MacOS/Toolsy build/Toolsy.app/Contents/Helpers/ToolsyHelper \
+            build/Toolsy.app/Contents/Helpers/toolsy-mod; do
+            lipo -info "$binary"
+            lipo "$binary" -verify_arch arm64 x86_64
+          done
