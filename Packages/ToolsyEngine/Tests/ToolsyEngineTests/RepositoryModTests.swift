@@ -72,6 +72,41 @@ import Testing
         }
     }
 
+    /// Toolsy's `PATH` searches Homebrew's folders first, so a bare `jq` may run another version the user installed;
+    /// MOD_AUTHORING_FOR_AI.md requires `/usr/bin/jq`, and mod authors copy these mods. Comments may name it.
+    @Test func callsJqByItsAbsolutePath() throws {
+        var sources: [(place: String, code: String)] = []
+        let files = try #require(FileManager.default.enumerator(
+            at: Self.modsFolder, includingPropertiesForKeys: [.isRegularFileKey], options: .skipsHiddenFiles
+        ))
+        for case let file as URL in files {
+            // What build.sh stages and packs is a copy, possibly of an older version.
+            if file.lastPathComponent == "build" {
+                files.skipDescendants()
+                continue
+            }
+            guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true,
+                  let text = try? String(contentsOf: file, encoding: .utf8),
+                  file.pathExtension == "sh" || text.hasPrefix("#!/bin/sh") || text.hasPrefix("#!/bin/bash") else { continue }
+            sources.append((file.path(percentEncoded: false), text))
+        }
+        for name in Self.mods {
+            for (command, definition) in try Self.manifest(of: name).commands {
+                if case .shell(let script) = definition.program {
+                    sources.append(("\(name)/mod.json commands.\(command).shell", script))
+                }
+            }
+        }
+        #expect(sources.count > 10, "\(sources.map(\.place))")
+        for (place, code) in sources {
+            for (index, line) in code.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                let statement = line.replacing(/(^|\s)#.*/, with: "")
+                // `jq` as a word of its own: not /usr/bin/jq, $jq, ${jq}, jq=, patch.jq.
+                #expect(!statement.contains(/(^|[^\w\/.${-])jq([^\w.=-]|$)/), "\(place):\(index + 1) calls jq by name: \(line)")
+            }
+        }
+    }
+
     /// Whether a text reads differently in another language: what it shows of its own (the text around its
     /// placeholders and the texts of `default`, `either` and `join`) has two lowercase letters in a row.
     /// `IPv4`, `DNS` or `{{ip}}` read the same everywhere.

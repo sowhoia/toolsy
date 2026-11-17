@@ -66,11 +66,11 @@ settle() {
     while [ "$running" = true ] && [ "$now" -ge "$ends" ]; do
         if [ "$phase" = work ]; then
             phase=break ends=$((ends + rest * 60))
-            notice=$(jq -n -c --arg title "$(say "Time for a break" "Пора отдохнуть")" \
+            notice=$(/usr/bin/jq -n -c --arg title "$(say "Time for a break" "Пора отдохнуть")" \
                 --arg body "$(say "Work phase done. Take $rest min." "Работа завершена. Отдохните $rest мин.")" '{title: $title, body: $body}')
         else
             phase=work ends=0 paused=0 running=false
-            notice=$(jq -n -c --arg title "$(say "Break is over" "Перерыв окончен")" \
+            notice=$(/usr/bin/jq -n -c --arg title "$(say "Break is over" "Перерыв окончен")" \
                 --arg body "$(say "Start the next work phase when you are ready." "Начните следующий этап работы, когда будете готовы.")" '{title: $title, body: $body}')
         fi
     done
@@ -101,7 +101,7 @@ emit() {
     else
         status=$(say "Ready to start" "Готов к запуску") level=off
     fi
-    jq -n -c --arg phase "$phase" --argjson endsAt "$ends" \
+    /usr/bin/jq -n -c --arg phase "$phase" --argjson endsAt "$ends" \
         --argjson pausedLeft "$paused" --argjson enabled "$running" --argjson left "$left" \
         --argjson progress "$progress" --arg clock "$clock" --arg phaseName "$name" \
         --arg status "$status" --arg level "$level" --argjson notify "$notice" '

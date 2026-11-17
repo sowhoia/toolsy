@@ -113,7 +113,7 @@ if [ -n "$interface" ]; then
     fi
 fi
 
-printf '%s' "$report" | jq -c -f "${0%/*}/patch.jq" \
+printf '%s' "$report" | /usr/bin/jq -c -f "${0%/*}/patch.jq" \
     --arg interface "$interface" --arg kind "$kind" --arg ipv4 "$ipv4" --arg mask "$mask" \
     --arg router "$router" --arg router6 "$router6" --arg ipv6 "$ipv6" --arg linkLocal "$linklocal" \
     --arg servers "$servers" --arg domains "$domains" --arg method "$method" --arg mac "$mac" \

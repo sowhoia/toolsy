@@ -32,7 +32,7 @@
     "interface-info": { "exec": "scripts/action.sh", "args": ["interface-info"] },
     "notify": { "exec": "scripts/action.sh", "args": ["notify"] },
     "os-version": { "shell": "sw_vers -productVersion", "capture": "osVersion" },
-    "input": { "shell": "jq -c '{inputKeys: (.state | length), inputEvent: .event, inputLocale: (.locale // \"none\")}'", "stdin": true }
+    "input": { "shell": "/usr/bin/jq -c '{inputKeys: (.state | length), inputEvent: .event, inputLocale: (.locale // \"none\")}'", "stdin": true }
   },
   "lifecycle": {
     "enable": "on",

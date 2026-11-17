@@ -64,7 +64,7 @@ report() {
     else
         status=$(say "$(minutes_text $(($2 - now))) left" "Ещё $(minutes_text $(($2 - now)))") level=ok
     fi
-    jq -n -c --argjson enabled "$1" --argjson until "$2" --arg status "$status" --arg level "$level" \
+    /usr/bin/jq -n -c --argjson enabled "$1" --argjson until "$2" --arg status "$status" --arg level "$level" \
         '{enabled: $enabled, until: $until, status: $status, level: $level}'
 }
 
