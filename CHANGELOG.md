@@ -77,7 +77,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Build and release
 
 - The app, its helper, `toolsy-mod` and `vpn-protector` are universal binaries, for Intel Macs on
-  macOS 26 too; the bundle is 10.0 MB.
+  macOS 26 too; the bundle is 10.7 MB, where 1.0.0, for Apple silicon alone, was 5.4 MB.
 - `scripts/release.sh` builds, checks, notarizes and packs a release with `SHA256SUMS`, signs the
   app's archive for Toolsy's updater, and keeps the debug symbols for crash reports.
 - `scripts/build-app.sh` stops when a build fails, where it packed the previous binaries, and signs
