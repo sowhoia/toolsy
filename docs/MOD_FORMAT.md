@@ -185,6 +185,10 @@ These keys are read by Toolsy itself and cannot be used as settings:
 
 Command names are 1–64 letters, digits, `_` and `-`, starting with a letter or `_`.
 
+A command ends when its program exits. Whatever it started in the background is stopped then
+(TERM, and KILL two seconds later for what ignores it); something that must keep running belongs in
+the [service](#service).
+
 A command runs with the mod's folder as its working directory and with this environment and
 nothing else:
 

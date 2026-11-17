@@ -89,25 +89,29 @@ private final class Execution: @unchecked Sendable {
         }
         process.terminationHandler = { [self] process in
             lock.withLock { finished = true }
-            // Something the program started may outlive it and keep the pipes open; do not wait for that.
-            _ = streamsClosed.wait(timeout: .now() + 0.5)
-            closeStreams()
-            process.terminationHandler = nil
+            // The waits below must not hold up the queue on which Foundation reports every process's exit.
+            DispatchQueue.global().async { [self] in
+                Self.stopLeftovers(ofGroup: process.processIdentifier)
+                // Something the program started outside its group may keep the pipes open; do not wait for that.
+                _ = streamsClosed.wait(timeout: .now() + 0.5)
+                closeStreams()
+                process.terminationHandler = nil
 
-            let (result, wasCancelled) = lock.withLock {
-                let signalled = process.terminationReason == .uncaughtSignal
-                let result = CommandResult(
-                    exitCode: signalled ? 128 + process.terminationStatus : process.terminationStatus,
-                    stdout: output[0],
-                    stderr: output[1],
-                    timedOut: timedOut
-                )
-                return (result, cancelled)
-            }
-            if wasCancelled {
-                continuation.resume(throwing: CancellationError())
-            } else {
-                continuation.resume(returning: result)
+                let (result, wasCancelled) = lock.withLock {
+                    let signalled = process.terminationReason == .uncaughtSignal
+                    let result = CommandResult(
+                        exitCode: signalled ? 128 + process.terminationStatus : process.terminationStatus,
+                        stdout: output[0],
+                        stderr: output[1],
+                        timedOut: timedOut
+                    )
+                    return (result, cancelled)
+                }
+                if wasCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    continuation.resume(returning: result)
+                }
             }
         }
 
@@ -157,6 +161,24 @@ private final class Execution: @unchecked Sendable {
         signalProcessGroup(SIGTERM)
         DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
             self?.signalProcessGroup(SIGKILL)
+        }
+    }
+
+    /// A program's run ends when it exits, and whatever it left running in its process group goes with it:
+    /// otherwise the timeout, which only watches the program, would never reach those processes, and a
+    /// root helper's lock would be released while they still worked on the files it guards. TERM first,
+    /// then KILL for what ignores it. Only a mod's service is meant to run on, and it is not run here.
+    static func stopLeftovers(ofGroup group: pid_t) {
+        func hasMembers() -> Bool { kill(-group, 0) == 0 || errno == EPERM }
+        // 0 and 1 would address the caller's own group and every process there is.
+        guard group > 1, hasMembers() else { return }
+        kill(-group, SIGTERM)
+        let deadline = ContinuousClock.now + .seconds(2)
+        while hasMembers(), ContinuousClock.now < deadline {
+            usleep(20_000)
+        }
+        if hasMembers() {
+            kill(-group, SIGKILL)
         }
     }
 

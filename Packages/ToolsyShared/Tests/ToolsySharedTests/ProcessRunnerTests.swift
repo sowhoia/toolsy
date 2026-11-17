@@ -80,12 +80,41 @@ private func isAlive(_ pid: Int32) -> Bool {
         #expect(Date().timeIntervalSince(started) < 6)
     }
 
-    @Test func doesNotWaitForDetachedDescendants() async throws {
+    @Test func stopsWhatTheProgramLeftRunningInsteadOfWaiting() async throws {
         let started = Date()
-        let result = try await ProcessRunner.run(shell("sleep 4 & echo done"))
-        #expect(text(result.stdout) == "done\n")
+        let result = try await ProcessRunner.run(shell("sleep 30 & echo $!"))
         #expect(result.succeeded)
         #expect(Date().timeIntervalSince(started) < 3)
+        let leftover = try #require(Int32(text(result.stdout).trimmingCharacters(in: .whitespacesAndNewlines)))
+        try await waitUntilGone(leftover)
+    }
+
+    /// Once its program had exited, nothing watched the group any more: neither the timeout nor KILL reached a
+    /// descendant that ignores TERM, so it ran on, past the app quitting, and as root in the helper.
+    @Test func killsALeftoverThatIgnoresTerm() async throws {
+        let started = Date()
+        let result = try await ProcessRunner.run(shell("(trap '' TERM; exec sleep 30) & echo $!"))
+        #expect(result.succeeded)
+        #expect(Date().timeIntervalSince(started) < 5)
+        let leftover = try #require(Int32(text(result.stdout).trimmingCharacters(in: .whitespacesAndNewlines)))
+        try await waitUntilGone(leftover)
+    }
+
+    @Test func aTimeoutReachesDescendantsAfterTheProgramDied() async throws {
+        let started = Date()
+        let result = try await ProcessRunner.run(shell("(trap '' TERM; exec sleep 30) & echo $!; wait", timeout: 0.3))
+        #expect(result.timedOut)
+        #expect(Date().timeIntervalSince(started) < 6)
+        let leftover = try #require(Int32(text(result.stdout).trimmingCharacters(in: .whitespacesAndNewlines)))
+        try await waitUntilGone(leftover)
+    }
+
+    /// A killed orphan lingers until launchd reaps it, a moment later.
+    private func waitUntilGone(_ pid: Int32, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        for _ in 0..<50 where isAlive(pid) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(!isAlive(pid), "process \(pid) is still running", sourceLocation: sourceLocation)
     }
 
     @Test func boundsCapturedOutput() async throws {
