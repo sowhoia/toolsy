@@ -62,6 +62,15 @@ and applies each line it prints as a patch. It runs beside the queue, not in it.
 are scheduled only while the panel is open unless the mod asks for background refresh. With the
 panel closed and no service running, Toolsy has no timers.
 
+A command ends when its program exits: whatever the program left running in its process group then
+gets TERM and, two seconds later, KILL, so neither the timeout nor the helper's lock (below) is
+outlived by a descendant. At most 64 lines of a service wait to be applied; one that prints faster
+loses the oldest. Every command gets `LANG=en_US.UTF-8`, wherever it is started, and its scalar state
+as `TOOLSY_STATE_*` variables only up to 32 KB a value and 256 KB in all, since the environment counts
+against the 1 MB limit for starting a program; longer values go only to standard input. Everything
+decoded from outside the app (manifests, command output, saved state) is refused past 64 levels of
+nesting, and an expression past 32 levels or 256 tokens, before anything recursive reads it.
+
 Each `Mod` keeps the history of every chart-bound key (as many samples as the largest chart showing
 it) and its last 20 runs (`recentRuns`: command, cause, duration, outcome, the end of standard error;
 never state or standard output, which can hold user data), each in a property of its own so that
@@ -96,6 +105,7 @@ Mods/<id>/        the unpacked mod, exactly as installed
 State/<id>.json   {"enabled": …, "settings": {…}}
 Data/<id>/        the mod's writable folder (TOOLSY_DATA_DIR)
 Run/<id>.json     pid and start time of the mod's running service
+Signers/<id>      the public key that signed the installed copy, if it came signed (below)
 Dashboard.json    the dashboard's layout (see below)
 DeveloperMode     an empty marker file, present while developer mode is on
 ```
@@ -108,7 +118,18 @@ Installing a mod whose id is installed replaces it in place: the old instance is
 stopped, no hook run), the new files are moved in, and the new instance starts from the saved
 settings and switch position, its first command waiting for the old one's last. `ModsModel` puts the
 mod's widgets on the dashboard only when no folder with that id existed before, so an update leaves
-the user's arrangement alone; removing a mod takes them off.
+the user's arrangement alone; removing a mod takes them off. An update waits until a removal of the
+same mod is over, and a mod closed while its removal waited for a hook stays closed.
+
+A `.toolsymod` file may be signed: `.toolsy-signature` in the archive holds an Ed25519 signature of the
+payload digest and the public key. It lies beside the mod rather than in it, so it is never installed
+and never part of what the helper approves. `ModPackage` verifies it and refuses a package changed
+after it was signed; `ModStore` records the key of each installed signed mod in `Signers/<id>` and tells
+the confirmation whether an update is signed by another key or not at all (`signerChanged`). The
+confirmation shows the fingerprint, warns about such an update and about a changed author, and tells
+the user of every mod, not only of one with administrator commands, that its programs run with the
+user's permissions. A signature proves only that two packages come from the same key; Toolsy has no
+list of trusted authors.
 
 ### Developer mode
 
