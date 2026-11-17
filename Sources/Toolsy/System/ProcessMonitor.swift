@@ -3,15 +3,16 @@ import Observation
 
 /// What a person thinks of as one app: every process inside one `.app` bundle (a browser and its
 /// helpers) together with the XPC services macOS holds it responsible for, or a single process outside
-/// any bundle.
+/// any bundle or of another user.
 struct ProcessGroup: Identifiable, Equatable {
     /// Stable while the group exists: the bundle's path, or the process's pid and start time.
     let id: String
     /// The running application's localised name, the bundle's display name, or the executable's name.
     var name: String
     var icon: NSImage?
-    /// Physical footprint of all its processes in bytes, as Activity Monitor's Memory column.
-    var memory: UInt64
+    /// Physical footprint of all its processes in bytes, as Activity Monitor's Memory column; nil for another
+    /// user's process, which only root can measure.
+    var memory: UInt64?
     /// CPU use since the previous sample, in Activity Monitor's unit: 100 = one core fully busy.
     var cpu: Double
     var processCount: Int
@@ -21,9 +22,11 @@ struct ProcessGroup: Identifiable, Equatable {
     var applicationPID: pid_t?
 }
 
-/// The current user's apps by memory and CPU use, for the memory and CPU details.
+/// The apps of the Mac by memory and CPU use, for the memory and CPU details: the current user's apps, and
+/// while a CPU list wants them also the processes of other users (WindowServer, mds_stores, backupd…), each on
+/// its own and ranked by CPU only.
 ///
-/// Demand-driven like `SystemMonitor`: it samples only between `start()` and `stop()`, which are
+/// Demand-driven like `SystemMonitor`: it samples only between `start(for:)` and `stop(for:)`, which are
 /// counted, so several views can want it at once, and only while the panel is visible (a view in a
 /// closed panel is not told it disappeared). Samples are taken off the main thread every `interval`
 /// seconds; the groups of the last one are kept when sampling stops.
@@ -35,7 +38,8 @@ final class ProcessMonitor {
 
     @ObservationIgnored private let sampler = ProcessSampler()
     @ObservationIgnored private let interval: TimeInterval
-    @ObservationIgnored private var demand = 0
+    /// The lists on screen, by what they rank.
+    @ObservationIgnored private var demand: [ProcessMeasure: Int] = [:]
     @ObservationIgnored private var isPanelVisible = false
     @ObservationIgnored private(set) var isSampling = false
     @ObservationIgnored private var timer: Timer?
@@ -53,9 +57,9 @@ final class ProcessMonitor {
         }
     }
 
-    /// The `count` groups that hold the most memory, largest first.
+    /// The `count` groups that hold the most memory, largest first, among those whose memory is known.
     func largest(_ count: Int) -> [ProcessGroup] {
-        Array(groups.sorted { ($0.memory, $1.name) > ($1.memory, $0.name) }.prefix(count))
+        Array(groups.filter { $0.memory != nil }.sorted { ($0.memory ?? 0, $1.name) > ($1.memory ?? 0, $0.name) }.prefix(count))
     }
 
     /// The `count` groups that used the most CPU, busiest first.
@@ -63,17 +67,21 @@ final class ProcessMonitor {
         Array(groups.sorted { ($0.cpu, $1.name) > ($1.cpu, $0.name) }.prefix(count))
     }
 
-    func start() {
-        demand += 1
-        updateSampling()
+    /// A list ranking by `measure` is on screen. Other users' processes are listed only while a CPU list is,
+    /// as they cost a run of `ps` per sample and have no memory to rank.
+    func start(for measure: ProcessMeasure) {
+        demand[measure, default: 0] += 1
+        // Their CPU use is measured between two listings. A CPU list that takes over from a memory list still
+        // sampled starts over, so they are in its first rows, as when sampling starts.
+        updateSampling(startingOver: measure == .cpu && demand[.cpu] == 1)
     }
 
-    func stop() {
-        guard demand > 0 else {
-            assertionFailure("ProcessMonitor.stop() without a matching start()")
+    func stop(for measure: ProcessMeasure) {
+        guard let count = demand[measure], count > 0 else {
+            assertionFailure("ProcessMonitor.stop(for:) without a matching start(for:)")
             return
         }
-        demand -= 1
+        demand[measure] = count - 1
         updateSampling()
     }
 
@@ -115,24 +123,24 @@ final class ProcessMonitor {
 
     // MARK: Sampling
 
-    private func updateSampling() {
-        let wanted = demand > 0 && isPanelVisible
-        guard wanted != isSampling else { return }
+    private func updateSampling(startingOver: Bool = false) {
+        let wanted = demand.values.contains { $0 > 0 } && isPanelVisible
+        guard wanted != isSampling || wanted && startingOver else { return }
         isSampling = wanted
+        timer?.invalidate()
+        timer = nil
+        sampling?.cancel()
+        sampling = nil
         if wanted {
             // The first sample only records CPU times; the first groups follow shortly after it.
             sample(startingOver: true, thenWait: 0.5)
-        } else {
-            timer?.invalidate()
-            timer = nil
-            sampling?.cancel()
-            sampling = nil
         }
     }
 
     private func sample(startingOver: Bool = false, thenWait delay: TimeInterval) {
+        let includingOtherUsers = demand[.cpu, default: 0] > 0
         sampling = Task { [sampler] in
-            let readings = await sampler.sample(startingOver: startingOver)
+            let readings = await sampler.sample(startingOver: startingOver, includingOtherUsers: includingOtherUsers)
             guard !Task.isCancelled, isSampling else { return }
             if let readings { publish(readings) }
             sampling = nil
@@ -174,6 +182,12 @@ final class ProcessMonitor {
                 look = looks[id] ?? Look(name: (executable as NSString).lastPathComponent, icon: application?.icon)
                 // Kept only once it has an icon: a process can become an application after it started.
                 if look.icon != nil { seen[id] = look }
+            case .otherUser(let key, let executable):
+                // Some are registered as background applications of this session too; they are never named for
+                // one, nor quit.
+                id = Self.id(of: key)
+                application = nil
+                look = Look(name: (executable as NSString).lastPathComponent, icon: nil)
             }
             return ProcessGroup(
                 id: id,

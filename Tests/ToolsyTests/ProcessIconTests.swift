@@ -22,8 +22,8 @@ struct ProcessMonitorIconTests {
         let panel = PanelState()
         panel.setVisible(true)
         let monitor = ProcessMonitor(panel: panel, interval: 0.2)
-        monitor.start()
-        defer { monitor.stop() }
+        monitor.start(for: .memory)
+        defer { monitor.stop(for: .memory) }
         try await waitUntil("the first groups") { !monitor.groups.isEmpty }
         let firstSample = monitor.groups
         // Every sample measures CPU anew, so the next one differs.

@@ -61,6 +61,62 @@ struct ProcessGroupingTests {
         // One core for the whole interval is 100.
         #expect(cpu == [1: 100, 2: 25, 3: 0])
     }
+
+    @Test func anotherUsersProcessHasCPUButNoMemory() {
+        func otherUsers(_ pid: pid_t, _ path: String, cpuTime: UInt64) -> ProcessReading {
+            ProcessReading(key: ProcessKey(pid: pid, start: 7), identity: ProcessIdentity(executable: path, isOfAnotherUser: true),
+                           footprint: nil, cpuTime: cpuTime)
+        }
+        let windowServer = otherUsers(415, "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer", cpuTime: 300)
+        let daemon = otherUsers(900, "/Library/Application Support/Vendor/Agent.app/Contents/MacOS/Agent", cpuTime: 100)
+        let groups = ProcessGrouping.groups([windowServer, daemon], previous: [windowServer.key: 100, daemon.key: 100], elapsed: 1_000)
+        let byPID = Dictionary(uniqueKeysWithValues: groups.map { ($0.pids[0], $0) })
+        #expect(byPID[415] == ProcessGroupReading(kind: .otherUser(windowServer.key, executable: windowServer.identity.executable),
+                                                  memory: nil, cpu: 20, pids: [415]))
+        #expect(byPID[900]?.kind == .otherUser(daemon.key, executable: daemon.identity.executable), "an entry of its own, not its bundle's")
+        // A group's memory is the sum of what could be measured.
+        let mixed = ProcessGrouping.groups([process(1, "/usr/bin/a", footprint: 30), process(2, "/usr/bin/b", footprint: 12)],
+                                           previous: [:], elapsed: 1)
+        #expect(mixed.map(\.memory).sorted { ($0 ?? 0) < ($1 ?? 0) } == [12, 30])
+    }
+
+    @Test func aProcessThatWasNotListedBeforeCountsFromItsStart() {
+        let listed = process(1, "/usr/bin/a", start: 10, cpuTime: 900)
+        let started = process(2, "/usr/bin/b", start: 60, cpuTime: 300)
+        // Existed at the previous sample (time 50) but was not listed then: it changed user, or listing raced it.
+        let missed = process(3, "/usr/bin/c", start: 40, cpuTime: 5_000)
+        let baseline = ProcessGrouping.baseline(of: [listed, started, missed], previous: [listed.key: 400], previousTime: 50)
+        #expect(baseline == [listed.key: 400, missed.key: 5_000])
+        let cpu = Dictionary(uniqueKeysWithValues: ProcessGrouping.groups([listed, started, missed], previous: baseline, elapsed: 1_000)
+            .map { ($0.pids[0], $0.cpu) })
+        #expect(cpu == [1: 50, 2: 30, 3: 0])
+    }
+}
+
+struct PSOutputTests {
+    @Test func cpuTimeReadsAsPSPrintsIt() {
+        #expect(PSOutput.centiseconds("0:00.00") == 0)
+        #expect(PSOutput.centiseconds("0:15.34") == 1_534)
+        #expect(PSOutput.centiseconds("3:24.20") == 20_420)
+        // Minutes go past 59 without hours.
+        #expect(PSOutput.centiseconds("125:03.07") == (125 * 60 + 3) * 100 + 7)
+        #expect(PSOutput.centiseconds("1:02:03.04") == (3_723 * 100) + 4)
+        #expect(PSOutput.centiseconds("2-01:00:00.50") == (49 * 3_600) * 100 + 50)
+        for damaged in ["", "15.34", "0:15", "0:15,34", "0:15.3", "a:15.34", "0:1x.00", "1:2:3:04.00", "x-01:00:00.00", "0:-1.00"] {
+            #expect(PSOutput.centiseconds(Substring(damaged)) == nil, "\(damaged)")
+        }
+    }
+
+    @Test func linesAreReadAndDamagedOnesSkipped() {
+        // Right-aligned columns, as `ps` prints them, then lines that are not a process.
+        let output = ["    1   0:15.34", "  415   3:24.20", "73374   0:00.00", "  PID TIME", "  588 0:04.24 extra", "  739", ""]
+            .joined(separator: "\n")
+        #expect(PSOutput.lines(output) == [
+            PSOutput.Line(pid: 1, centiseconds: 1_534),
+            PSOutput.Line(pid: 415, centiseconds: 20_420),
+            PSOutput.Line(pid: 73_374, centiseconds: 0),
+        ])
+    }
 }
 
 // MARK: - Real processes
@@ -86,6 +142,15 @@ private final class Child {
 
 private func group(containing pid: pid_t, in groups: [ProcessGroupReading]?) -> ProcessGroupReading? {
     groups?.first { $0.pids.contains(pid) }
+}
+
+extension ProcessGroupReading.Kind {
+    var executable: String? {
+        switch self {
+        case .bundle: nil
+        case .process(_, let executable), .otherUser(_, let executable): executable
+        }
+    }
 }
 
 private func waitUntil(_ what: String, within timeout: Duration = .seconds(10), _ condition: () -> Bool) async throws {
@@ -124,19 +189,52 @@ struct ProcessSamplerTests {
             return now > 300_000_000 && now == last
         }
         let found = try #require(group(containing: holder.pid, in: await sampler.sample()))
-        #expect(found.memory > 300_000_000)
+        let memory = try #require(found.memory)
+        #expect(memory > 300_000_000)
         // top's MEM column is the physical footprint too, as Activity Monitor's Memory column.
         let top = try #require(try await Self.topMemory(of: holder.pid))
-        #expect(abs(Double(found.memory) - Double(top)) < Double(top) * 0.02, "\(found.memory) vs \(top)")
+        #expect(abs(Double(memory) - Double(top)) < Double(top) * 0.02, "\(memory) vs \(top)")
     }
 
-    @Test func onlyTheUsersProcessesAreListed() async throws {
+    @Test func otherUsersAreListedOnlyWhenAskedFor() async throws {
         let sampler = ProcessSampler()
         _ = await sampler.sample(startingOver: true)
         let groups = try #require(await sampler.sample())
         #expect(group(containing: getpid(), in: groups) != nil)
         // launchd runs as root.
         #expect(group(containing: 1, in: groups) == nil)
+
+        // Their CPU use is the change between two listings: the first one in a row only starts them.
+        #expect(group(containing: 1, in: await sampler.sample(includingOtherUsers: true)) == nil)
+        try await Task.sleep(for: .milliseconds(200))
+        let withOthers = try #require(await sampler.sample(includingOtherUsers: true))
+        let launchd = try #require(group(containing: 1, in: withOthers))
+        guard case .otherUser(let key, "/sbin/launchd") = launchd.kind else {
+            Issue.record("launchd is \(launchd.kind)")
+            return
+        }
+        #expect(key.pid == 1)
+        #expect(launchd.memory == nil, "only root can measure it")
+        #expect(launchd.cpu >= 0 && launchd.cpu < 800)
+        #expect(group(containing: getpid(), in: withOthers)?.memory != nil)
+        // `ps`, which lists them, is not among them.
+        #expect(!withOthers.contains { $0.kind.executable == "/bin/ps" })
+        // Without asking again they are gone.
+        #expect(group(containing: 1, in: await sampler.sample()) == nil)
+    }
+
+    @Test func aBusyProcessOfAnotherUserIsMeasured() async throws {
+        // `/usr/bin/top` is setuid root: a process of another user that this test can start. It reads every
+        // process once a second, three times, and exits; the interval below holds the second time.
+        let top = try Child("/usr/bin/top", ["-l", "3", "-s", "1", "-stats", "pid"])
+        let sampler = ProcessSampler()
+        _ = await sampler.sample(startingOver: true, includingOtherUsers: true)
+        try await Task.sleep(for: .milliseconds(1_500))
+        let groups = try #require(await sampler.sample(includingOtherUsers: true))
+        let found = try #require(group(containing: top.pid, in: groups), "top runs as root, so only `ps` lists it")
+        #expect(found.kind == .otherUser(ProcessKey(pid: top.pid, start: try #require(Self.kernelStart(of: top.pid))), executable: "/usr/bin/top"))
+        #expect(found.memory == nil)
+        #expect(found.cpu > 0, "\(found.cpu)")
     }
 
     /// `top -l 1 -pid <pid> -stats mem` in bytes; top prints binary units such as `574M`.
@@ -152,6 +250,16 @@ struct ProcessSamplerTests {
 
     private static func start(of pid: pid_t) -> UInt64? {
         usage(of: pid)?.ri_proc_start_abstime
+    }
+
+    /// The start of any process, in microseconds since 1970, as the kernel's table of processes tells it.
+    private static func kernelStart(of pid: pid_t) -> UInt64? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let start = info.kp_proc.p_un.__p_starttime
+        return UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec)
     }
 
     private static func footprint(of pid: pid_t) -> UInt64? {
@@ -172,8 +280,8 @@ struct ProcessMonitorTests {
     @Test func samplesWhileSomethingWantsIt() async throws {
         let panel = PanelState()
         let monitor = ProcessMonitor(panel: panel, interval: 0.2)
-        monitor.start()
-        monitor.start()
+        monitor.start(for: .memory)
+        monitor.start(for: .memory)
         try await Task.sleep(for: .milliseconds(300))
         // Nothing while the panel is closed.
         #expect(!monitor.isSampling && monitor.groups.isEmpty)
@@ -182,10 +290,11 @@ struct ProcessMonitorTests {
         #expect(monitor.groups.allSatisfy { $0.processCount > 0 })
         #expect(Set(monitor.groups.map(\.id)).count == monitor.groups.count)
         #expect(monitor.largest(3).count == 3)
-        #expect(monitor.largest(3).map(\.memory) == monitor.largest(3).map(\.memory).sorted(by: >))
+        let largest = monitor.largest(3).compactMap(\.memory)
+        #expect(largest.count == 3 && largest == largest.sorted(by: >))
         #expect(monitor.busiest(2).count == 2)
 
-        monitor.stop()
+        monitor.stop(for: .memory)
         #expect(monitor.isSampling)
         // Closing the panel stops it although views still want it; opening it again resumes.
         panel.setVisible(false)
@@ -197,8 +306,49 @@ struct ProcessMonitorTests {
         #expect(monitor.groups.map(\.memory) == last.map(\.memory))
         panel.setVisible(true)
         #expect(monitor.isSampling)
-        monitor.stop()
+        monitor.stop(for: .memory)
         #expect(!monitor.isSampling)
+    }
+
+    @Test func otherUsersAreRankedByCPUOnlyWhileACPUListWantsThem() async throws {
+        let panel = PanelState()
+        panel.setVisible(true)
+        let monitor = ProcessMonitor(panel: panel, interval: 0.2)
+        monitor.start(for: .memory)
+        try await waitUntil("the first groups") { !monitor.groups.isEmpty }
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(monitor.groups.allSatisfy { $0.memory != nil }, "a memory list alone lists only the user's processes")
+
+        monitor.start(for: .cpu)
+        try await waitUntil("other users' processes") { monitor.groups.contains { $0.memory == nil } }
+        let others = monitor.groups.filter { $0.memory == nil }
+        #expect(others.contains { $0.name == "launchd" })
+        for other in others {
+            #expect(!other.canQuit && other.applicationPID == nil, "\(other.name)")
+            #expect(!monitor.quit(other))
+        }
+        // Memory ranks only what could be measured; CPU ranks everyone.
+        #expect(monitor.largest(monitor.groups.count).allSatisfy { $0.memory != nil })
+        #expect(monitor.busiest(monitor.groups.count).count == monitor.groups.count)
+
+        monitor.stop(for: .cpu)
+        try await waitUntil("the user's processes alone") { monitor.groups.allSatisfy { $0.memory != nil } }
+        monitor.stop(for: .memory)
+        #expect(!monitor.isSampling)
+    }
+
+    @Test func aCPUListTakingOverFromAMemoryListHasOtherUsersAtOnce() async throws {
+        let panel = PanelState()
+        panel.setVisible(true)
+        // So long that only starting over can list other users within the test.
+        let monitor = ProcessMonitor(panel: panel, interval: 600)
+        monitor.start(for: .memory)
+        defer { monitor.stop(for: .memory) }
+        try await waitUntil("the first groups") { !monitor.groups.isEmpty }
+        // One detail replaces the other: the new list appears before the old one is gone.
+        monitor.start(for: .cpu)
+        defer { monitor.stop(for: .cpu) }
+        try await waitUntil("other users' processes") { monitor.groups.contains { $0.memory == nil } }
     }
 
     /// Quits only an app this test started: `osascript` turned into a regular app without a window.
@@ -208,8 +358,8 @@ struct ProcessMonitorTests {
         let panel = PanelState()
         panel.setVisible(true)
         let monitor = ProcessMonitor(panel: panel, interval: 0.2)
-        monitor.start()
-        defer { monitor.stop() }
+        monitor.start(for: .memory)
+        defer { monitor.stop(for: .memory) }
         try await waitUntil("the app's group") {
             monitor.groups.contains { $0.applicationPID == app.pid && $0.canQuit }
         }
@@ -260,8 +410,8 @@ struct ProcessMonitorTests {
         let panel = PanelState()
         panel.setVisible(true)
         let monitor = ProcessMonitor(panel: panel, interval: 0.2)
-        monitor.start()
-        defer { monitor.stop() }
+        monitor.start(for: .memory)
+        defer { monitor.stop(for: .memory) }
         try await waitUntil("the first groups") { !monitor.groups.isEmpty }
         for group in monitor.groups where !group.canQuit {
             #expect(!monitor.quit(group))

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Toolsy
 
-private func group(_ id: String, memory: UInt64 = 0, cpu: Double = 0, processes: Int = 1, canQuit: Bool = false) -> ProcessGroup {
+private func group(_ id: String, memory: UInt64? = 0, cpu: Double = 0, processes: Int = 1, canQuit: Bool = false) -> ProcessGroup {
     ProcessGroup(id: id, name: id, icon: nil, memory: memory, cpu: cpu, processCount: processes, canQuit: canQuit,
                  applicationPID: canQuit ? 1 : nil)
 }
@@ -34,6 +34,15 @@ struct ProcessRowTests {
         #expect(!ProcessRow(group("a", canQuit: false), measure: .memory).offersQuit)
         #expect(!ProcessRow(group("a", canQuit: true), measure: .cpu).offersQuit)
     }
+
+    @Test func anotherUsersProcessShowsItsCPUAndOffersNothing() {
+        // WindowServer, as the monitor publishes another user's process: no memory, no application.
+        let windowServer = group("WindowServer", memory: nil, cpu: 23.4)
+        #expect(ProcessRow(windowServer, measure: .cpu).value.filter(\.isNumber) == "23")
+        #expect(!ProcessRow(windowServer, measure: .cpu).offersQuit)
+        #expect(ProcessRow(windowServer, measure: .memory).value == "—")
+        #expect(!ProcessRow(windowServer, measure: .memory).offersQuit)
+    }
 }
 
 struct ProcessOrderTests {
@@ -56,6 +65,12 @@ struct ProcessOrderTests {
         // A row far below its old place sinks past several rows at once.
         let shrunk = [group("b", memory: 900 * megabyte), group("c", memory: 800 * megabyte), group("a", memory: 10 * megabyte)]
         #expect(order(shrunk, after: ["a", "b", "c"]) == ["b", "c", "a"])
+    }
+
+    @Test func anotherUsersProcessRanksAmongTheUsersAppsByCPU() {
+        let ranked = [group("WindowServer", memory: nil, cpu: 30), group("Browser", cpu: 12), group("Mail", cpu: 1)]
+        #expect(ProcessRow.members(of: ranked, count: 2, previous: [], by: .cpu).map(\.id) == ["WindowServer", "Browser"])
+        #expect(order(ranked, after: ["Browser", "Mail"], by: .cpu) == ["WindowServer", "Browser", "Mail"])
     }
 
     @Test func cpuNeedsAFewPercentOfACoreToReorder() {

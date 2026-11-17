@@ -8,7 +8,7 @@ enum ProcessMeasure {
 
     func value(of group: ProcessGroup) -> Double {
         switch self {
-        case .memory: Double(group.memory)
+        case .memory: Double(group.memory ?? 0)
         case .cpu: group.cpu
         }
     }
@@ -27,7 +27,7 @@ enum ProcessMeasure {
     /// below 10 % so that light use does not all read "0 %".
     func format(_ group: ProcessGroup) -> String {
         switch self {
-        case .memory: Format.memory(group.memory)
+        case .memory: group.memory.map(Format.memory) ?? "—"
         case .cpu: (group.cpu / 100).formatted(.percent.precision(.fractionLength(group.cpu < 10 ? 1 : 0)))
         }
     }
@@ -130,8 +130,8 @@ struct ProcessList: View {
             }
             .frame(height: CGFloat(count) * Self.rowHeight + CGFloat(count - 1) * Self.rowSpacing, alignment: .top)
         }
-        .onAppear(perform: monitor.start)
-        .onDisappear(perform: monitor.stop)
+        .onAppear { monitor.start(for: measure) }
+        .onDisappear { monitor.stop(for: measure) }
         .onChange(of: monitor.groups, initial: true) { update() }
         .debugAnchor("process-list:\(measure)")
     }
