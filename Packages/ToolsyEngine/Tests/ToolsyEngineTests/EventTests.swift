@@ -115,6 +115,40 @@ private let syncScript = logLine + #"; log "$TOOLSY_EVENT $TOOLSY_COMMAND""#
         }
     }
 
+    /// Closed while its removal waited for `disable` (Toolsy quitting), a mod made itself active again and
+    /// could start its service beside whatever came after it.
+    @Test func aModClosedDuringItsRemovalStaysClosed() async throws {
+        try await withHarness { harness in
+            let script = logLine + #"; trap '' TERM; log "$TOOLSY_EVENT"; [ "$TOOLSY_EVENT" = disable ] && sleep 0.5; true"#
+            let mod = try await harness.install(manifest(#"""
+                "commands": {"hook": {"shell": ". ./hook.sh"}}, "lifecycle": {"enable": "hook", "disable": "hook"}
+                """#), scripts: ["hook.sh": script])
+            await mod.setEnabled(true)
+            let removal = Task { try await harness.store.uninstall(mod) }
+            try await eventually("disable runs") { harness.log() == ["enable", "disable"] }
+            await mod.close()
+            await #expect(throws: (any Error).self) { try await removal.value }
+            #expect(!mod.isActive)
+        }
+    }
+
+    /// An update installed while the copy it replaced was being removed was then deleted by that removal.
+    @Test func anUpdateIsRefusedWhileTheModIsBeingRemoved() async throws {
+        try await withHarness { harness in
+            let script = logLine + #"; log "$TOOLSY_EVENT"; [ "$TOOLSY_EVENT" = disable ] && sleep 0.5; true"#
+            let json = manifest(#""commands": {"hook": {"shell": ". ./hook.sh"}}, "lifecycle": {"enable": "hook", "disable": "hook"}"#)
+            let mod = try await harness.install(json, scripts: ["hook.sh": script])
+            await mod.setEnabled(true)
+            let removal = Task { try await harness.store.uninstall(mod) }
+            try await eventually("disable runs") { harness.log() == ["enable", "disable"] }
+            let prepared = try await harness.store.prepareInstall(from: writeMod(json, scripts: ["hook.sh": script], in: harness.temporary))
+            await #expect(throws: EngineError("Demo is being removed.")) { try await harness.store.commitInstall(prepared) }
+            harness.store.discardInstall(prepared)
+            try await removal.value
+            #expect(harness.store.mods.isEmpty)
+        }
+    }
+
     @Test func anEventPostedToAModBeingRemovedDoesNothing() async throws {
         try await withHarness { harness in
             let log = harness.temporary.url.appending(path: "outside.log").path(percentEncoded: false)

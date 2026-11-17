@@ -198,6 +198,9 @@ public final class ModStore {
         }
         defer { installing.remove(id) }
         let previous = mod(id: id)
+        if let previous, !previous.isActive {
+            throw EngineError("\(previous.manifest.name) is being removed.")
+        }
         await previous?.close()
         do {
             if let payload = prepared.approval {

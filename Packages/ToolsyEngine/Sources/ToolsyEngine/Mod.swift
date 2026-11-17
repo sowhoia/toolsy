@@ -276,7 +276,8 @@ public final class Mod: Identifiable {
     var isActive: Bool { phase == .active }
 
     /// The commands still running or waiting, so a successor can wait for them; nil when there are none.
-    var unfinishedWork: Task<Void, Never>? { worker }
+    /// An instance that has run nothing yet still owes its successor the wait for its own predecessor.
+    var unfinishedWork: Task<Void, Never>? { worker ?? predecessorWork }
 
     func panelVisibilityChanged(_ visible: Bool) {
         isPanelVisible = visible
@@ -331,10 +332,14 @@ public final class Mod: Identifiable {
         }
     }
 
-    /// Returns a mod whose removal failed to normal operation and gives the reason.
+    /// Returns a mod whose removal failed to normal operation and gives the reason. A mod closed meanwhile
+    /// (Toolsy quitting, a reload) stays closed: its hooks failed because of that, and it must not start
+    /// its service again beside whatever replaced it.
     func abortRemoval() -> EngineError {
-        phase = .active
-        reconcile()
+        if phase == .removing {
+            phase = .active
+            reconcile()
+        }
         return EngineError(error ?? "\(manifest.name) could not be removed.")
     }
 

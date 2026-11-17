@@ -81,6 +81,22 @@ private func exists(_ url: URL) -> Bool {
         }
     }
 
+    /// The instance in between ran nothing, so it had no worker of its own, and the second reload forgot the
+    /// command of the first: two copies of the mod ran commands side by side.
+    @Test func twoReloadsInARowStillWaitForTheCommand() async throws {
+        try await withHarness { harness in
+            let work = logLine + #"; trap '' TERM; log start "$TOOLSY_VALUE"; sleep 1; log end "$TOOLSY_VALUE""#
+            let mod = try await harness.install(manifest(#""commands": {"work": {"shell": ". ./work.sh"}}"#), scripts: ["work.sh": work])
+            let running = Task { await mod.run("work", value: "old") }
+            try await eventually("the old command started") { harness.log() == ["start old"] }
+            try await harness.store.reload("demo")
+            let reloaded = try await harness.store.reload("demo")
+            await reloaded.run("work", value: "new")
+            await running.value
+            #expect(harness.log() == ["start old", "end old", "start new", "end new"])
+        }
+    }
+
     @Test func aFolderThatComesBackWaitsForTheCommandOfTheOneThatLeft() async throws {
         try await withHarness { harness in
             let json = manifest(#""commands": {"work": {"shell": ". ./work.sh"}}"#)
