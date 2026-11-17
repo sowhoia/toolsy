@@ -4,7 +4,7 @@ import SwiftUI
 import ToolsyShared
 
 /// Settings: starting at login, alerts about the Mac, updates, the administrator helper, developer mode, the mods
-/// folder, the version and quitting.
+/// folder, the version, diagnostics for a bug report and quitting.
 struct SettingsPage: View {
     @Environment(PanelState.self) private var panel
     @Environment(ModsModel.self) private var model
@@ -23,9 +23,10 @@ struct SettingsPage: View {
                 ))
                 .debugAnchor("developer-mode")
             }
-            SectionGroup {
+            SectionGroup(footer: String(localized: "Diagnostics are text for a bug report: the versions, this Mac, the mods and what they ran lately. Never their settings or what they printed.")) {
                 ListRow(String(localized: "Show Mods Folder in Finder"), icon: "folder.fill", tint: .blue) { showModsFolder() }
                 ValueRow(String(localized: "Version"), value: Self.version, icon: "info.circle", copyable: true)
+                CopyDiagnosticsRow()
                 #if DEBUG
                 ListRow(String(localized: "Component gallery"), icon: "square.grid.2x2.fill", tint: .indigo) {
                     panel.push(.gallery)

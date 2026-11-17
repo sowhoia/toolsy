@@ -381,3 +381,7 @@
 "Couldn’t reach GitHub. Check the internet connection." = "Не удалось связаться с GitHub. Проверьте подключение к интернету.";
 "GitHub limits how often it can be asked. Try again later." = "GitHub ограничивает частоту запросов. Попробуйте позже.";
 "GitHub’s answer wasn’t understood. Try again later." = "Не удалось разобрать ответ GitHub. Попробуйте позже.";
+
+/* Settings: diagnostics for a bug report */
+"Copy Diagnostics" = "Скопировать диагностику";
+"Diagnostics are text for a bug report: the versions, this Mac, the mods and what they ran lately. Never their settings or what they printed." = "Диагностика — это текст для сообщения об ошибке: версии, этот Mac, моды и что они недавно запускали. Без их настроек и того, что они выводили.";
