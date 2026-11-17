@@ -107,6 +107,9 @@ actor FakeHelper: PrivilegedExecuting {
     /// How long the next calls of `run` take, one each. Like a root command they cannot be cancelled,
     /// and they note "done <mod> <command>" when they end.
     var runDelays: [Duration] = []
+    /// How long the next calls of `status` take, one each. They answer with the status as it was when they
+    /// were made, like an XPC call that hangs while the helper is replaced.
+    var statusDelays: [Duration] = []
 
     init(status: HelperStatus = .notInstalled) {
         helperStatus = status
@@ -122,8 +125,15 @@ actor FakeHelper: PrivilegedExecuting {
     func set(afterApprove: (@Sendable () async -> Void)?) { self.afterApprove = afterApprove }
     func set(runDelays: [Duration]) { self.runDelays = runDelays }
     func set(result: CommandResult) { self.result = result }
+    func set(statusDelays: [Duration]) { self.statusDelays = statusDelays }
 
-    func status() async -> HelperStatus { helperStatus }
+    func status() async -> HelperStatus {
+        let answer = helperStatus
+        if !statusDelays.isEmpty {
+            try? await Task.sleep(for: statusDelays.removeFirst())
+        }
+        return answer
+    }
 
     func install() async throws {
         calls.append("install")

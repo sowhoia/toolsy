@@ -24,6 +24,22 @@ private actor StartedTask {
 }
 
 @MainActor @Suite struct PrivilegedTests {
+    /// A refresh still waiting on the helper wrote its stale answer over a fresher one: after the helper was
+    /// updated, privileged mods kept saying that it needed an update.
+    @Test func anEarlierRefreshDoesNotUndoALaterOne() async throws {
+        let helper = FakeHelper(status: .needsUpdate)
+        try await withHarness(helper: helper) { harness in
+            await helper.set(statusDelays: [.milliseconds(300)])
+            let earlier = Task { await harness.store.refreshAccess() }
+            try await Task.sleep(for: .milliseconds(50))
+            await helper.set(status: .ready)
+            await harness.store.refreshAccess()
+            #expect(harness.store.helperStatus == .ready)
+            await earlier.value
+            #expect(harness.store.helperStatus == .ready)
+        }
+    }
+
     @Test func installingInstallsTheHelperApprovesAndRuns() async throws {
         let helper = FakeHelper(status: .notInstalled)
         try await withHarness(helper: helper) { harness in

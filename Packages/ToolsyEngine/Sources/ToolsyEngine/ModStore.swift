@@ -92,6 +92,8 @@ public final class ModStore {
     /// went away, a removal. They may still be finishing (a privileged command cannot be stopped), and
     /// commands of a mod never overlap, so the next instance with that id waits for them.
     @ObservationIgnored private var orphanedWork: [String: Task<Void, Never>] = [:]
+    /// Counts calls of `refreshAccess`, so that only the latest one applies what it read.
+    @ObservationIgnored private var accessRefreshes = 0
 
     /// `languages` are the user's languages, most preferred first (BCP 47, as in `Locale.preferredLanguages`):
     /// a mod is shown in the first of them it has text in, and its commands are told that language as
@@ -348,9 +350,13 @@ public final class ModStore {
     /// The store does this at launch and after everything it changes itself; call it where the helper's
     /// state is shown, since the helper can also change behind Toolsy's back.
     public func refreshAccess() async {
-        helperStatus = await privileged.status()
+        // Refreshes overlap: the page of Settings, a failed command and an install each start one. One that
+        // started later read a fresher state, so an earlier one still waiting on the helper must not undo it.
+        accessRefreshes += 1
+        let refresh = accessRefreshes
+        let status = await privileged.status()
         var approved: [String: String] = [:]
-        if helperStatus == .ready {
+        if status == .ready {
             do {
                 approved = try await privileged.approvedMods()
                 await revokeOrphanedApprovals(&approved)
@@ -359,8 +365,11 @@ public final class ModStore {
                 logger.error("cannot list approved mods: \(error.localizedDescription)")
             }
         }
+        guard refresh == accessRefreshes else { return }
+        helperStatus = status
         for mod in mods where mod.manifest.requiresPrivileges {
-            await mod.updateAccess(helperStatus: helperStatus, approvedDigest: approved[mod.id])
+            await mod.updateAccess(helperStatus: status, approvedDigest: approved[mod.id])
+            guard refresh == accessRefreshes else { return }
         }
     }
 
