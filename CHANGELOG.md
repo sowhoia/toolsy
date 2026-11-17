@@ -5,7 +5,10 @@ All notable changes to Toolsy are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-11-17
+
+Toolsy updates itself in one click, warns about memory pressure, heat, a low battery and a nearly
+full disk, runs on Intel Macs, and shows who signed a mod before it is installed.
 
 ### Dashboard
 
@@ -77,7 +80,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Build and release
 
 - The app, its helper, `toolsy-mod` and `vpn-protector` are universal binaries, for Intel Macs on
-  macOS 26 too; the bundle is 10.7 MB, where 1.0.0, for Apple silicon alone, was 5.4 MB.
+  macOS 26 too; the bundle is 11.0 MB, where 1.0.0, for Apple silicon alone, was 5.4 MB.
 - `scripts/release.sh` builds, checks, notarizes and packs a release with `SHA256SUMS`, signs the
   app's archive for Toolsy's updater, and keeps the debug symbols for crash reports.
 - `scripts/build-app.sh` stops when a build fails, where it packed the previous binaries, and signs
