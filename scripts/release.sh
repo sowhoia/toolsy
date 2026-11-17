@@ -10,10 +10,11 @@
 # is made anew on every run and receives:
 #
 #   Toolsy-X.Y.Z.zip          the app
-#   Toolsy-X.Y.Z-dSYMs.zip    the debug symbols of the app, its helper and toolsy-mod
 #   <mod>.toolsymod           the example mods (not vpn-protector)
 #   SHA256SUMS                the checksums of the files above
 #   release-notes.md          the version's section of CHANGELOG.md, the text of the GitHub release
+#   Toolsy-X.Y.Z-dSYMs.zip    the debug symbols of the app, its helper and toolsy-mod, to symbolicate
+#                             crash reports; kept, never published: they name this Mac's folders and user
 #
 #   --ad-hoc              allow signing ad hoc (TOOLSY_SIGN_IDENTITY unset or "-")
 #   --skip-notarization   allow going on without TOOLSY_NOTARY_PROFILE
@@ -73,10 +74,10 @@ mismatches=
 xcode=$(xcodebuild -version) || fail "xcodebuild -version failed: a release is built with Xcode"
 compiler=$(swift --version 2>&1)
 printf '%s\n%s\n' "$xcode" "$compiler"
-build_version=$(printf '%s\n' "$xcode" | sed -n 's/^Build version //p')
-# Xcode betas have build numbers that end in a letter, such as 17E5179g.
-case $build_version in
-    *[a-z]) [ "$allow_beta" = true ] || fail "Xcode build $build_version looks like a beta (--allow-beta builds with it anyway)" ;;
+# Apple ships a beta as Xcode-beta.app. Its build number tells nothing: releases end in a letter too (16A242d).
+developer_dir=${DEVELOPER_DIR:-$(xcode-select -p)}
+case $(printf '%s' "$developer_dir" | tr '[:upper:]' '[:lower:]') in
+    *beta*) [ "$allow_beta" = true ] || fail "$developer_dir is a beta Xcode (--allow-beta builds with it anyway)" ;;
 esac
 
 identity=${TOOLSY_SIGN_IDENTITY:--}
@@ -178,7 +179,8 @@ while IFS= read -r mod; do
     esac
 done <<< "$packed"
 
-assets=("Toolsy-$version.zip" "Toolsy-$version-dSYMs.zip")
+# The symbols stay out: they are for the one who reads crash reports, and they hold this Mac's paths.
+assets=("Toolsy-$version.zip")
 for mod in "$out"/*.toolsymod; do
     assets+=("$(basename "$mod")")
 done
