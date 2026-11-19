@@ -56,9 +56,11 @@ private struct ModTile: View {
 
     var body: some View {
         let appearance = model.appearance(of: mod)
-        Tile(padding: 10, action: open) {
+        let isOn = mod.hasSwitch && model.isSwitchedOn(mod)
+        // A mod that is on glows in its colour; one without a switch is always ready, so its badge is lit.
+        Tile(tint: isOn ? appearance.tint : nil, padding: 10, action: open) {
             HStack(spacing: 10) {
-                IconBadge(appearance.symbol, tint: appearance.tint, size: 32)
+                IconBadge(appearance.symbol, tint: appearance.tint, size: 32, isLit: isOn || !mod.hasSwitch)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
                         Text(appearance.name)
@@ -136,17 +138,18 @@ private struct ModTile: View {
     }
 }
 
-/// The main switch of a mod, on its tile and in its page header.
+/// The main switch of a mod, on its tile and in its page header, in the mod's colour.
 struct ModSwitch: View {
     let mod: Mod
     @Environment(ModsModel.self) private var model
 
     var body: some View {
-        let requested = model.requestedSwitch[mod.id]
+        let appearance = model.appearance(of: mod)
         GlassSwitch(
-            isOn: Binding(get: { requested ?? mod.isEnabled }, set: { model.setEnabled(mod, $0) }),
-            isBusy: requested != nil || mod.isSwitching,
-            label: model.appearance(of: mod).name
+            isOn: Binding(get: { model.isSwitchedOn(mod) }, set: { model.setEnabled(mod, $0) }),
+            isBusy: model.requestedSwitch[mod.id] != nil || mod.isSwitching,
+            tint: appearance.tint,
+            label: appearance.name
         )
         .disabled(model.removing.contains(mod.id))
     }

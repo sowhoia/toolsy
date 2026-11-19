@@ -47,7 +47,7 @@ private struct ModPageContent: View {
         PageScaffold(
             appearance.name,
             subtitle: subtitle.joined(separator: " · "),
-            badge: PageBadge(symbol: appearance.symbol, tint: appearance.tint)
+            badge: PageBadge(symbol: appearance.symbol, tint: appearance.tint, isLit: !mod.hasSwitch || model.isSwitchedOn(mod))
         ) {
             AttentionBanners(mod: mod)
             if manifest.ui.isEmpty {
@@ -110,7 +110,7 @@ private struct PlainModTile: View {
         let appearance = model.appearance(of: mod)
         Tile {
             VStack(spacing: 6) {
-                IconBadge(appearance.symbol, tint: appearance.tint, size: 44)
+                IconBadge(appearance.symbol, tint: appearance.tint, size: 44, isLit: !mod.hasSwitch || model.isSwitchedOn(mod))
                     .padding(.bottom, 4)
                 if let status = mod.status, !status.isEmpty {
                     StatusLabel(status, level: mod.level.flatMap { StatusLevel(rawValue: $0.rawValue) } ?? .off)

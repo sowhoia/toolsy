@@ -230,6 +230,11 @@ final class ModsModel {
 
     // MARK: Using a mod
 
+    /// Whether the mod's switch is on, or, while its hook runs, whether the user asked for it on.
+    func isSwitchedOn(_ mod: Mod) -> Bool {
+        requestedSwitch[mod.id] ?? mod.isEnabled
+    }
+
     /// Flips the main switch. When the hook that runs is privileged and the mod lacks access, explains
     /// what is wrong instead (and, after a helper update, flips it).
     func setEnabled(_ mod: Mod, _ on: Bool) {

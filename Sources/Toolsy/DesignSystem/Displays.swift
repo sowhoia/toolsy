@@ -22,31 +22,45 @@ struct StyledText: View {
     }
 }
 
-/// An SF Symbol on a tinted rounded square of glass, like the icons in System Settings.
+/// An SF Symbol on a tinted rounded square of glass, like the icons in System Settings. Unlit, for a mod that is
+/// switched off, the symbol keeps the colour on a faint wash of it, as a lamp that is out; it lights up when the
+/// mod comes on.
 struct IconBadge: View {
     private let symbol: String
     private let tint: Color
     private let size: CGFloat
+    private let isLit: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(_ symbol: String, tint: Color = .accentColor, size: CGFloat = Metrics.badgeSize) {
+    init(_ symbol: String, tint: Color = .accentColor, size: CGFloat = Metrics.badgeSize, isLit: Bool = true) {
         self.symbol = symbol
         self.tint = tint
         self.size = size
+        self.isLit = isLit
     }
 
     var body: some View {
-        SymbolImage(symbol)
-            .symbolRenderingMode(.monochrome)
+        SymbolImage(symbol, renderingMode: .monochrome)
             .font(.system(size: size * 0.5, weight: .medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(isLit ? .white : unlitSymbol)
+            .symbolEffect(.bounce, options: .nonRepeating, value: isLit)
+            .symbolEffectsRemoved(reduceMotion)
             .frame(width: size, height: size)
             .background {
                 let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                shape.fill(tint)
+                shape.fill(tint.opacity(isLit ? 1 : colorScheme == .dark ? 0.2 : 0.15))
                 shape.fill(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0)], startPoint: .top, endPoint: .center))
+                    .opacity(isLit ? 1 : 0)
                 GlassRim(shape: shape, intensity: 0.7, lineWidth: 0.75)
             }
+            .animation(Motion.fade, value: isLit)
             .accessibilityHidden(true)
+    }
+
+    /// A light tint (yellow) is too faint on its own wash in Light Mode, so the symbol takes a deeper shade of it there.
+    private var unlitSymbol: Color {
+        colorScheme == .light && tint.prefersDarkLabel(in: .light) ? tint.mix(with: .black, by: 0.3) : tint
     }
 }
 

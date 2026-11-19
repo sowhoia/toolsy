@@ -313,10 +313,11 @@ private struct EdgeFadeMask: View {
     }
 }
 
-/// The icon of a page header.
+/// The icon of a page header; unlit for a mod that is switched off.
 struct PageBadge {
     var symbol: String
     var tint: Color
+    var isLit = true
 }
 
 /// The header bar of a page.
@@ -336,7 +337,7 @@ struct PageHeader<Accessory: View>: View {
                     .debugAnchor("back")
             }
             if let badge {
-                IconBadge(badge.symbol, tint: badge.tint, size: 28)
+                IconBadge(badge.symbol, tint: badge.tint, size: 28, isLit: badge.isLit)
                     .padding(.leading, showsBack ? 0 : 6)
             }
             VStack(alignment: .leading, spacing: 0) {
