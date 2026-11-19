@@ -127,3 +127,13 @@ struct AbsenceTests {
         #expect(closings.count == 3, "the displays or the Mac going to sleep, or another user's session; not waking")
     }
 }
+
+struct ScrollRequestTests {
+    @Test func aScrollAskedForBeforeThePanelClosedIsDropped() {
+        let panel = PanelState(announce: { _ in })
+        panel.setVisible(true)
+        panel.scrollTarget = "mods-arrangement"
+        panel.setVisible(false)
+        #expect(panel.scrollTarget == nil)
+    }
+}

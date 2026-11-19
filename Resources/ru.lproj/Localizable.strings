@@ -441,3 +441,27 @@
 "Pink" = "Розовый";
 "Brown" = "Коричневый";
 "Grey" = "Серый";
+
+/* Mods: arranging the list */
+"Customise" = "Настроить";
+"Hidden (%lld)" = "Скрытые (%lld)";
+"Turn On" = "Включить";
+"Turn Off" = "Выключить";
+"Show in the List" = "Показывать в списке";
+"Hide from the List" = "Скрыть из списка";
+"Show “%@” in the List" = "Показывать «%@» в списке";
+"Hide “%@” from the List" = "Скрыть «%@» из списка";
+"Show in the List of Mods" = "Показывать в списке модов";
+"Arrange Mods…" = "Упорядочить моды…";
+"List Style" = "Вид списка";
+"Cards" = "Карточки";
+"Compact" = "Компактно";
+"Hidden" = "Скрыт";
+"Drag a mod to move it. A hidden mod keeps working, and its widgets stay on the dashboard." = "Перетащите мод, чтобы переместить его. Скрытый мод продолжает работать, а его виджеты остаются на месте.";
+"Move Up" = "Переместить выше";
+"Move Down" = "Переместить ниже";
+"Reorderable rows" = "Перетаскиваемые строки";
+"Drag a row into another place." = "Перетащите строку на другое место.";
+"Morning" = "Утро";
+"Focus" = "Фокус";
+"Travel" = "Поездка";

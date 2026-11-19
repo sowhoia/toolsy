@@ -53,6 +53,9 @@ final class PanelState {
     private(set) var isVisible = false
     /// A file is dragged over the panel; it shows where to drop it.
     var isDropTargeted = false
+    /// The id of a view the page on screen scrolls to; the page clears it once it has. The view must be laid out by
+    /// then: a scroll asked for while a change that adds it still animates goes nowhere.
+    var scrollTarget: String?
     /// Where the panel's glass is, in the coordinates of the window's content (top-left origin): a mouse
     /// button released over it, at the end of a drag from another app, does not close the panel.
     @ObservationIgnored var glassFrame: CGRect = .zero
@@ -148,6 +151,8 @@ final class PanelState {
     func setVisible(_ visible: Bool) {
         guard visible != isVisible else { return }
         isVisible = visible
+        // A scroll asked for just before the panel closed belongs to that opening.
+        if !visible { scrollTarget = nil }
         for handler in visibilityHandlers { handler(visible) }
     }
 }

@@ -18,6 +18,11 @@ struct GalleryPage: View {
     @State private var samples = GalleryPage.seed(60, base: 40)
     @State private var secondSamples = GalleryPage.seed(60, base: 20)
     @State private var bars = GalleryPage.seed(24, base: 50)
+    @State private var arranged = [
+        GalleryRow(name: String(localized: "Morning"), symbol: "sun.max.fill", tint: .orange),
+        GalleryRow(name: String(localized: "Focus"), symbol: "moon.fill", tint: .indigo),
+        GalleryRow(name: String(localized: "Travel"), symbol: "airplane", tint: .teal),
+    ]
 
     private let modes = [
         PickerOption(value: "auto", label: String(localized: "Auto"), icon: "wand.and.stars"),
@@ -40,6 +45,7 @@ struct GalleryPage: View {
             buttonsSection
             displaysSection
             listSection
+            reorderSection
             gaugesSection
             chartsSection
             tilesSection
@@ -128,6 +134,11 @@ struct GalleryPage: View {
                     IconBadge("star.fill", tint: Tint.color($0), size: 18)
                 }
             }
+            HStack(spacing: 4) {
+                ForEach(ModLook.palette, id: \.self) {
+                    IconBadge("star.fill", tint: Tint.color($0), size: 18, isLit: false)
+                }
+            }
             HStack(spacing: 8) {
                 IconBadge("bolt.fill", tint: Tint.color("#FF6A00"))
                 IconBadge("leaf.fill", tint: Tint.color("ok"))
@@ -153,6 +164,25 @@ struct GalleryPage: View {
             ListRow(String(localized: "Clickable row")) {}
             EmptyState(String(localized: "Nothing here"), symbol: "tray", message: String(localized: "An empty list shows this placeholder."),
                        actionTitle: String(localized: "Refresh")) {}
+        }
+    }
+
+    private var reorderSection: some View {
+        SectionGroup(String(localized: "Reorderable rows"), footer: String(localized: "Drag a row into another place.")) {
+            ReorderableRows(arranged, rowHeight: 40) { id, index in
+                guard let from = arranged.firstIndex(where: { $0.id == id }) else { return }
+                arranged.insert(arranged.remove(at: from), at: index)
+            } row: { row in
+                HStack(spacing: 10) {
+                    IconBadge(row.symbol, tint: row.tint, size: 24)
+                    Text(row.name).font(.rowLabel)
+                    Spacer(minLength: 8)
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(.rect)
+            }
         }
     }
 
@@ -255,5 +285,14 @@ struct GalleryPage: View {
         values.append(value)
         if values.count > limit { values.removeFirst(values.count - limit) }
     }
+}
+
+/// A row of the gallery's reorderable list.
+private struct GalleryRow: Identifiable {
+    var name: String
+    var symbol: String
+    var tint: Color
+
+    var id: String { symbol }
 }
 #endif

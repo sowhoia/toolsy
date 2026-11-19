@@ -230,6 +230,7 @@ struct PageScaffold<Accessory: View, Content: View>: View {
     private let content: Content
 
     @Environment(PanelState.self) private var panel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var edges = ScrollEdges()
 
     /// `subtitle` and `badge` give a page about one thing (a mod) its name, icon and details.
@@ -246,20 +247,27 @@ struct PageScaffold<Accessory: View, Content: View>: View {
         // The content is inset by `edgeRoom` inside the scroll view so glass at its edges (a
         // button's rim) is not clipped; the spacing under the header gives that room back.
         let edgeRoom: CGFloat = 2
-        VStack(spacing: Metrics.tileSpacing - edgeRoom) {
-            PageHeader(title: title, subtitle: subtitle, badge: badge, showsBack: !panel.path.isEmpty, onBack: panel.pop) {
-                accessory
-            }
-            ContentHeight(limit: max(0, panel.maxHeight - 2 * Metrics.panelPadding
-                                        - Metrics.headerHeight - Metrics.tileSpacing + edgeRoom)) {
-                ScrollView {
-                    VStack(spacing: Metrics.tileSpacing) { content }
-                        .padding(.vertical, edgeRoom)
+        ScrollViewReader { proxy in
+            VStack(spacing: Metrics.tileSpacing - edgeRoom) {
+                PageHeader(title: title, subtitle: subtitle, badge: badge, showsBack: !panel.path.isEmpty, onBack: panel.pop) {
+                    accessory
                 }
-                .scrollIndicators(.automatic)
-                .debugAnchor("scroll")
-                .onScrollGeometryChange(for: ScrollEdges.self, of: ScrollEdges.init) { _, new in edges = new }
-                .mask { EdgeFadeMask(edges: edges) }
+                ContentHeight(limit: max(0, panel.maxHeight - 2 * Metrics.panelPadding
+                                            - Metrics.headerHeight - Metrics.tileSpacing + edgeRoom)) {
+                    ScrollView {
+                        VStack(spacing: Metrics.tileSpacing) { content }
+                            .padding(.vertical, edgeRoom)
+                    }
+                    .scrollIndicators(.automatic)
+                    .debugAnchor("scroll")
+                    .onScrollGeometryChange(for: ScrollEdges.self, of: ScrollEdges.init) { _, new in edges = new }
+                    .mask { EdgeFadeMask(edges: edges) }
+                }
+            }
+            .onChange(of: panel.scrollTarget) { _, target in
+                guard let target else { return }
+                panel.scrollTarget = nil
+                withAnimation(Motion.resolve(Motion.gentle, reduceMotion: reduceMotion)) { proxy.scrollTo(target, anchor: .top) }
             }
         }
     }

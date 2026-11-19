@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The page the panel opens on: an update when there is one, the dashboard and the list of mods, or, while the
-/// dashboard is being edited, the dashboard and its editing tools.
+/// The page the panel opens on: an update when there is one, the dashboard and the list of mods, or, in Customise,
+/// the dashboard with its editing tools and the arrangement of the mods.
 struct RootPage: View {
     @Environment(PanelState.self) private var panel
     @Environment(DashboardStore.self) private var dashboard
@@ -18,6 +18,7 @@ struct RootPage: View {
                 Group {
                     WidgetGallery()
                     DashboardSettings()
+                    ModsArrangement()
                 }
                 .transition(.opacity)
             } else {
@@ -30,7 +31,7 @@ struct RootPage: View {
                     .keyboardShortcut(.defaultAction)
                     .debugAnchor("edit-done")
             } else {
-                IconButton("square.grid.2x2", label: String(localized: "Edit Widgets")) { setEditing(true) }
+                IconButton("square.grid.2x2", label: String(localized: "Customise")) { setEditing(true) }
                     .debugAnchor("edit-widgets")
                 IconButton("gearshape", label: String(localized: "Settings")) { panel.push(.settings) }
                     .debugAnchor("settings")

@@ -2,13 +2,20 @@ import AppKit
 import SwiftUI
 import ToolsyEngine
 
-/// The mods on the root page: a header with the install button, one tile per mod, the folders that
-/// failed to load, or the empty state.
+/// The mods on the root page: a header with the install button, the mods in the user's order as cards or as the
+/// rows of one group, the hidden ones folded away at the end, the folders that failed to load, or the empty state.
 struct ModsSection: View {
     @Environment(ModsModel.self) private var model
+    @Environment(PanelState.self) private var panel
+    @Environment(DashboardStore.self) private var dashboard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let store = model.store
+        let preferences = model.preferences
+        let arranged = model.arrangedMods
+        let shown = arranged.filter { !preferences.isHidden($0.id) }
+        let hidden = arranged.filter { preferences.isHidden($0.id) }
         VStack(spacing: Metrics.tileSpacing) {
             HStack {
                 Text("Mods")
@@ -18,6 +25,12 @@ struct ModsSection: View {
                 if model.isInstalling {
                     ProgressView().controlSize(.small).padding(.trailing, 4)
                 }
+                if !arranged.isEmpty {
+                    IconButton("arrow.up.arrow.down", label: String(localized: "Arrange Mods…")) {
+                        ModsArrangement.show(dashboard: dashboard, panel: panel, reduceMotion: reduceMotion)
+                    }
+                    .debugAnchor("arrange-mods")
+                }
                 IconButton("plus", label: String(localized: "Install a mod…"), action: chooseMods)
                     .debugAnchor("install")
             }
@@ -25,8 +38,28 @@ struct ModsSection: View {
             .padding(.trailing, (Metrics.headerHeight - Metrics.iconButtonSize) / 2)
             .padding(.top, 2)
 
-            ForEach(store.mods) { mod in
-                ModTile(mod: mod)
+            if !shown.isEmpty {
+                switch preferences.listStyle {
+                case .cards:
+                    ForEach(shown) { mod in
+                        ModCard(mod: mod)
+                    }
+                case .compact:
+                    SectionGroup {
+                        ForEach(shown) { mod in
+                            CompactModRow(mod: mod)
+                        }
+                    }
+                }
+            }
+            if !hidden.isEmpty {
+                @Bindable var model = model
+                SectionGroup(String(localized: "Hidden (\(hidden.count))"), isExpanded: $model.showsHiddenMods) {
+                    ForEach(hidden) { mod in
+                        CompactModRow(mod: mod)
+                    }
+                }
+                .debugAnchor("hidden-mods")
             }
             ForEach(store.loadProblems) { problem in
                 LoadProblemTile(problem: problem)
@@ -48,8 +81,8 @@ struct ModsSection: View {
     }
 }
 
-/// One installed mod: icon, name, one status line and the main switch. Clicking it opens the mod's page.
-private struct ModTile: View {
+/// One installed mod as a card: icon, name, one status line and the main switch. Clicking it opens the mod's page.
+private struct ModCard: View {
     let mod: Mod
     @Environment(ModsModel.self) private var model
     @Environment(PanelState.self) private var panel
@@ -58,7 +91,7 @@ private struct ModTile: View {
         let appearance = model.appearance(of: mod)
         let isOn = mod.hasSwitch && model.isSwitchedOn(mod)
         // A mod that is on glows in its colour; one without a switch is always ready, so its badge is lit.
-        Tile(tint: isOn ? appearance.tint : nil, padding: 10, action: open) {
+        Tile(tint: isOn ? appearance.tint : nil, padding: 10, action: { panel.push(.mod(mod.id)) }) {
             HStack(spacing: 10) {
                 IconBadge(appearance.symbol, tint: appearance.tint, size: 32, isLit: isOn || !mod.hasSwitch)
                 VStack(alignment: .leading, spacing: 2) {
@@ -66,7 +99,7 @@ private struct ModTile: View {
                         Text(appearance.name)
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
-                        attention
+                        ModAttention(mod: mod)
                     }
                     statusLine
                 }
@@ -81,22 +114,84 @@ private struct ModTile: View {
                     .debugAnchor("tile-switch:\(mod.id)")
             }
         }
-        .contextMenu {
-            Button(String(localized: "Open"), action: open)
-            Button(String(localized: "Appearance…")) { panel.push(.modAppearance(mod.id)) }
-            Divider()
-            Button(String(localized: "Remove…"), role: .destructive) { model.remove(mod) }
-        }
+        .contextMenu { ModMenu(mod: mod) }
         .debugAnchor("tile:\(mod.id)")
     }
 
-    private func open() {
-        panel.push(.mod(mod.id))
-    }
-
-    /// A quiet mark next to the name when something needs the user: a failure or missing access.
     @ViewBuilder
-    private var attention: some View {
+    private var statusLine: some View {
+        if let status = mod.status, !status.isEmpty {
+            ModStatus(mod: mod, status: status)
+        } else if let summary = mod.manifest.summary, !summary.isEmpty {
+            Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+}
+
+/// One installed mod as a row of a group: icon, name, its status beside it and the main switch. Clicking it opens the
+/// mod's page.
+private struct CompactModRow: View {
+    let mod: Mod
+    @Environment(ModsModel.self) private var model
+    @Environment(PanelState.self) private var panel
+
+    var body: some View {
+        let appearance = model.appearance(of: mod)
+        let isOn = mod.hasSwitch && model.isSwitchedOn(mod)
+        Button { panel.push(.mod(mod.id)) } label: {
+            HStack(spacing: 10) {
+                IconBadge(appearance.symbol, tint: appearance.tint, size: 26, isLit: isOn || !mod.hasSwitch)
+                HStack(spacing: 5) {
+                    Text(appearance.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                    ModAttention(mod: mod)
+                }
+                .layoutPriority(1)
+                Spacer(minLength: 8)
+                if let status = mod.status, !status.isEmpty {
+                    ModStatus(mod: mod, status: status)
+                }
+                if mod.hasSwitch {
+                    // The switch lies over this room, outside the row's button.
+                    Color.clear.frame(width: GlassSwitch.trackSize.width)
+                }
+            }
+            .frame(minHeight: Metrics.rowMinHeight)
+            .contentShape(.rect)
+        }
+        .buttonStyle(RowButtonStyle())
+        .overlay(alignment: .trailing) {
+            if mod.hasSwitch {
+                ModSwitch(mod: mod)
+                    .debugAnchor("tile-switch:\(mod.id)")
+            }
+        }
+        .contextMenu { ModMenu(mod: mod) }
+        .debugAnchor("tile:\(mod.id)")
+    }
+}
+
+/// A mod's status with the dot of its level, or as plain text without one.
+private struct ModStatus: View {
+    let mod: Mod
+    let status: String
+
+    var body: some View {
+        if let level = mod.level.flatMap({ StatusLevel(rawValue: $0.rawValue) }) {
+            StatusLabel(status, level: level)
+        } else {
+            Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+}
+
+/// A quiet mark next to a mod's name when something needs the user: a failure or missing access.
+private struct ModAttention: View {
+    let mod: Mod
+    @Environment(ModsModel.self) private var model
+
+    var body: some View {
         let remedy = ModInterface.remedy(for: mod.access)
         let name = model.appearance(of: mod).name
         if remedy == .reinstallModified {
@@ -119,22 +214,37 @@ private struct ModTile: View {
                 .accessibilityLabel(String(localized: "Needs administrator access"))
         }
     }
+}
 
-    @ViewBuilder
-    private var statusLine: some View {
-        if let status = mod.status, !status.isEmpty {
-            if let level = mod.level.flatMap({ StatusLevel(rawValue: $0.rawValue) }) {
-                StatusLabel(status, level: level)
-            } else {
-                caption(status)
+/// The context menu of a mod in the list: open it, switch it, change how it looks or where it is listed, remove it.
+struct ModMenu: View {
+    let mod: Mod
+    @Environment(ModsModel.self) private var model
+    @Environment(PanelState.self) private var panel
+    @Environment(DashboardStore.self) private var dashboard
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let isHidden = model.preferences.isHidden(mod.id)
+        Button(String(localized: "Open"), systemImage: "arrow.right.circle") { panel.push(.mod(mod.id)) }
+        if mod.hasSwitch {
+            let isOn = model.isSwitchedOn(mod)
+            Button(isOn ? String(localized: "Turn Off") : String(localized: "Turn On"), systemImage: "power") {
+                model.setEnabled(mod, !isOn)
             }
-        } else if let summary = mod.manifest.summary, !summary.isEmpty {
-            caption(summary)
+            .disabled(model.requestedSwitch[mod.id] != nil || mod.isSwitching)
         }
-    }
-
-    private func caption(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        Divider()
+        Button(String(localized: "Appearance…"), systemImage: "paintbrush") { panel.push(.modAppearance(mod.id)) }
+        Button(isHidden ? String(localized: "Show in the List") : String(localized: "Hide from the List"),
+               systemImage: isHidden ? "eye" : "eye.slash") {
+            withAnimation(Motion.resolve(Motion.gentle, reduceMotion: reduceMotion)) { model.preferences.setHidden(!isHidden, mod.id) }
+        }
+        Button(String(localized: "Arrange Mods…"), systemImage: "arrow.up.arrow.down") {
+            ModsArrangement.show(dashboard: dashboard, panel: panel, reduceMotion: reduceMotion)
+        }
+        Divider()
+        Button(String(localized: "Remove…"), systemImage: "trash", role: .destructive) { model.remove(mod) }
     }
 }
 

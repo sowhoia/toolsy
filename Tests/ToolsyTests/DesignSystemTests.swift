@@ -173,3 +173,26 @@ struct BatteryHealthTests {
         #expect(reading.cycleCount != nil)
     }
 }
+
+struct RowReorderingTests {
+    @Test func aDraggedRowLandsAtTheNearestBoundaryWithinTheList() {
+        let height: CGFloat = 40
+        #expect(RowReordering.target(start: 3, translation: -80, rowHeight: height, count: 4) == 1)
+        #expect(RowReordering.target(start: 3, translation: -19, rowHeight: height, count: 4) == 3)
+        #expect(RowReordering.target(start: 3, translation: -21, rowHeight: height, count: 4) == 2)
+        #expect(RowReordering.target(start: 0, translation: 61, rowHeight: height, count: 4) == 2)
+        #expect(RowReordering.target(start: 1, translation: 1000, rowHeight: height, count: 4) == 3)
+        #expect(RowReordering.target(start: 1, translation: -1000, rowHeight: height, count: 4) == 0)
+        #expect(RowReordering.target(start: 0, translation: 50, rowHeight: 0, count: 4) == 0)
+    }
+
+    @Test func theRowsBetweenStepTowardsWhereTheDraggedOneCameFrom() {
+        let height: CGFloat = 40
+        // The last of four rows over the second: the second and third step down.
+        #expect((0..<4).map { RowReordering.shift(of: $0, start: 3, target: 1, rowHeight: height) } == [0, 40, 40, 0])
+        // The first over the third: the second and third step up.
+        #expect((0..<4).map { RowReordering.shift(of: $0, start: 0, target: 2, rowHeight: height) } == [0, -40, -40, 0])
+        // Over its own place, nothing moves.
+        #expect((0..<4).map { RowReordering.shift(of: $0, start: 2, target: 2, rowHeight: height) } == [0, 0, 0, 0])
+    }
+}

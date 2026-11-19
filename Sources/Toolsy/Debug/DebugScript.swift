@@ -27,6 +27,8 @@ import ToolsyShared
 ///     dashboard edit|done|reset|print|add <widget>|remove <widget>|move <widget> <index>
 ///               size <widget> small|medium|wide|style <widget> line|area|bar|unit <widget> bytes|bits
 ///               deviceline on|off
+///     modlist print|style cards|compact|hide <mod>|show <mod>|move <mod> <position>|look <mod> <json>|look <mod> reset
+///     arrange                        (Arrange Mods… of a mod's context menu: Customise, scrolled to the mods)
 ///     event launch|wake|network|power                     notifications
 ///     developer on|off               (developer mode, as the switch in Settings sets it)
 ///     update check|install|wait|print (Check Now; start installing the release found; wait until that has
@@ -305,6 +307,11 @@ private final class Runner {
             try await Task.sleep(for: .milliseconds(300))
         case "dashboard":
             try await dashboard(arguments)
+        case "modlist":
+            try await modList(rest)
+        case "arrange":
+            ModsArrangement.show(dashboard: app.dashboard, panel: panel, reduceMotion: false)
+            try await Task.sleep(for: .seconds(0.8))
         case "event":
             guard let event = ModSystemEvent(rawValue: rest) else { throw ScriptError("event launch|wake|network|power") }
             if event == .wake {
@@ -386,6 +393,41 @@ private final class Runner {
             [$0.id.rawValue, $0.size?.rawValue, $0.chartStyle?.rawValue, $0.rateUnit?.rawValue].compactMap(\.self).joined(separator: ":")
         }
         say("DASHBOARD editing=\(store.isEditing) device=\(store.layout.showsDeviceLine) \(widgets.joined(separator: " "))")
+        try await Task.sleep(for: .seconds(0.6))
+    }
+
+    /// Arranges and dresses the mods through the preferences, as Customise and Appearance do, and prints the list.
+    func modList(_ rest: String) async throws {
+        let preferences = mods.preferences
+        let usage = ScriptError("modlist print|style cards|compact|hide <mod>|show <mod>|move <mod> <position>|look <mod> <json>|reset")
+        let parts = rest.split(separator: " ", maxSplits: 2).map(String.init)
+        guard let command = parts.first else { throw usage }
+        let mod = parts.count > 1 ? mods.mod(id: parts[1]) : nil
+        let change: () -> Void
+        switch command {
+        case "print": change = {}
+        case "style":
+            guard let style = parts.count > 1 ? ModListStyle(rawValue: parts[1]) : nil else { throw usage }
+            change = { preferences.listStyle = style }
+        case "hide", "show":
+            guard let mod else { throw usage }
+            change = { preferences.setHidden(command == "hide", mod.id) }
+        case "move":
+            guard let mod, parts.count == 3, let position = Int(parts[2]) else { throw usage }
+            change = { preferences.move(mod.id, toPosition: position, among: self.mods.arrangedMods.map(\.id)) }
+        case "look":
+            guard let mod, parts.count == 3 else { throw usage }
+            let look = parts[2] == "reset" ? ModLook() : try JSONDecoder().decode(ModLook.self, from: Data(parts[2].utf8))
+            change = { preferences.setLook(look, of: mod.id, originalName: mod.manifest.name) }
+        default: throw usage
+        }
+        withAnimation(Motion.gentle, change)
+        let listed = mods.arrangedMods.map { mod in
+            let look = preferences.look(of: mod.id)
+            return [mod.id, preferences.isHidden(mod.id) ? "hidden" : nil, look.name.map { "name=\($0)" }, look.icon.map { "icon=\($0)" },
+                    look.tint.map { "tint=\($0)" }].compactMap(\.self).joined(separator: ":")
+        }
+        say("MODLIST style=\(preferences.listStyle.rawValue) \(listed.joined(separator: " "))")
         try await Task.sleep(for: .seconds(0.6))
     }
 

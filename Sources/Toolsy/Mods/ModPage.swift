@@ -170,21 +170,28 @@ private struct ModWidgetsSection: View {
     }
 }
 
-/// How the mod looks in Toolsy: the way to its appearance.
+/// How the mod looks in Toolsy, and whether it is in the list of mods.
 private struct PresentationSection: View {
     let mod: Mod
     @Environment(ModsModel.self) private var model
     @Environment(PanelState.self) private var panel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let appearance = model.appearance(of: mod)
+        let preferences = model.preferences
         SectionGroup {
             ListRow(String(localized: "Appearance"), subtitle: String(localized: "Name, colour and icon"),
-                    value: model.preferences.look(of: mod.id).isEmpty ? nil : String(localized: "Your own"),
+                    value: preferences.look(of: mod.id).isEmpty ? nil : String(localized: "Your own"),
                     icon: appearance.symbol, tint: appearance.tint) {
                 panel.push(.modAppearance(mod.id))
             }
             .debugAnchor("mod-appearance")
+            SwitchRow(String(localized: "Show in the List of Mods"), icon: "list.bullet", isOn: Binding(
+                get: { !preferences.isHidden(mod.id) },
+                set: { shown in withAnimation(Motion.resolve(Motion.gentle, reduceMotion: reduceMotion)) { preferences.setHidden(!shown, mod.id) } }
+            ))
+            .debugAnchor("mod-listed")
         }
     }
 }

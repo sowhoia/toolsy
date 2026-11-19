@@ -28,6 +28,9 @@ final class ModsModel {
     let sectionFolds = SectionFolds()
     /// The order of the mods, the hidden ones, the list's style and the looks the user gave mods.
     let preferences: ModPreferences
+    /// The hidden mods are unfolded at the end of the list, for as long as the app runs, like a mod's sections: the
+    /// root page is made anew whenever it is shown again.
+    var showsHiddenMods = false
 
     /// Shows the panel; set by the app delegate. Installing from outside the panel (the menu bar
     /// icon, Finder) needs it on screen for its confirmation.

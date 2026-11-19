@@ -196,7 +196,7 @@ private struct WidgetGrid: View {
                 : isExpanded ? String(localized: "Hides details") : String(localized: "Shows details"))
             .accessibilityAddTraits(isExpanded ? .isSelected : [])
             .contextMenu {
-                Button(String(localized: "Edit Widgets"), systemImage: "square.grid.2x2") {
+                Button(String(localized: "Customise"), systemImage: "square.grid.2x2") {
                     withAnimation(motion) { store.isEditing = true }
                 }
             }
