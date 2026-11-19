@@ -245,20 +245,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showMenu() {
         guard let item = statusItem else { return }
+        // Assigning the menu for the duration of one click gives the native placement and
+        // highlight; left clicks keep going to `statusItemClicked`.
+        item.menu = makeMenu()
+        item.button?.performClick(nil)
+        item.menu = nil
+    }
+
+    /// The menu of the menu bar icon: the panel, a switch for each listed mod that has one, settings, quitting.
+    func makeMenu() -> NSMenu {
         let menu = NSMenu()
+        // A mod whose switch is changing has its item disabled, which autoenabling would undo.
+        menu.autoenablesItems = false
         menu.addItem(withTitle: String(localized: "Open Toolsy"), action: #selector(openFromMenu), keyEquivalent: "")
             .image = NSImage(systemSymbolName: "wrench.and.screwdriver", accessibilityDescription: nil)
+        let switches = mods.menuSwitches
+        if !switches.isEmpty {
+            menu.addItem(.separator())
+            menu.addItem(.sectionHeader(title: String(localized: "Mods")))
+            for entry in switches {
+                let switchItem = menu.addItem(withTitle: entry.name, action: #selector(switchMod(_:)), keyEquivalent: "")
+                switchItem.representedObject = entry.id
+                switchItem.state = entry.isOn ? .on : .off
+                switchItem.image = NSImage(systemSymbolName: entry.symbol, accessibilityDescription: nil)
+                switchItem.isEnabled = !entry.isBusy
+            }
+        }
+        menu.addItem(.separator())
         menu.addItem(withTitle: String(localized: "Settings…"), action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: String(localized: "Quit Toolsy"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for entry in menu.items where entry.action != #selector(NSApplication.terminate(_:)) {
             entry.target = self
         }
-        // Assigning the menu for the duration of one click gives the native placement and
-        // highlight; left clicks keep going to `statusItemClicked`.
-        item.menu = menu
-        item.button?.performClick(nil)
-        item.menu = nil
+        return menu
     }
 
     @objc private func openFromMenu() {
@@ -267,6 +287,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         openPanel(on: .settings)
+    }
+
+    @objc private func switchMod(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, let mod = mods.mod(id: id) else { return }
+        mods.switchFromMenu(mod)
     }
 }
 

@@ -251,6 +251,27 @@ final class ModsModel {
         }
     }
 
+    /// The mods the menu bar icon's menu switches: those with a switch, in the user's order, but the hidden ones.
+    var menuSwitches: [ModMenuSwitch] {
+        arrangedMods.filter { $0.hasSwitch && !preferences.isHidden($0.id) }.map { mod in
+            let appearance = appearance(of: mod)
+            return ModMenuSwitch(id: mod.id, name: appearance.name, symbol: appearance.symbol, isOn: isSwitchedOn(mod),
+                                 isBusy: requestedSwitch[mod.id] != nil || mod.isSwitching || removing.contains(mod.id))
+        }
+    }
+
+    /// Flips a mod's switch from the menu bar icon's menu. When the hook that would run needs administrator access the
+    /// mod lacks, the panel opens on the mod's page first: that is where it is explained and fixed.
+    func switchFromMenu(_ mod: Mod) {
+        let on = !isSwitchedOn(mod)
+        if ModInterface.isPrivileged(on ? mod.manifest.lifecycle.enable : mod.manifest.lifecycle.disable, in: mod.manifest),
+           mod.needsAccess {
+            if !panel.isVisible { presentPanel() }
+            panel.show(.mod(mod.id))
+        }
+        setEnabled(mod, on)
+    }
+
     /// Stores a bound control's value and runs its command; with a privileged command the mod lacks
     /// access for, explains what is wrong instead.
     func setValue(_ value: JSONValue, for key: String, command: String?, of mod: Mod) {
@@ -474,6 +495,16 @@ final class ModsModel {
         }
         _ = await panel.ask(ConfirmationRequest(title: title, message: message, confirmTitle: String(localized: "OK"), cancelTitle: nil))
     }
+}
+
+/// A mod as the menu bar icon's menu lists it, to switch it without opening the panel.
+struct ModMenuSwitch: Equatable {
+    let id: String
+    let name: String
+    let symbol: String
+    let isOn: Bool
+    /// Its switch is changing or the mod is being removed: the item waits.
+    let isBusy: Bool
 }
 
 extension Mod {

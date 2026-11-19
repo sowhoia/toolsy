@@ -136,6 +136,7 @@ private struct WidgetGrid: View {
 
     @Environment(DashboardStore.self) private var store
     @Environment(PanelState.self) private var panel
+    @Environment(ModsModel.self) private var mods
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drag: TileDrag?
     /// The floating tile's frame; changed without animation while it follows the pointer.
@@ -196,6 +197,18 @@ private struct WidgetGrid: View {
                 : isExpanded ? String(localized: "Hides details") : String(localized: "Shows details"))
             .accessibilityAddTraits(isExpanded ? .isSelected : [])
             .contextMenu {
+                // A mod's widget leads to the mod, and switches it.
+                if case .mod(let mod, _, let appearance) = widget.info.content {
+                    Button(String(localized: "Open “\(appearance.name)”"), systemImage: "arrow.right.circle") { panel.push(.mod(mod.id)) }
+                    if mod.hasSwitch {
+                        let isOn = mods.isSwitchedOn(mod)
+                        Button(isOn ? String(localized: "Turn Off") : String(localized: "Turn On"), systemImage: "power") {
+                            mods.setEnabled(mod, !isOn)
+                        }
+                        .disabled(mods.requestedSwitch[mod.id] != nil || mod.isSwitching)
+                    }
+                    Divider()
+                }
                 Button(String(localized: "Customise"), systemImage: "square.grid.2x2") {
                     withAnimation(motion) { store.isEditing = true }
                 }

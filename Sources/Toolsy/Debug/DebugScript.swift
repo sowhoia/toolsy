@@ -29,6 +29,7 @@ import ToolsyShared
 ///               deviceline on|off
 ///     modlist print|style cards|compact|hide <mod>|show <mod>|move <mod> <position>|look <mod> <json>|look <mod> reset
 ///     arrange                        (Arrange Mods… of a mod's context menu: Customise, scrolled to the mods)
+///     statusmenu print|capture <name> (the menu bar icon's menu: its items, or a picture of it popped up on the panel)
 ///     event launch|wake|network|power                     notifications
 ///     developer on|off               (developer mode, as the switch in Settings sets it)
 ///     update check|install|wait|print (Check Now; start installing the release found; wait until that has
@@ -72,6 +73,8 @@ private final class Runner {
     let app: AppDelegate
     var failures = 0
     var captureFolder = URL(filePath: FileManager.default.currentDirectoryPath)
+    /// The menu `statusmenu capture` has popped up, closed by its timer.
+    var trackedMenu: NSMenu?
     var backdrop: NSWindow?
 
     init(app: AppDelegate) {
@@ -309,6 +312,8 @@ private final class Runner {
             try await dashboard(arguments)
         case "modlist":
             try await modList(rest)
+        case "statusmenu":
+            try await statusMenu(rest)
         case "arrange":
             ModsArrangement.show(dashboard: app.dashboard, panel: panel, reduceMotion: false)
             try await Task.sleep(for: .seconds(0.8))
@@ -394,6 +399,46 @@ private final class Runner {
         }
         say("DASHBOARD editing=\(store.isEditing) device=\(store.layout.showsDeviceLine) \(widgets.joined(separator: " "))")
         try await Task.sleep(for: .seconds(0.6))
+    }
+
+    /// Prints the items of the menu bar icon's menu, or pops it up over the panel and captures it. A menu tracks the
+    /// mouse in a loop of its own, so the capture runs from a timer of that loop, which then closes the menu.
+    func statusMenu(_ rest: String) async throws {
+        let menu = app.makeMenu()
+        if rest == "print" {
+            for item in menu.items {
+                let title = item.isSeparatorItem ? "—" : item.title
+                say("MENU \(title) state=\(item.state == .on ? "on" : "off") enabled=\(item.isEnabled) image=\(item.image != nil)")
+            }
+            return
+        }
+        guard rest.hasPrefix("capture "), let view = window?.contentView else { throw ScriptError("statusmenu print|capture <name>") }
+        let file = captureFolder.appending(path: "\(rest.dropFirst(8)).png")
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let panelNumber = window?.windowNumber
+        let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                // The menu's window is the one of this app at the level of menus that is not the panel.
+                let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+                let menuWindow = windows.first {
+                    $0[kCGWindowOwnerPID as String] as? Int32 == pid && $0[kCGWindowNumber as String] as? Int != panelNumber
+                        && $0[kCGWindowLayer as String] as? Int == Int(CGWindowLevelForKey(.popUpMenuWindow))
+                }
+                if let number = menuWindow?[kCGWindowNumber as String] as? Int {
+                    let process = Process()
+                    process.executableURL = URL(filePath: "/usr/sbin/screencapture")
+                    process.arguments = ["-x", "-o", "-l", String(number), file.path(percentEncoded: false)]
+                    try? process.run()
+                    process.waitUntilExit()
+                }
+                self.trackedMenu?.cancelTracking()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        trackedMenu = menu
+        defer { trackedMenu = nil }
+        menu.popUp(positioning: nil, at: NSPoint(x: 24, y: view.isFlipped ? 60 : view.bounds.height - 60), in: view)
+        say(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) ? "CAPTURE \(file.path(percentEncoded: false))" : "FAIL no menu captured")
     }
 
     /// Arranges and dresses the mods through the preferences, as Customise and Appearance do, and prints the list.

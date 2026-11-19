@@ -474,6 +474,33 @@ struct AdministratorAccessTests {
         await fixture.cleanUp()
     }
 
+    @Test func switchingFromTheMenuWithoutAccessOpensTheModsPageToExplain() async throws {
+        let first = try Fixture()
+        try await install(first)
+        await first.quit()
+        try Data("#!/bin/sh\n".utf8).write(to: first.directories.mods.appending(path: "root/payload.sh"))
+
+        let fixture = try Fixture(relaunching: first)
+        await fixture.model.waitUntilStarted()
+        let mod = try #require(fixture.model.mod(id: "root"))
+        // The panel is closed, as it is when the menu bar icon's menu is open.
+        fixture.panel.setVisible(false)
+        var presented = false
+        fixture.model.presentPanel = {
+            presented = true
+            fixture.panel.setVisible(true)
+        }
+        fixture.model.switchFromMenu(mod)
+        #expect(presented)
+        #expect(fixture.panel.currentPage == .mod("root"))
+        let warning = try await fixture.waitForDialog()
+        #expect(warning.title == ModInterface.explanation(of: .reinstallModified, modName: "Root").title)
+        fixture.panel.dismissDialog(confirmed: false)
+        try await fixture.waitUntil("the switch to settle") { fixture.model.requestedSwitch["root"] == nil }
+        #expect(!mod.isEnabled)
+        await fixture.cleanUp()
+    }
+
     @Test func anOutdatedHelperIsUpdatedAndThenTheActionRuns() async throws {
         let first = try Fixture()
         try await install(first)
@@ -649,6 +676,37 @@ struct ModPreferencesOfInstalledModsTests {
         try await relaunched.installConfirmed(try relaunched.modFolder("c", plainManifest("c")), id: "c")
         #expect(relaunched.model.arrangedMods.map(\.id) == ["a", "b", "c"])
         await relaunched.cleanUp()
+    }
+
+    @Test func theMenuSwitchesTheListedModsThatHaveASwitch() async throws {
+        let fixture = try Fixture()
+        func switchable(_ id: String) -> String {
+            #"{"schema": 1, "id": "\#(id)", "name": "Mod \#(id)", "version": "1", "commands": {"on": {"shell": "true"}, "#
+                + #""off": {"shell": "true"}}, "lifecycle": {"enable": "on", "disable": "off"}}"#
+        }
+        for id in ["a", "b", "h"] {
+            try await fixture.installConfirmed(try fixture.modFolder(id, switchable(id)), id: id)
+        }
+        try await fixture.installConfirmed(try fixture.modFolder("plain", plainManifest("plain")), id: "plain")
+        let model = fixture.model
+        model.preferences.setHidden(true, "h")
+        model.preferences.move("b", toPosition: 0, among: model.arrangedMods.map(\.id))
+        model.preferences.setLook(ModLook(name: "Bee", icon: "leaf.fill"), of: "b", originalName: "Mod b")
+
+        // Hidden mods and mods without a switch are not in it; the others are, in the user's order and looks.
+        #expect(model.menuSwitches == [
+            ModMenuSwitch(id: "b", name: "Bee", symbol: "leaf.fill", isOn: false, isBusy: false),
+            ModMenuSwitch(id: "a", name: "Mod a", symbol: ModAppearance.defaultSymbol, isOn: false, isBusy: false),
+        ])
+
+        let a = try #require(model.mod(id: "a"))
+        model.switchFromMenu(a)
+        #expect(model.menuSwitches.last?.isOn == true)
+        try await fixture.waitUntil("the mod to be on") { a.isEnabled && model.requestedSwitch["a"] == nil }
+        model.switchFromMenu(a)
+        try await fixture.waitUntil("the mod to be off") { !a.isEnabled && model.requestedSwitch["a"] == nil }
+        #expect(model.menuSwitches.last?.isOn == false)
+        await fixture.cleanUp()
     }
 
     @Test func aModIsCalledAndDrawnAsTheUserLikesWhereverItIsShown() async throws {
