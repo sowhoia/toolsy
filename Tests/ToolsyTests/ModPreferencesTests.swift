@@ -1,5 +1,7 @@
-import Foundation
+import AppKit
+import SwiftUI
 import Testing
+import ToolsyShared
 @testable import Toolsy
 
 private func temporaryFile() -> URL {
@@ -144,5 +146,47 @@ struct ModPreferencesTests {
             #expect(Tint.resolve(name) != nil, "\(name)")
         }
         #expect(Set(ModLook.palette).count == ModLook.palette.count)
+    }
+}
+
+struct ModAppearanceTests {
+    private func manifest(_ fields: String) throws -> ModManifest {
+        try ModManifest.load(from: Data(#"{"schema": 1, "id": "a", "name": "Keep Awake", "version": "1"\#(fields)}"#.utf8))
+    }
+
+    @Test func theUsersLookComesFirstAndEachPartFallsBackToTheManifest() throws {
+        let manifest = try manifest(#", "icon": "cup.and.saucer.fill", "tint": "orange""#)
+        let own = ModAppearance(manifest: manifest)
+        #expect(own.name == "Keep Awake")
+        #expect(own.symbol == "cup.and.saucer.fill")
+        #expect(own.tint == .orange)
+        #expect(!own.isRenamed)
+
+        let mine = ModAppearance(manifest: manifest, look: ModLook(name: "Coffee", icon: "moon.fill", tint: "#336699"))
+        #expect(mine.name == "Coffee")
+        #expect(mine.originalName == "Keep Awake")
+        #expect(mine.isRenamed)
+        #expect(mine.symbol == "moon.fill")
+        #expect(mine.tint == Color(.sRGB, red: 0x33 / 255.0, green: 0x66 / 255.0, blue: 0x99 / 255.0))
+
+        let recoloured = ModAppearance(manifest: manifest, look: ModLook(tint: "teal"))
+        #expect(recoloured.name == "Keep Awake")
+        #expect(recoloured.symbol == "cup.and.saucer.fill")
+        #expect(recoloured.tint == .teal)
+        // A colour Toolsy cannot read leaves the mod's own.
+        #expect(ModAppearance(manifest: manifest, look: ModLook(tint: "plaid")).tint == .orange)
+    }
+
+    @Test func aModWithoutAnIconOrColourHasTheStandardOnes() throws {
+        let bare = ModAppearance(manifest: try manifest(""))
+        #expect(bare.symbol == ModAppearance.defaultSymbol)
+        #expect(bare.tint == .accentColor)
+    }
+
+    @Test func everyOfferedIconExists() {
+        for symbol in ModLook.symbols + [ModAppearance.defaultSymbol] {
+            #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
+        }
+        #expect(Set(ModLook.symbols).count == ModLook.symbols.count)
     }
 }

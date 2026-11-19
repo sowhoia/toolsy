@@ -42,6 +42,19 @@ struct ModLook: Codable, Equatable, Sendable {
     static let palette = ["red", "orange", "yellow", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink",
                           "brown", "gray"]
 
+    /// The icons offered for a mod, roughly by what a mod does: power and time, access, network and hardware,
+    /// sound and pictures, tools, files, and a few marks.
+    static let symbols = [
+        "power", "bolt.fill", "moon.fill", "sun.max.fill", "cup.and.saucer.fill", "timer", "alarm.fill",
+        "hourglass", "calendar", "bell.fill", "eye.fill", "lock.fill", "key.fill", "shield.lefthalf.filled",
+        "network", "wifi", "globe", "antenna.radiowaves.left.and.right", "cpu", "memorychip", "internaldrive.fill",
+        "display", "keyboard.fill", "headphones", "speaker.wave.2.fill", "mic.fill", "camera.fill",
+        "wrench.and.screwdriver.fill", "hammer.fill", "gearshape.fill", "terminal.fill", "paintbrush.fill", "wand.and.stars",
+        "slider.horizontal.3", "chart.bar.fill", "folder.fill", "doc.text.fill", "tray.full.fill", "trash.fill",
+        "clipboard.fill", "bookmark.fill", "star.fill", "heart.fill", "flag.fill", "flame.fill", "leaf.fill", "drop.fill",
+        "cloud.fill",
+    ]
+
     /// The longest name kept, as long as a manifest's name may be.
     static let maxNameLength = 80
 }

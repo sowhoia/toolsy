@@ -299,8 +299,15 @@ struct DashboardStoreTests {
 @MainActor
 struct WidgetAvailabilityTests {
     @Test func metricsTheMacLacksAreNotOffered() {
+        let root = FileManager.default.temporaryDirectory.appending(path: "ToolsyWidgets-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root) }  // best effort: a temporary folder
+        let directories = ToolsyDirectories(root: root)
+        // Not started: no mods.
+        let noMods = ModsModel(store: ModStore(directories: directories, privileged: SimulatedHelper(store: root.appending(path: "helper"))),
+                               directories: directories, panel: PanelState(),
+                               dashboard: DashboardStore(file: root.appending(path: "Dashboard.json"), hasBattery: false))
         let withoutBattery = Set(SystemMetric.allCases).subtracting([.battery])
-        let offered = WidgetInfo.available(metrics: withoutBattery, mods: []).map(\.id)
+        let offered = WidgetInfo.available(metrics: withoutBattery, mods: noMods).map(\.id)
         #expect(offered == [.builtIn(.cpu), .builtIn(.memory), .builtIn(.network), .builtIn(.storage), .builtIn(.gpu), .builtIn(.disk)])
         #expect(!DashboardLayout.standard(hasBattery: false).widgets.contains { $0.id == .builtIn(.battery) })
     }
@@ -326,7 +333,7 @@ struct WidgetAvailabilityTests {
         await model.waitUntilStarted()
         #expect(model.store.loadProblems.isEmpty)
 
-        let offered = WidgetInfo.available(metrics: [.cpu], mods: model.store.mods)
+        let offered = WidgetInfo.available(metrics: [.cpu], mods: model)
         #expect(offered.map(\.id) == [.builtIn(.cpu), .mod("ping", widget: "latency"), .mod("ping", widget: "loss")])
 
         let latency = try #require(WidgetInfo.resolve(.mod("ping", widget: "latency"), metrics: [], mods: model))

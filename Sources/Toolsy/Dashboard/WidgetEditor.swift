@@ -62,7 +62,7 @@ struct WidgetGallery: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let addable = WidgetInfo.available(metrics: monitor.availableMetrics, mods: mods.store.mods).filter { !store.contains($0.id) }
+        let addable = WidgetInfo.available(metrics: monitor.availableMetrics, mods: mods).filter { !store.contains($0.id) }
         SectionGroup(String(localized: "Add Widgets"),
                      footer: addable.isEmpty ? String(localized: "Every widget is on the dashboard.") : nil) {
             ForEach(addable) { info in

@@ -7,14 +7,15 @@ import ToolsyShared
 struct ModWidgetFace: View {
     let mod: Mod
     let widget: ModWidget
+    let appearance: ModAppearance
     let size: WidgetSize
     let chartStyle: ChartStyle
     private static let palette: [Color] = [.blue, .orange, .green, .pink, .purple, .teal]
 
     var body: some View {
-        let tint = Tint.resolve(widget.tint.map(mod.render)) ?? mod.tint
-        let title = widget.title.map(mod.render).flatMap { $0.isEmpty ? nil : $0 } ?? mod.manifest.name
-        TileFace(title: title, symbol: widget.icon ?? mod.manifest.icon ?? "puzzlepiece.extension.fill",
+        let tint = Tint.resolve(widget.tint.map(mod.render)) ?? appearance.tint
+        let title = widget.title.map(mod.render).flatMap { $0.isEmpty ? nil : $0 } ?? appearance.name
+        TileFace(title: title, symbol: widget.icon ?? appearance.symbol,
                  value: mod.render(widget.value)) {
             if let chart = widget.chart {
                 Sparkline(series: chart.series.enumerated().map { index, series in
@@ -48,9 +49,11 @@ struct ModWidgetDetail: View {
     let mod: Mod
     let widget: ModWidget
     @Environment(PanelState.self) private var panel
+    @Environment(ModsModel.self) private var model
 
     var body: some View {
         let detail = widget.detail
+        let appearance = model.appearance(of: mod)
         VStack(spacing: Metrics.tileSpacing) {
             ForEach(ModInterface.blocks(of: detail)) { block in
                 switch block {
@@ -67,11 +70,13 @@ struct ModWidgetDetail: View {
                 }
             }
             SectionGroup {
-                ListRow(String(localized: "Open “\(mod.manifest.name)”"), icon: mod.manifest.icon ?? "puzzlepiece.extension.fill",
-                        tint: mod.tint) { panel.push(.mod(mod.id)) }
-                    .debugAnchor("widget-open:\(mod.id)")
+                ListRow(String(localized: "Open “\(appearance.name)”"), icon: appearance.symbol, tint: appearance.tint) {
+                    panel.push(.mod(mod.id))
+                }
+                .debugAnchor("widget-open:\(mod.id)")
             }
         }
         .environment(\.modControlPlace, .widgetDetail(widget.id))
+        .environment(\.modTint, appearance.tint)
     }
 }

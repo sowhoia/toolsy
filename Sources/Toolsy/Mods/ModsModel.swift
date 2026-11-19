@@ -101,7 +101,7 @@ final class ModsModel {
 
     /// The installed mods in the user's order, hidden ones included.
     var arrangedMods: [Mod] {
-        preferences.arranged(store.mods, id: \.id, name: \.manifest.name)
+        preferences.arranged(store.mods, id: \.id, name: { self.appearance(of: $0).name })
     }
 
     // MARK: Installing
@@ -286,7 +286,7 @@ final class ModsModel {
         }
         Task {
             defer { finally() }
-            let explanation = ModInterface.explanation(of: remedy, modName: mod.manifest.name)
+            let explanation = ModInterface.explanation(of: remedy, modName: appearance(of: mod).name)
             let fix = await panel.ask(ConfirmationRequest(
                 title: explanation.title,
                 message: explanation.message,
@@ -312,13 +312,14 @@ final class ModsModel {
         guard !removing.contains(mod.id) else { return }
         Task {
             let switchedOff = mod.hasSwitch && mod.isEnabled
+            let appearance = appearance(of: mod)
             let confirmed = await panel.ask(ConfirmationRequest(
-                title: String(localized: "Remove “\(mod.manifest.name)”?"),
+                title: String(localized: "Remove “\(appearance.name)”?"),
                 message: switchedOff
                     ? String(localized: "It is switched off first. Its settings and data are deleted.")
                     : String(localized: "Its settings and data are deleted."),
-                icon: mod.manifest.icon ?? "puzzlepiece.extension.fill",
-                iconTint: Tint.color(mod.manifest.tint),
+                icon: appearance.symbol,
+                iconTint: appearance.tint,
                 confirmTitle: String(localized: "Remove"),
                 isDestructive: true
             ))
@@ -328,6 +329,7 @@ final class ModsModel {
     }
 
     private func uninstall(_ mod: Mod, force: Bool) async {
+        let name = appearance(of: mod).name
         removing.insert(mod.id)
         do {
             // Hooks the mod runs on the way out may be privileged and need the helper's prompt.
@@ -340,14 +342,13 @@ final class ModsModel {
         } catch {
             removing.remove(mod.id)
             guard !force else {
-                return await notify(String(localized: "Couldn’t remove “\(mod.manifest.name)”"),
-                                    ModInterface.message(for: error, modName: mod.manifest.name))
+                return await notify(String(localized: "Couldn’t remove “\(name)”"), ModInterface.message(for: error, modName: name))
             }
             let removeAnyway = await panel.ask(ConfirmationRequest(
-                title: String(localized: "Couldn’t remove “\(mod.manifest.name)”"),
+                title: String(localized: "Couldn’t remove “\(name)”"),
                 message: error is PrivilegedError
-                    ? ModInterface.message(for: error, modName: mod.manifest.name)
-                    : ModInterface.displayedError(error.localizedDescription, of: mod.manifest),
+                    ? ModInterface.message(for: error, modName: name)
+                    : ModInterface.displayedError(error.localizedDescription, of: mod.manifest, named: name),
                 confirmTitle: String(localized: "Remove Anyway"),
                 isDestructive: true
             ))
@@ -407,7 +408,7 @@ final class ModsModel {
     /// Reads a mod from its folder again. A folder that no longer loads is listed with the load problems.
     func reload(_ mod: Mod) {
         guard reloading.insert(mod.id).inserted else { return }
-        let name = mod.manifest.name
+        let name = appearance(of: mod).name
         Task {
             do {
                 try await store.reload(mod.id)

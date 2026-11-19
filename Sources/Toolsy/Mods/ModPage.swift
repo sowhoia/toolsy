@@ -41,10 +41,13 @@ private struct ModPageContent: View {
 
     var body: some View {
         let manifest = mod.manifest
+        let appearance = model.appearance(of: mod)
+        // Under a name of the user's own, the manifest's says which mod this is.
+        let subtitle = appearance.isRenamed ? [manifest.name, manifest.version] : [manifest.version, manifest.author].compactMap(\.self)
         PageScaffold(
-            manifest.name,
-            subtitle: [manifest.version, manifest.author].compactMap(\.self).joined(separator: " · "),
-            badge: PageBadge(symbol: manifest.icon ?? "puzzlepiece.extension.fill", tint: Tint.color(manifest.tint))
+            appearance.name,
+            subtitle: subtitle.joined(separator: " · "),
+            badge: PageBadge(symbol: appearance.symbol, tint: appearance.tint)
         ) {
             AttentionBanners(mod: mod)
             if manifest.ui.isEmpty {
@@ -55,6 +58,7 @@ private struct ModPageContent: View {
             if !manifest.widgets.isEmpty {
                 ModWidgetsSection(mod: mod)
             }
+            PresentationSection(mod: mod)
             AboutMod(mod: mod)
             if model.developerMode {
                 DeveloperSection(mod: mod)
@@ -67,6 +71,7 @@ private struct ModPageContent: View {
                     .debugAnchor("page-switch")
             }
         }
+        .environment(\.modTint, appearance.tint)
     }
 }
 
@@ -76,9 +81,10 @@ private struct AttentionBanners: View {
     @Environment(ModsModel.self) private var model
 
     var body: some View {
+        let name = model.appearance(of: mod).name
         if let remedy = ModInterface.remedy(for: mod.access) {
             // Changed files are a warning, not just something missing.
-            InlineBanner(ModInterface.explanation(of: remedy, modName: mod.manifest.name).message,
+            InlineBanner(ModInterface.explanation(of: remedy, modName: name).message,
                          kind: remedy == .reinstallModified ? .error : .warning,
                          action: InlineBanner.Action(
                              title: remedy == .updateHelper ? String(localized: "Update…") : String(localized: "Choose File…"),
@@ -87,7 +93,7 @@ private struct AttentionBanners: View {
                          ))
         }
         if let error = mod.error {
-            InlineBanner(ModInterface.displayedError(error, of: mod.manifest), kind: .error) {
+            InlineBanner(ModInterface.displayedError(error, of: mod.manifest, named: name), kind: .error) {
                 withAnimation(Motion.snappy) { mod.dismissError() }
             }
             .debugAnchor("error-banner")
@@ -98,11 +104,13 @@ private struct AttentionBanners: View {
 /// The page of a mod whose manifest declares no interface: what it is and how it is doing.
 private struct PlainModTile: View {
     let mod: Mod
+    @Environment(ModsModel.self) private var model
 
     var body: some View {
+        let appearance = model.appearance(of: mod)
         Tile {
             VStack(spacing: 6) {
-                IconBadge(mod.manifest.icon ?? "puzzlepiece.extension.fill", tint: Tint.color(mod.manifest.tint), size: 44)
+                IconBadge(appearance.symbol, tint: appearance.tint, size: 44)
                     .padding(.bottom, 4)
                 if let status = mod.status, !status.isEmpty {
                     StatusLabel(status, level: mod.level.flatMap { StatusLevel(rawValue: $0.rawValue) } ?? .off)
@@ -132,11 +140,13 @@ private struct PlainModTile: View {
 private struct ModWidgetsSection: View {
     let mod: Mod
     @Environment(DashboardStore.self) private var dashboard
+    @Environment(ModsModel.self) private var model
 
     var body: some View {
+        let appearance = model.appearance(of: mod)
         SectionGroup(String(localized: "Widgets")) {
             ForEach(mod.manifest.widgets, id: \.id) { widget in
-                let info = WidgetInfo(id: .mod(mod.id, widget: widget.id), content: .mod(mod, widget))
+                let info = WidgetInfo(id: .mod(mod.id, widget: widget.id), content: .mod(mod, widget, appearance))
                 HStack(spacing: 10) {
                     IconBadge(info.symbol, tint: info.tint, size: 24)
                     VStack(alignment: .leading, spacing: 1) {
@@ -157,6 +167,25 @@ private struct ModWidgetsSection: View {
             }
         }
         .debugAnchor("mod-widgets")
+    }
+}
+
+/// How the mod looks in Toolsy: the way to its appearance.
+private struct PresentationSection: View {
+    let mod: Mod
+    @Environment(ModsModel.self) private var model
+    @Environment(PanelState.self) private var panel
+
+    var body: some View {
+        let appearance = model.appearance(of: mod)
+        SectionGroup {
+            ListRow(String(localized: "Appearance"), subtitle: String(localized: "Name, colour and icon"),
+                    value: model.preferences.look(of: mod.id).isEmpty ? nil : String(localized: "Your own"),
+                    icon: appearance.symbol, tint: appearance.tint) {
+                panel.push(.modAppearance(mod.id))
+            }
+            .debugAnchor("mod-appearance")
+        }
     }
 }
 

@@ -205,18 +205,19 @@ enum ModInterface {
     }
 
     /// A mod's `error` in the user's language when the engine wrote it from a `PrivilegedError`; any
-    /// other message (the mod's own, a command's output) is shown as written.
-    static func displayedError(_ message: String, of mod: ModManifest) -> String {
+    /// other message (the mod's own, a command's output) is shown as written. `name` is what the user calls the mod,
+    /// when it is not the manifest's name.
+    static func displayedError(_ message: String, of mod: ModManifest, named name: String? = nil) -> String {
         let known: [PrivilegedError] = [
             .helperUnavailable(.needsUpdate), .helperUnavailable(.notInstalled), .cancelled, .busy,
             .notApproved(modID: mod.id),
         ]
         if let error = known.first(where: { $0.localizedDescription == message }) {
-            return Self.message(for: error, modName: mod.name)
+            return Self.message(for: error, modName: name ?? mod.name)
         }
         let unreachable = PrivilegedError.connection("").localizedDescription
         if message.hasPrefix(unreachable) {
-            return Self.message(for: .connection(String(message.dropFirst(unreachable.count))), modName: mod.name)
+            return Self.message(for: .connection(String(message.dropFirst(unreachable.count))), modName: name ?? mod.name)
         }
         return message
     }

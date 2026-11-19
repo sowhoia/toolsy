@@ -54,9 +54,6 @@ extension Mod {
         default: return true
         }
     }
-
-    /// The mod's colour, the default tint of its sliders, gauges and charts.
-    var tint: Color { Tint.color(manifest.tint) }
 }
 
 /// One control of a mod and, for sections and rows, everything inside it. `path` is its index path
@@ -226,6 +223,7 @@ private struct SliderControl: View {
     let mod: Mod
     let slider: ModControl.Slider
     @Environment(ModsModel.self) private var model
+    @Environment(\.modTint) private var tint
     @State private var dragged: Double?
 
     var body: some View {
@@ -233,7 +231,7 @@ private struct SliderControl: View {
         SliderRow(
             mod.render(slider.label), icon: slider.icon,
             value: Binding(get: { dragged ?? stored }, set: { dragged = $0 }),
-            in: slider.min...slider.max, step: slider.step, unit: slider.unit, tint: mod.tint,
+            in: slider.min...slider.max, step: slider.step, unit: slider.unit, tint: tint,
             onChange: slider.live ? { store($0) } : nil,
             onCommit: { value in
                 dragged = nil
@@ -307,6 +305,7 @@ private struct ButtonControl: View {
     let button: ModControl.Button
     @Environment(ModsModel.self) private var model
     @Environment(PanelState.self) private var panel
+    @Environment(\.modTint) private var tint
     @State private var copied = CopyFeedback()
 
     var body: some View {
@@ -316,14 +315,14 @@ private struct ButtonControl: View {
             let text = mod.render(copy)
             // Confirms in place, like a copyable value row.
             GlassButton(copied.isShowing ? String(localized: "Copied") : label, icon: copied.isShowing ? "checkmark" : button.icon,
-                        kind: kind, tint: mod.tint, fillsWidth: true) {
+                        kind: kind, tint: tint, fillsWidth: true) {
                 perform({ copied.copy(text) }, label: label)
             }
             // Nothing to copy yet: copying would only empty the pasteboard.
             .disabled(text.isEmpty)
             .animation(Motion.snappy, value: copied.isShowing)
         } else {
-            GlassButton(label, icon: button.icon, kind: kind, tint: mod.tint,
+            GlassButton(label, icon: button.icon, kind: kind, tint: tint,
                         isBusy: button.command.map(mod.runningCommands.contains) ?? false, fillsWidth: true) {
                 press(label: label)
             }
@@ -357,12 +356,13 @@ private struct ButtonControl: View {
 private struct GaugeControl: View {
     let mod: Mod
     let gauge: ModControl.Gauge
+    @Environment(\.modTint) private var modTint
 
     var body: some View {
         let value = mod.state[gauge.bind]?.numberValue
         let format = ModInterface.valueFormat(gauge.format)
         let text = value.map { format?.string(for: $0) ?? formatNumber($0, unit: gauge.unit) } ?? "—"
-        let tint = Tint.resolve(gauge.tint.map(mod.render)) ?? mod.tint
+        let tint = Tint.resolve(gauge.tint.map(mod.render)) ?? modTint
         let label = mod.render(gauge.label)
         switch gauge.style {
         case .bar:
@@ -379,13 +379,14 @@ private struct GaugeControl: View {
 private struct ChartControl: View {
     let mod: Mod
     let chart: ModControl.Chart
+    @Environment(\.modTint) private var tint
     private static let palette: [Color] = [.blue, .orange, .green, .pink, .purple, .teal]
 
     var body: some View {
         SeriesChart(
             chart.label.map(mod.render),
             series: chart.series.enumerated().map { index, series in
-                ChartSeries(series.label, tint: Tint.resolve(series.tint) ?? (index == 0 ? mod.tint : Self.palette[index - 1]),
+                ChartSeries(series.label, tint: Tint.resolve(series.tint) ?? (index == 0 ? tint : Self.palette[index - 1]),
                             values: mod.history(of: series.bind))
             },
             style: ChartStyle(rawValue: chart.style.rawValue) ?? .line,

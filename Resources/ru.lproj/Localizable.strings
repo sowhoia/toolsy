@@ -415,3 +415,29 @@
 /* Settings: diagnostics for a bug report */
 "Copy Diagnostics" = "Скопировать диагностику";
 "Diagnostics are text for a bug report: the versions, this Mac, the mods and what they ran lately. Never their settings or what they printed." = "Диагностика — это текст для сообщения об ошибке: версии, этот Mac, моды и что они недавно запускали. Без их настроек и того, что они выводили.";
+
+/* Mods: their appearance */
+"Appearance" = "Оформление";
+"Appearance…" = "Оформление…";
+"Name, colour and icon" = "Название, цвет и значок";
+"Your own" = "Своё";
+"Name" = "Название";
+"Colour" = "Цвет";
+"Icon" = "Значок";
+"Leave it empty for the mod’s own name, “%@”." = "Оставьте пустым, чтобы вернуть название мода — «%@».";
+"Use the Mod’s Own Look" = "Вернуть оформление мода";
+"The mod’s own colour" = "Цвет мода";
+"The mod’s own icon" = "Значок мода";
+"Red" = "Красный";
+"Orange" = "Оранжевый";
+"Yellow" = "Жёлтый";
+"Green" = "Зелёный";
+"Mint" = "Мятный";
+"Teal" = "Бирюзовый";
+"Cyan" = "Голубой";
+"Blue" = "Синий";
+"Indigo" = "Индиго";
+"Purple" = "Фиолетовый";
+"Pink" = "Розовый";
+"Brown" = "Коричневый";
+"Grey" = "Серый";

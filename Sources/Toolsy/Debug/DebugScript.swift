@@ -32,7 +32,7 @@ import ToolsyShared
 ///     update check|install|wait|print (Check Now; start installing the release found; wait until that has
 ///                                     failed or restarts Toolsy; print what the check found and the installation)
 ///
-/// Pages are root, settings, gallery and mod:<id>. Anchors are the names given with `debugAnchor`
+/// Pages are root, settings, gallery, mod:<id> and appearance:<id>. Anchors are the names given with `debugAnchor`
 /// (`tile:<id>`, `widget:<widget>`, `widget-remove:<widget>`, `gallery:<widget>`, `edit-widgets`, `edit-done`,
 /// `option-size`, `fold:<section title>`, `widget-switch:<widget>`, `mod-reload`, `recent-runs`, `detail:memory`,
 /// `memory-optimize`, `memory-status`, `memory-dismiss`, `process-list:memory|cpu`, `process-quit:<n>` for the n-th quit
@@ -395,6 +395,7 @@ private final class Runner {
         case "settings": return .settings
         case "gallery": return .gallery
         case let mod where mod.hasPrefix("mod:"): return .mod(String(mod.dropFirst(4)))
+        case let mod where mod.hasPrefix("appearance:"): return .modAppearance(String(mod.dropFirst(11)))
         default: throw ScriptError("unknown page \(name)")
         }
     }

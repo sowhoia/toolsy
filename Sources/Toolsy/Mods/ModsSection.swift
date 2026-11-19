@@ -55,13 +55,13 @@ private struct ModTile: View {
     @Environment(PanelState.self) private var panel
 
     var body: some View {
-        let tint = Tint.color(mod.manifest.tint)
+        let appearance = model.appearance(of: mod)
         Tile(padding: 10, action: open) {
             HStack(spacing: 10) {
-                IconBadge(mod.manifest.icon ?? "puzzlepiece.extension.fill", tint: tint, size: 32)
+                IconBadge(appearance.symbol, tint: appearance.tint, size: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
-                        Text(mod.manifest.name)
+                        Text(appearance.name)
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                         attention
@@ -81,6 +81,7 @@ private struct ModTile: View {
         }
         .contextMenu {
             Button(String(localized: "Open"), action: open)
+            Button(String(localized: "Appearance…")) { panel.push(.modAppearance(mod.id)) }
             Divider()
             Button(String(localized: "Remove…"), role: .destructive) { model.remove(mod) }
         }
@@ -95,17 +96,18 @@ private struct ModTile: View {
     @ViewBuilder
     private var attention: some View {
         let remedy = ModInterface.remedy(for: mod.access)
+        let name = model.appearance(of: mod).name
         if remedy == .reinstallModified {
             SymbolImage("exclamationmark.triangle.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(.red)
-                .help(ModInterface.explanation(of: .reinstallModified, modName: mod.manifest.name).title)
+                .help(ModInterface.explanation(of: .reinstallModified, modName: name).title)
                 .accessibilityLabel(String(localized: "Files changed after installation"))
         } else if let error = mod.error {
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(.red)
-                .help(ModInterface.displayedError(error, of: mod.manifest))
+                .help(ModInterface.displayedError(error, of: mod.manifest, named: name))
                 .accessibilityLabel(String(localized: "Error"))
         } else if remedy != nil {
             Image(systemName: "lock.fill")
@@ -144,7 +146,7 @@ struct ModSwitch: View {
         GlassSwitch(
             isOn: Binding(get: { requested ?? mod.isEnabled }, set: { model.setEnabled(mod, $0) }),
             isBusy: requested != nil || mod.isSwitching,
-            label: mod.manifest.name
+            label: model.appearance(of: mod).name
         )
         .disabled(model.removing.contains(mod.id))
     }

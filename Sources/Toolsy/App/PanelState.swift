@@ -11,6 +11,8 @@ enum PanelPage: Hashable, Sendable {
     #endif
     /// The page of the installed mod with this id.
     case mod(String)
+    /// Where the user changes the name, colour and icon of the installed mod with this id.
+    case modAppearance(String)
 }
 
 /// A question asked inside the panel instead of a system alert.

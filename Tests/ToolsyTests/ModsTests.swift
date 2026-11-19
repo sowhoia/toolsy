@@ -650,4 +650,36 @@ struct ModPreferencesOfInstalledModsTests {
         #expect(relaunched.model.arrangedMods.map(\.id) == ["a", "b", "c"])
         await relaunched.cleanUp()
     }
+
+    @Test func aModIsCalledAndDrawnAsTheUserLikesWhereverItIsShown() async throws {
+        let fixture = try Fixture()
+        let manifest = #"{"schema": 1, "id": "w", "name": "Widgets", "version": "1", "tint": "blue", "widgets": [{"id": "plain", "value": "1"}, "#
+            + #"{"id": "own", "title": "Own", "icon": "star.fill", "tint": "green", "value": "2"}]}"#
+        let mod = try await fixture.installConfirmed(try fixture.modFolder("w", manifest), id: "w")
+        let model = fixture.model
+        model.preferences.setLook(ModLook(name: "Zeta", icon: "moon.fill", tint: "pink"), of: "w", originalName: "Widgets")
+
+        // A widget without its own title, icon or colour takes the mod's; one with them keeps them.
+        let plain = try #require(WidgetInfo.resolve(.mod("w", widget: "plain"), metrics: [], mods: model))
+        #expect(plain.name == "Zeta")
+        #expect(plain.symbol == "moon.fill")
+        #expect(plain.tint == .pink)
+        #expect(plain.source == "Zeta")
+        let own = try #require(WidgetInfo.resolve(.mod("w", widget: "own"), metrics: [], mods: model))
+        #expect(own.name == "Own")
+        #expect(own.symbol == "star.fill")
+        #expect(own.tint == .green)
+
+        // Mods never placed are listed by the name the user gave them.
+        try await fixture.installConfirmed(try fixture.modFolder("m", plainManifest("m")), id: "m")
+        #expect(model.arrangedMods.map(\.id) == ["m", "w"])
+
+        // The removal asks about the mod by that name too.
+        model.remove(mod)
+        let question = try await fixture.waitForDialog()
+        #expect(question.title == String(localized: "Remove “Zeta”?"))
+        #expect(question.icon == "moon.fill")
+        fixture.panel.dismissDialog(confirmed: false)
+        await fixture.cleanUp()
+    }
 }

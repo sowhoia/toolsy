@@ -72,6 +72,7 @@ struct PanelRootView: View {
         case .gallery: GalleryPage()
         #endif
         case .mod(let id): ModPage(id: id)
+        case .modAppearance(let id): ModAppearancePage(id: id)
         }
     }
 }

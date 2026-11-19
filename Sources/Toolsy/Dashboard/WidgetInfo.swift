@@ -8,17 +8,20 @@ import ToolsyShared
 struct WidgetInfo: Identifiable {
     enum Content {
         case metric(SystemMetric)
-        case mod(Mod, ModWidget)
+        /// A mod's widget, and how the user has the mod look.
+        case mod(Mod, ModWidget, ModAppearance)
     }
 
     let id: WidgetID
     let content: Content
 
-    /// The widgets of this Mac's metrics and of the installed mods, built-in ones first.
-    static func available(metrics: Set<SystemMetric>, mods: [Mod]) -> [WidgetInfo] {
+    /// The widgets of this Mac's metrics and of the installed mods, built-in ones first, then the mods' in the user's
+    /// order.
+    static func available(metrics: Set<SystemMetric>, mods: ModsModel) -> [WidgetInfo] {
         SystemMetric.allCases.filter(metrics.contains).map { WidgetInfo(id: .builtIn($0), content: .metric($0)) }
-            + mods.flatMap { mod in
-                mod.manifest.widgets.map { WidgetInfo(id: .mod(mod.id, widget: $0.id), content: .mod(mod, $0)) }
+            + mods.arrangedMods.flatMap { mod in
+                let appearance = mods.appearance(of: mod)
+                return mod.manifest.widgets.map { WidgetInfo(id: .mod(mod.id, widget: $0.id), content: .mod(mod, $0, appearance)) }
             }
     }
 
@@ -29,28 +32,28 @@ struct WidgetInfo: Identifiable {
         }
         guard let (modID, widgetID) = id.modWidget, let mod = mods.mod(id: modID),
               let widget = mod.manifest.widgets.first(where: { $0.id == widgetID }) else { return nil }
-        return WidgetInfo(id: id, content: .mod(mod, widget))
+        return WidgetInfo(id: id, content: .mod(mod, widget, mods.appearance(of: mod)))
     }
 
     var name: String {
         switch content {
         case .metric(let metric): metric.widgetName
-        case .mod(let mod, let widget):
-            widget.title.map(mod.render).flatMap { $0.isEmpty ? nil : $0 } ?? mod.manifest.name
+        case .mod(let mod, let widget, let appearance):
+            widget.title.map(mod.render).flatMap { $0.isEmpty ? nil : $0 } ?? appearance.name
         }
     }
 
     var symbol: String {
         switch content {
         case .metric(let metric): metric.widgetSymbol
-        case .mod(let mod, let widget): widget.icon ?? mod.manifest.icon ?? "puzzlepiece.extension.fill"
+        case .mod(_, let widget, let appearance): widget.icon ?? appearance.symbol
         }
     }
 
     var tint: Color {
         switch content {
         case .metric(let metric): metric.widgetTint
-        case .mod(let mod, let widget): Tint.resolve(widget.tint.map(mod.render)) ?? mod.tint
+        case .mod(let mod, let widget, let appearance): Tint.resolve(widget.tint.map(mod.render)) ?? appearance.tint
         }
     }
 
@@ -58,14 +61,14 @@ struct WidgetInfo: Identifiable {
     var source: String {
         switch content {
         case .metric: String(localized: "Built-in")
-        case .mod(let mod, _): mod.manifest.name
+        case .mod(_, _, let appearance): appearance.name
         }
     }
 
     var defaultSize: WidgetSize {
         switch content {
         case .metric(let metric): metric == .network || metric == .disk ? .medium : .small
-        case .mod(_, let widget): WidgetSize(widget.size)
+        case .mod(_, let widget, _): WidgetSize(widget.size)
         }
     }
 
@@ -75,7 +78,7 @@ struct WidgetInfo: Identifiable {
         case .metric(.cpu), .metric(.gpu): .area
         case .metric(.network), .metric(.disk): .line
         case .metric: nil
-        case .mod(_, let widget): widget.chart.map { ChartStyle(rawValue: $0.style.rawValue) ?? .area }
+        case .mod(_, let widget, _): widget.chart.map { ChartStyle(rawValue: $0.style.rawValue) ?? .area }
         }
     }
 

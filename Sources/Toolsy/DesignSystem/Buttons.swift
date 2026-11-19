@@ -151,14 +151,17 @@ private struct LiquidGlassButtonStyle<S: InsettableShape>: ButtonStyle {
 /// does not exist, instead of rendering nothing.
 struct SymbolImage: View {
     private let name: String
+    private let renderingMode: SymbolRenderingMode
 
-    init(_ name: String) {
+    /// `renderingMode` `.monochrome` draws every layer alike, for symbols shown side by side as equals.
+    init(_ name: String, renderingMode: SymbolRenderingMode = .hierarchical) {
         self.name = name
+        self.renderingMode = renderingMode
     }
 
     var body: some View {
         Image(systemName: Self.exists(name) ? name : "questionmark.square.dashed")
-            .symbolRenderingMode(.hierarchical)
+            .symbolRenderingMode(renderingMode)
     }
 
     private static var known: [String: Bool] = [:]

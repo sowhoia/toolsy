@@ -15,7 +15,7 @@ struct ShownWidget: Identifiable {
 
     /// A mod widget without `detail` opens the mod's page instead.
     var hasDetail: Bool {
-        if case .mod(_, let widget) = info.content { !widget.detail.isEmpty } else { true }
+        if case .mod(_, let widget, _) = info.content { !widget.detail.isEmpty } else { true }
     }
 }
 
@@ -67,7 +67,7 @@ struct DashboardView: View {
         store.layout.widgets.compactMap { placed in
             guard let info = WidgetInfo.resolve(placed.id, metrics: monitor.availableMetrics, mods: mods) else { return nil }
             var widget = ShownWidget(placed: placed, info: info)
-            if case .mod(let mod, let modWidget) = info.content, let when = modWidget.when, !mod.evaluate(when) {
+            if case .mod(let mod, let modWidget, _) = info.content, let when = modWidget.when, !mod.evaluate(when) {
                 guard store.isEditing else { return nil }
                 widget.isConditionHidden = true
             }
@@ -246,7 +246,7 @@ private struct WidgetGrid: View {
         } else {
             switch widget.info.content {
             case .metric(let metric): MetricDetail(metric: metric, chartStyle: widget.chartStyle, rateUnit: widget.rateUnit)
-            case .mod(let mod, let modWidget): ModWidgetDetail(mod: mod, widget: modWidget)
+            case .mod(let mod, let modWidget, _): ModWidgetDetail(mod: mod, widget: modWidget)
             }
         }
     }
@@ -274,7 +274,7 @@ private struct WidgetGrid: View {
 
     private func activate(_ widget: ShownWidget) {
         guard widget.hasDetail else {
-            if case .mod(let mod, _) = widget.info.content { panel.push(.mod(mod.id)) }
+            if case .mod(let mod, _, _) = widget.info.content { panel.push(.mod(mod.id)) }
             return
         }
         withAnimation(motion) {
@@ -380,8 +380,8 @@ struct WidgetFaceView: View {
         switch widget.info.content {
         case .metric(let metric):
             MetricFace(metric: metric, size: widget.size, chartStyle: widget.chartStyle, rateUnit: widget.rateUnit)
-        case .mod(let mod, let modWidget):
-            ModWidgetFace(mod: mod, widget: modWidget, size: widget.size, chartStyle: widget.chartStyle)
+        case .mod(let mod, let modWidget, let appearance):
+            ModWidgetFace(mod: mod, widget: modWidget, appearance: appearance, size: widget.size, chartStyle: widget.chartStyle)
         }
     }
 }
