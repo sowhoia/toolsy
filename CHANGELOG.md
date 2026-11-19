@@ -5,6 +5,22 @@ All notable changes to Toolsy are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Mods
+
+- The list shows which mods are on: a mod that is on glows in its colour, with a lit badge and a
+  switch in its colour; one that is off keeps its icon, unlit.
+- Appearance, from a mod's page or its context menu: a name, a colour and an icon of your own, used
+  wherever Toolsy shows the mod, each falling back to the mod's own.
+- Customise (formerly Edit Widgets) arranges the mods too: drag them into order, hide some, and show
+  the list as cards or as compact rows. Hidden mods keep working and wait, folded, at the end of
+  the list. The arrows beside + lead there, and so does a mod's context menu, which also turns the
+  mod on or off and hides or shows it.
+- The menu of a right click on the menu bar icon switches mods on and off without the panel.
+- A mod's widget on the dashboard opens the mod or switches it from its context menu.
+- The choices are kept in `ModPreferences.json` in the data root; removing a mod forgets them.
+
 ## [1.1.0] - 2026-11-17
 
 Toolsy updates itself in one click, warns about memory pressure, heat, a low battery and a nearly

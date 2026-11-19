@@ -38,16 +38,17 @@ own processes (such as WindowServer) using the most of it, memory the apps holdi
 battery its cycles and how much it holds next to when it was new, and the memory detail can also
 free up memory (below).
 
-Choose **Edit Widgets** (the grid button, or a tile's context menu) to arrange the dashboard: drag
+Choose **Customise** (the grid button, or a tile's context menu) to arrange the dashboard: drag
 tiles to a new place, select one for its options (size, chart style, bytes or bits for the network
 rate) or remove it, add widgets back from the list underneath, hide the line about the Mac, or reset
-everything to the standard layout. The built-in widgets are CPU, Memory, Battery (on a Mac
+everything to the standard layout. The mods are arranged there too (see [Your mods](#your-mods)). The built-in widgets are CPU, Memory, Battery (on a Mac
 with one), Network, Storage, GPU and Disk Activity. Only the widgets on the dashboard are measured,
 and only while the panel is open.
 
 Mods can add widgets of their own. A mod's widgets are placed on the dashboard when the mod is
 installed for the first time; afterwards you switch each one on or off on the mod's page or in the
-editor. A mod's tile unfolds the quick controls the mod gives it, or opens the mod's page.
+editor. A mod's tile unfolds the quick controls the mod gives it, or opens the mod's page; its context
+menu opens the mod or turns it on or off.
 
 ## Freeing up memory
 
@@ -122,6 +123,24 @@ of their own, and Toolsy remembers which key signed each installed mod: an updat
 key, or not signed at all, comes with a warning that it may not be from the same author, as does an
 update that names another author.
 
+### Your mods
+
+The list under the dashboard shows at a glance which mods are on: a mod that is on glows in its
+colour, with its badge lit and its switch in its colour; one that is off keeps its icon, unlit. Each
+mod's context menu turns it on or off, opens it, hides it or leads to:
+
+- **Appearance**, also on the mod's page: give the mod a name, a colour and an icon of your own. They
+  apply wherever Toolsy shows the mod — the list, its page, its widgets and its controls — and each
+  falls back to the mod's own, which **Use the Mod's Own Look** brings back. The page's subtitle then
+  names the mod as its author did.
+- **Arrange Mods**, also the arrows beside **+**, which opens **Customise** at the mods: drag them into
+  the order you like, hide the ones you rarely open, and choose how the list looks, as **Cards** or
+  **Compact** rows. A hidden mod keeps working and keeps its widgets; it waits in **Hidden** at the end
+  of the list.
+
+A right click on the menu bar icon lists the mods in the list that have a switch, ticked while on, to
+turn them on or off without opening the panel.
+
 ## Writing mods
 
 `toolsy-mod` writes, checks, runs and packs mods without the app. It ships inside Toolsy:
@@ -174,6 +193,7 @@ design and its threat model are described in [docs/ARCHITECTURE.md](docs/ARCHITE
 | `~/Library/Application Support/Toolsy/Run/` | The running service of each mod, so a crash leaves none behind |
 | `~/Library/Application Support/Toolsy/Signers/` | The key that signed each installed mod, for mods that came signed |
 | `~/Library/Application Support/Toolsy/Dashboard.json` | The dashboard's widgets, order and options |
+| `~/Library/Application Support/Toolsy/ModPreferences.json` | The order of the mods, the hidden ones, the list's style, and the names, colours and icons you gave them |
 | `~/Library/Application Support/Toolsy/Settings.json` | The alerts switched on, whether to check for updates and the version that ran last |
 | `~/Library/Application Support/Toolsy/DeveloperMode` | Present while developer mode is on |
 | `/Library/PrivilegedHelperTools/app.toolsy.helper` | The helper (only after administrator access was set up) |

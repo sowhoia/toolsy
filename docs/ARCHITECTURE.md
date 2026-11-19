@@ -107,6 +107,7 @@ Data/<id>/        the mod's writable folder (TOOLSY_DATA_DIR)
 Run/<id>.json     pid and start time of the mod's running service
 Signers/<id>      the public key that signed the installed copy, if it came signed (below)
 Dashboard.json    the dashboard's layout (see below)
+ModPreferences.json  how the user arranges and dresses the mods (see below)
 DeveloperMode     an empty marker file, present while developer mode is on
 ```
 
@@ -164,6 +165,24 @@ caption, the rendered `value`, a sparkline from `Mod.history(of:)` or a level ba
 dimmed while a mod with a switch is off. Expanding it lays out its `detail` controls with the same
 views as the mod's page, followed by a row that opens the page; without `detail` the tile opens the
 page.
+
+## The list of mods
+
+`ModPreferences` keeps what the user changes about the mods apart from each mod's own settings: the
+order (the ids the user placed; the other mods follow by the name they are shown with), the mods
+hidden from the list, the list's style (cards or compact rows) and a look per mod (`ModLook`: a name,
+an SF Symbol and a colour as `Tint` reads it, each nil to follow the manifest). It is saved to
+`ModPreferences.json` (`{"version": 1, "listStyle", "order", "hidden", "looks"}`) after every change
+and loads like `Dashboard.json`: a missing, unreadable, damaged or newer file gives the defaults and
+is left alone until the user changes something. Moving a mod among the listed ones keeps the places
+of ids that are not listed, as the dashboard does. Removing a mod forgets its entries.
+
+`ModAppearance` resolves a mod's look over its manifest, and every view that names or draws an
+installed mod uses it; the mod's colour reaches its controls through the `modTint` environment value.
+A widget's own title, icon or colour still wins over the mod's. The install confirmation shows what
+the package says it is, never the user's look. The menu bar icon's menu is built each time it opens
+(`AppDelegate.makeMenu`), with `ModsModel.menuSwitches`: the listed mods that have a switch, in the
+user's order.
 
 ## Readings of the Mac
 
