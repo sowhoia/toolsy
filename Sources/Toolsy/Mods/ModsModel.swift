@@ -26,6 +26,8 @@ final class ModsModel {
     private(set) var reloading: Set<String> = []
     /// Which collapsible sections the user folded, for as long as the app runs.
     let sectionFolds = SectionFolds()
+    /// The order of the mods, the hidden ones, the list's style and the looks the user gave mods.
+    let preferences: ModPreferences
 
     /// Shows the panel; set by the app delegate. Installing from outside the panel (the menu bar
     /// icon, Finder) needs it on screen for its confirmation.
@@ -42,6 +44,7 @@ final class ModsModel {
         self.directories = directories
         self.panel = panel
         self.dashboard = dashboard
+        preferences = ModPreferences(file: directories.root.appending(path: "ModPreferences.json"))
         panel.addVisibilityHandler { [weak self] visible in
             self?.store.isPanelVisible = visible
             // Closing the panel answers the open confirmation with Cancel; the rest of the queue goes too.
@@ -94,6 +97,11 @@ final class ModsModel {
 
     func mod(id: String) -> Mod? {
         store.mod(id: id)
+    }
+
+    /// The installed mods in the user's order, hidden ones included.
+    var arrangedMods: [Mod] {
+        preferences.arranged(store.mods, id: \.id, name: \.manifest.name)
     }
 
     // MARK: Installing
@@ -327,6 +335,7 @@ final class ModsModel {
             removing.remove(mod.id)
             dashboard.removeWidgets(ofMod: mod.id)
             sectionFolds.forget(modID: mod.id)
+            preferences.forget(modID: mod.id)
             if panel.currentPage == .mod(mod.id) { panel.pop() }
         } catch {
             removing.remove(mod.id)
@@ -360,6 +369,7 @@ final class ModsModel {
                 // The folder is named by the mod's id; its widgets may be on the dashboard from before it broke.
                 dashboard.removeWidgets(ofMod: problem.folder)
                 sectionFolds.forget(modID: problem.folder)
+                preferences.forget(modID: problem.folder)
             } catch {
                 await notify(String(localized: "Couldn’t remove “\(problem.folder)”"), error.localizedDescription)
             }

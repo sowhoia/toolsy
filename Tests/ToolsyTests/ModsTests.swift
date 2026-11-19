@@ -614,3 +614,40 @@ struct DeveloperModeTests {
         await fixture.cleanUp()
     }
 }
+
+@MainActor
+struct ModPreferencesOfInstalledModsTests {
+    @Test func modsAreListedInTheUsersOrderAndRemovingOneForgetsIt() async throws {
+        let fixture = try Fixture()
+        for id in ["c", "a", "b"] {
+            try await fixture.installConfirmed(try fixture.modFolder(id, plainManifest(id)), id: id)
+        }
+        let model = fixture.model
+        #expect(model.arrangedMods.map(\.id) == ["a", "b", "c"])
+
+        let preferences = model.preferences
+        preferences.move("c", toPosition: 0, among: model.arrangedMods.map(\.id))
+        preferences.setHidden(true, "c")
+        preferences.setLook(ModLook(name: "Mine", tint: "pink"), of: "c", originalName: "Mod c")
+        #expect(model.arrangedMods.map(\.id) == ["c", "a", "b"])
+
+        // Kept across launches.
+        await fixture.quit()
+        let relaunched = try Fixture(relaunching: fixture)
+        await relaunched.model.waitUntilStarted()
+        #expect(relaunched.model.arrangedMods.map(\.id) == ["c", "a", "b"])
+        #expect(relaunched.model.preferences.isHidden("c"))
+
+        // Removed, the mod takes what the user chose for it along; installed again, it starts afresh.
+        relaunched.model.remove(try #require(relaunched.model.mod(id: "c")))
+        _ = try await relaunched.waitForDialog()
+        relaunched.panel.dismissDialog(confirmed: true)
+        try await relaunched.waitUntil("the removal") { relaunched.model.mod(id: "c") == nil }
+        #expect(!relaunched.model.preferences.order.contains("c"))
+        #expect(!relaunched.model.preferences.isHidden("c"))
+        #expect(relaunched.model.preferences.look(of: "c").isEmpty)
+        try await relaunched.installConfirmed(try relaunched.modFolder("c", plainManifest("c")), id: "c")
+        #expect(relaunched.model.arrangedMods.map(\.id) == ["a", "b", "c"])
+        await relaunched.cleanUp()
+    }
+}
