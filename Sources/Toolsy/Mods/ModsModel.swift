@@ -263,27 +263,111 @@ final class ModsModel {
         }
     }
 
-    /// The mods the menu bar icon's menu switches: those with a switch, in the user's order, but the hidden ones.
-    var menuSwitches: [ModMenuSwitch] {
-        arrangedMods.filter { $0.hasSwitch && !preferences.isHidden($0.id) }.map { mod in
-            let appearance = appearance(of: mod)
-            return ModMenuSwitch(id: mod.id, name: appearance.name, symbol: appearance.symbol, isOn: isSwitchedOn(mod),
-                                 isBusy: !canSwitch(mod))
-        }
-    }
-
     /// Flips a mod's switch from the menu bar icon's menu. When the hook that would run needs administrator access the
     /// mod lacks, the panel opens on the mod's page first: that is where it is explained and fixed.
     func switchFromMenu(_ mod: Mod) {
         let on = !isSwitchedOn(mod)
         if ModInterface.isPrivileged(on ? mod.manifest.lifecycle.enable : mod.manifest.lifecycle.disable, in: mod.manifest),
            mod.needsAccess {
-            // Not `isVisible`: a panel fading out after the click that opened this menu is still visible, and would
-            // close over the question.
-            if !panel.isPresented { presentPanel() }
-            panel.show(.mod(mod.id))
+            showForQuestion(about: mod)
         }
         setEnabled(mod, on)
+    }
+
+    /// What a button of a mod does — runs its command, opens its link or copies its text with `copy`, which shows that
+    /// it did — after its `confirm` question when it has one. From the menu bar icon's menu (`fromMenu`) a question
+    /// needs the panel, which opens on the mod's page for it.
+    func press(_ button: ModControl.Button, of mod: Mod, fromMenu: Bool = false, copy: @escaping (String) -> Void) {
+        let action: () -> Void
+        if let template = button.copy {
+            let text = mod.render(template)
+            // Nothing to copy yet: copying would only empty the pasteboard.
+            guard !text.isEmpty else { return }
+            action = { copy(text) }
+        } else if let open = button.open, let url = URL(string: open) {  // checked at install: an http(s) URL
+            action = { NSWorkspace.shared.open(url) }
+        } else if let command = button.command {
+            action = { [self] in run(command, value: button.value, of: mod) }
+        } else {
+            return
+        }
+        if fromMenu, button.confirm != nil || ModInterface.isPrivileged(button.command, in: mod.manifest) && mod.needsAccess {
+            showForQuestion(about: mod)
+        }
+        guard let question = button.confirm else { return action() }
+        panel.confirm(ConfirmationRequest(title: question, confirmTitle: mod.render(button.label),
+                                          isDestructive: button.style == .destructive, onConfirm: action))
+    }
+
+    /// The mod's quick controls shown now, those whose `when` holds, with their places in its `quick`.
+    func shownQuickControls(of mod: Mod) -> [(index: Int, control: ModControl)] {
+        mod.manifest.quick.enumerated().filter { mod.isVisible($0.element) }.map { (index: $0.offset, control: $0.element) }
+    }
+
+    /// The mods the menu bar icon's menu lists, in the user's order but the hidden ones: each with a switch or a quick
+    /// control shown now.
+    var menuEntries: [ModMenuEntry] {
+        arrangedMods.filter { !preferences.isHidden($0.id) }.compactMap { mod in
+            let quick = shownQuickControls(of: mod).compactMap { menuItem(of: $0.control, at: $0.index, of: mod) }
+            guard mod.hasSwitch || !quick.isEmpty else { return nil }
+            let appearance = appearance(of: mod)
+            return ModMenuEntry(id: mod.id, name: appearance.name, symbol: appearance.symbol,
+                                isOn: mod.hasSwitch ? isSwitchedOn(mod) : nil, isBusy: !canSwitch(mod), quick: quick)
+        }
+    }
+
+    private func menuItem(of control: ModControl, at index: Int, of mod: Mod) -> ModMenuEntry.Quick? {
+        let isEnabled = !(control.disabled.map(mod.evaluate) ?? false) && !removing.contains(mod.id)
+        switch control.kind {
+        case .button(let button):
+            // As on the page: nothing to copy yet, or its command still running, and the button waits.
+            let waits = button.copy.map { mod.render($0).isEmpty } ?? button.command.map(mod.runningCommands.contains) ?? false
+            return ModMenuEntry.Quick(index: index, label: mod.render(button.label), symbol: button.icon, kind: .button,
+                                      isEnabled: isEnabled && !waits)
+        case .toggle(let toggle):
+            return ModMenuEntry.Quick(index: index, label: mod.render(toggle.label), symbol: toggle.icon,
+                                      kind: .toggle(isOn: ModInterface.isOn(mod.state[toggle.bind])), isEnabled: isEnabled)
+        case .picker(let picker):
+            let selected = mod.state[picker.bind]
+            let options = ModInterface.options(of: picker, state: mod.state).map {
+                ModMenuEntry.Option(label: $0.label, symbol: $0.icon, isSelected: $0.value == selected)
+            }
+            return ModMenuEntry.Quick(index: index, label: picker.label.map(mod.render) ?? "", symbol: picker.icon,
+                                      kind: .picker(options), isEnabled: isEnabled && !options.isEmpty)
+        default:
+            return nil
+        }
+    }
+
+    /// Uses a quick control from the menu bar icon's menu: presses a button, flips a toggle, or picks the option at
+    /// `option` of a picker. Anything that asks first (a button's `confirm`, missing administrator access) opens the
+    /// panel on the mod's page for its question.
+    func useQuickControl(at index: Int, option: Int? = nil, of mod: Mod) {
+        guard mod.manifest.quick.indices.contains(index), !removing.contains(mod.id) else { return }
+        let control = mod.manifest.quick[index]
+        guard mod.isVisible(control), !(control.disabled.map(mod.evaluate) ?? false) else { return }
+        switch control.kind {
+        case .button(let button):
+            press(button, of: mod, fromMenu: true) { CopyFeedback().copy($0) }
+        case .toggle(let toggle):
+            if ModInterface.isPrivileged(toggle.command, in: mod.manifest), mod.needsAccess { showForQuestion(about: mod) }
+            setValue(.bool(!ModInterface.isOn(mod.state[toggle.bind])), for: toggle.bind, command: toggle.command, of: mod)
+        case .picker(let picker):
+            let options = ModInterface.options(of: picker, state: mod.state)
+            guard let option, options.indices.contains(option) else { return }
+            if ModInterface.isPrivileged(picker.command, in: mod.manifest), mod.needsAccess { showForQuestion(about: mod) }
+            setValue(options[option].value, for: picker.bind, command: picker.command, of: mod)
+        default:
+            break
+        }
+    }
+
+    /// Opens the panel on the mod's page, for a question asked from the menu bar icon's menu.
+    private func showForQuestion(about mod: Mod) {
+        // Not `isVisible`: a panel fading out after the click that opened the menu is still visible, and would close
+        // over the question.
+        if !panel.isPresented { presentPanel() }
+        panel.show(.mod(mod.id))
     }
 
     /// Stores a bound control's value and runs its command; with a privileged command the mod lacks
@@ -511,14 +595,37 @@ final class ModsModel {
     }
 }
 
-/// A mod as the menu bar icon's menu lists it, to switch it without opening the panel.
-struct ModMenuSwitch: Equatable {
+/// A mod as the menu bar icon's menu lists it: its switch and its quick controls, to use them without the panel.
+struct ModMenuEntry: Equatable {
+    struct Quick: Equatable {
+        enum Kind: Equatable {
+            case button
+            case toggle(isOn: Bool)
+            case picker([Option])
+        }
+
+        /// Its place in the mod's `quick`.
+        let index: Int
+        let label: String
+        let symbol: String?
+        let kind: Kind
+        let isEnabled: Bool
+    }
+
+    struct Option: Equatable {
+        let label: String
+        let symbol: String?
+        let isSelected: Bool
+    }
+
     let id: String
     let name: String
     let symbol: String
-    let isOn: Bool
-    /// Its switch is changing or the mod is being removed: the item waits.
+    /// Nil for a mod without a switch.
+    let isOn: Bool?
+    /// Its switch is changing or the mod is being removed: the switch waits.
     let isBusy: Bool
+    let quick: [Quick]
 }
 
 extension Mod {

@@ -697,20 +697,97 @@ struct ModPreferencesOfInstalledModsTests {
         model.preferences.move("b", toPosition: 0, among: model.arrangedMods.map(\.id))
         model.preferences.setLook(ModLook(name: "Bee", icon: "leaf.fill"), of: "b", originalName: "Mod b")
 
-        // Hidden mods and mods without a switch are not in it; the others are, in the user's order and looks.
-        #expect(model.menuSwitches == [
-            ModMenuSwitch(id: "b", name: "Bee", symbol: "leaf.fill", isOn: false, isBusy: false),
-            ModMenuSwitch(id: "a", name: "Mod a", symbol: ModAppearance.defaultSymbol, isOn: false, isBusy: false),
+        // Hidden mods and mods with neither a switch nor quick controls are not in it; the others are, in the user's
+        // order and looks.
+        #expect(model.menuEntries == [
+            ModMenuEntry(id: "b", name: "Bee", symbol: "leaf.fill", isOn: false, isBusy: false, quick: []),
+            ModMenuEntry(id: "a", name: "Mod a", symbol: ModAppearance.defaultSymbol, isOn: false, isBusy: false, quick: []),
         ])
 
         // While its hook runs, the item shows the position asked for and waits.
         let a = try #require(model.mod(id: "a"))
         model.switchFromMenu(a)
-        #expect(model.menuSwitches.last == ModMenuSwitch(id: "a", name: "Mod a", symbol: ModAppearance.defaultSymbol, isOn: true, isBusy: true))
+        #expect(model.menuEntries.last?.isOn == true && model.menuEntries.last?.isBusy == true)
         try await fixture.waitUntil("the mod to be on") { a.isEnabled && model.requestedSwitch["a"] == nil }
         model.switchFromMenu(a)
         try await fixture.waitUntil("the mod to be off") { !a.isEnabled && model.requestedSwitch["a"] == nil }
-        #expect(model.menuSwitches.last?.isOn == false)
+        #expect(model.menuEntries.last?.isOn == false)
+        await fixture.cleanUp()
+    }
+
+    /// A mod whose page has buttons, toggles and pickers can put a few of them in the menu bar icon's menu.
+    private static let quickMod = #"""
+        {"schema": 1, "id": "q", "name": "Quick", "version": "1",
+         "settings": {"loud": false, "minutes": 60, "presses": 0},
+         "commands": {"press": {"shell": "echo '{\"presses\": 1}'"}, "apply": {"shell": "true"}},
+         "quick": [
+           {"type": "button", "label": "Press {{presses}}", "icon": "hand.tap", "command": "press", "disabled": "presses > 0"},
+           {"type": "toggle", "label": "Loud", "bind": "loud", "command": "apply"},
+           {"type": "picker", "label": "For", "bind": "minutes", "command": "apply",
+            "options": [{"value": 30, "label": "30 min"}, {"value": 60, "label": "1 hour", "icon": "clock"}]},
+           {"type": "button", "label": "Only when loud", "copy": "x", "when": "loud"}
+         ]}
+        """#
+
+    @Test func theMenuOffersTheQuickControlsShownNow() async throws {
+        let fixture = try Fixture()
+        let mod = try await fixture.installConfirmed(try fixture.modFolder("q", Self.quickMod), id: "q")
+        let model = fixture.model
+        let entry = try #require(model.menuEntries.first)
+        #expect(entry.isOn == nil, "no switch")
+        #expect(entry.quick == [
+            ModMenuEntry.Quick(index: 0, label: "Press 0", symbol: "hand.tap", kind: .button, isEnabled: true),
+            ModMenuEntry.Quick(index: 1, label: "Loud", symbol: nil, kind: .toggle(isOn: false), isEnabled: true),
+            ModMenuEntry.Quick(index: 2, label: "For", symbol: nil, kind: .picker([
+                ModMenuEntry.Option(label: "30 min", symbol: nil, isSelected: false),
+                ModMenuEntry.Option(label: "1 hour", symbol: "clock", isSelected: true),
+            ]), isEnabled: true),
+        ], "the last one waits for its when")
+
+        // Used from the menu as on the card: the toggle flips, the picker picks, the button runs its command.
+        model.useQuickControl(at: 1, of: mod)
+        #expect(mod.state["loud"] == .bool(true))
+        model.useQuickControl(at: 2, option: 0, of: mod)
+        #expect(mod.state["minutes"] == .number(30))
+        model.useQuickControl(at: 0, of: mod)
+        try await fixture.waitUntil("the press") { mod.state["presses"] == .number(1) }
+
+        let quick = try #require(model.menuEntries.first?.quick)
+        #expect(quick.map(\.index) == [0, 1, 2, 3], "a when that holds now shows its control")
+        #expect(quick[0].label == "Press 1" && !quick[0].isEnabled, "disabled while its expression holds")
+        // A disabled control does nothing from the menu either.
+        model.useQuickControl(at: 0, of: mod)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(mod.recentRuns.filter { $0.command == "press" }.count == 1)
+        await fixture.cleanUp()
+    }
+
+    @Test func aButtonThatAsksFirstAsksInThePanelOpenedOnItsMod() async throws {
+        let fixture = try Fixture()
+        let manifest = #"{"schema": 1, "id": "c", "name": "Careful", "version": "1", "commands": {"wipe": {"shell": "echo '{\"wiped\": true}'"}}, "#
+            + #""quick": [{"type": "button", "label": "Wipe", "command": "wipe", "style": "destructive", "confirm": "Wipe it all?"}]}"#
+        let mod = try await fixture.installConfirmed(try fixture.modFolder("c", manifest), id: "c")
+        fixture.panel.show(.root)
+        var presented = false
+        fixture.model.presentPanel = {
+            presented = true
+            fixture.panel.isPresented = true
+        }
+        fixture.model.useQuickControl(at: 0, of: mod)
+        #expect(presented && fixture.panel.currentPage == .mod("c"))
+        let question = try await fixture.waitForDialog()
+        #expect(question.title == "Wipe it all?" && question.confirmTitle == "Wipe" && question.isDestructive)
+        #expect(mod.state["wiped"] == nil, "nothing runs before the answer")
+        fixture.panel.dismissDialog(confirmed: true)
+        try await fixture.waitUntil("the command") { mod.state["wiped"] == .bool(true) }
+
+        // On the card nothing opens: the panel is where the question appears.
+        presented = false
+        var copied: [String] = []
+        let copying = try #require(ModManifest.load(from: Data(#"{"schema": 1, "id": "x", "name": "X", "version": "1", "quick": [{"type": "button", "label": "Copy", "copy": "{{wiped}}"}]}"#.utf8)).quick.first)
+        guard case .button(let button) = copying.kind else { throw CancellationError() }
+        fixture.model.press(button, of: mod) { copied.append($0) }
+        #expect(copied == ["true"] && !presented)
         await fixture.cleanUp()
     }
 

@@ -109,7 +109,7 @@ struct ModControlView: View {
 }
 
 /// A control's `help`: its tooltip, and the hint VoiceOver reads after its label.
-private struct ControlHelp: ViewModifier {
+struct ControlHelp: ViewModifier {
     let text: String?
 
     func body(content: Content) -> some View {
@@ -304,7 +304,6 @@ private struct ButtonControl: View {
     let mod: Mod
     let button: ModControl.Button
     @Environment(ModsModel.self) private var model
-    @Environment(PanelState.self) private var panel
     @Environment(\.modTint) private var tint
     @State private var copied = CopyFeedback()
 
@@ -312,42 +311,20 @@ private struct ButtonControl: View {
         let label = mod.render(button.label)
         let kind = ButtonKind(rawValue: button.style.rawValue) ?? .normal
         if let copy = button.copy {
-            let text = mod.render(copy)
             // Confirms in place, like a copyable value row.
             GlassButton(copied.isShowing ? String(localized: "Copied") : label, icon: copied.isShowing ? "checkmark" : button.icon,
                         kind: kind, tint: tint, fillsWidth: true) {
-                perform({ copied.copy(text) }, label: label)
+                model.press(button, of: mod) { copied.copy($0) }
             }
             // Nothing to copy yet: copying would only empty the pasteboard.
-            .disabled(text.isEmpty)
+            .disabled(mod.render(copy).isEmpty)
             .animation(Motion.snappy, value: copied.isShowing)
         } else {
             GlassButton(label, icon: button.icon, kind: kind, tint: tint,
                         isBusy: button.command.map(mod.runningCommands.contains) ?? false, fillsWidth: true) {
-                press(label: label)
+                model.press(button, of: mod) { copied.copy($0) }
             }
         }
-    }
-
-    private func press(label: String) {
-        if let open = button.open {
-            // Checked at install: an http(s) URL.
-            guard let url = URL(string: open) else { return }
-            perform({ NSWorkspace.shared.open(url) }, label: label)
-        } else if let command = button.command {
-            perform({ model.run(command, value: button.value, of: mod) }, label: label)
-        }
-    }
-
-    /// What the button does, after its `confirm` question when it has one, whichever of the three it does.
-    private func perform(_ action: @escaping () -> Void, label: String) {
-        guard let question = button.confirm else { return action() }
-        panel.confirm(ConfirmationRequest(
-            title: question,
-            confirmTitle: label,
-            isDestructive: button.style == .destructive,
-            onConfirm: action
-        ))
     }
 }
 

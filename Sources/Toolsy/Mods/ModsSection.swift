@@ -81,39 +81,59 @@ struct ModsSection: View {
     }
 }
 
-/// One installed mod as a card: icon, name, one status line and the main switch. Clicking it opens the mod's page.
+/// One installed mod as a card: icon, name, one status line and the main switch, and under them the mod's quick
+/// controls. Clicking it elsewhere opens the mod's page.
 private struct ModCard: View {
     let mod: Mod
     @Environment(ModsModel.self) private var model
     @Environment(PanelState.self) private var panel
 
+    private static let padding: CGFloat = 10
+    private static let badgeSize: CGFloat = 32
+
     var body: some View {
         let appearance = model.appearance(of: mod)
         let isOn = mod.hasSwitch && model.isSwitchedOn(mod)
+        let quick = model.shownQuickControls(of: mod)
         // A mod that is on glows in its colour; one without a switch is always ready, so its badge is lit.
-        Tile(tint: isOn ? appearance.tint : nil, padding: 10, action: { panel.push(.mod(mod.id)) }) {
-            HStack(spacing: 10) {
-                IconBadge(appearance.symbol, tint: appearance.tint, size: 32, isLit: isOn || !mod.hasSwitch)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(appearance.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                        ModAttention(mod: mod)
+        Tile(tint: isOn ? appearance.tint : nil, padding: Self.padding, action: { panel.push(.mod(mod.id)) }) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    IconBadge(appearance.symbol, tint: appearance.tint, size: Self.badgeSize, isLit: isOn || !mod.hasSwitch)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 5) {
+                            Text(appearance.name)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                            ModAttention(mod: mod)
+                        }
+                        statusLine
                     }
-                    statusLine
+                    Spacer(minLength: mod.hasSwitch ? GlassSwitch.trackSize.width + 12 : 0)
                 }
-                Spacer(minLength: mod.hasSwitch ? GlassSwitch.trackSize.width + 12 : 0)
+                if !quick.isEmpty {
+                    // Room for the quick controls, which lie over it.
+                    Color.clear.frame(height: Metrics.controlHeight)
+                }
             }
         }
-        // On top of the tile's button rather than inside it, so a click on the switch is the switch's.
-        .overlay(alignment: .trailing) {
+        // The switch and the quick controls lie on top of the tile's button rather than inside it, so a click on them
+        // is theirs. The switch is centred on the badge's row.
+        .overlay(alignment: .topTrailing) {
             if mod.hasSwitch {
                 ModSwitch(mod: mod)
+                    .padding(.top, Self.padding + (Self.badgeSize - GlassSwitch.trackSize.height) / 2)
                     .padding(.trailing, 12)
                     .debugAnchor("tile-switch:\(mod.id)")
             }
         }
+        .overlay(alignment: .bottom) {
+            if !quick.isEmpty {
+                ModQuickRow(mod: mod, controls: quick)
+                    .padding([.horizontal, .bottom], Self.padding)
+            }
+        }
+        .environment(\.modTint, appearance.tint)
         .contextMenu { ModMenu(mod: mod) }
         .debugAnchor("tile:\(mod.id)")
     }
@@ -128,8 +148,8 @@ private struct ModCard: View {
     }
 }
 
-/// One installed mod as a row of a group: icon, name, its status beside it and the main switch. Clicking it opens the
-/// mod's page.
+/// One installed mod as a row of a group: icon, name, its status beside it, and at the end its main switch or, for a
+/// mod without one, its first quick control. Clicking it elsewhere opens the mod's page.
 private struct CompactModRow: View {
     let mod: Mod
     @Environment(ModsModel.self) private var model
@@ -138,35 +158,38 @@ private struct CompactModRow: View {
     var body: some View {
         let appearance = model.appearance(of: mod)
         let isOn = mod.hasSwitch && model.isSwitchedOn(mod)
-        Button { panel.push(.mod(mod.id)) } label: {
-            HStack(spacing: 10) {
-                IconBadge(appearance.symbol, tint: appearance.tint, size: 26, isLit: isOn || !mod.hasSwitch)
-                HStack(spacing: 5) {
-                    Text(appearance.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                    ModAttention(mod: mod)
+        let quick = mod.hasSwitch ? nil : model.shownQuickControls(of: mod).first
+        HStack(spacing: 8) {
+            Button { panel.push(.mod(mod.id)) } label: {
+                HStack(spacing: 10) {
+                    IconBadge(appearance.symbol, tint: appearance.tint, size: 26, isLit: isOn || !mod.hasSwitch)
+                    HStack(spacing: 5) {
+                        Text(appearance.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        ModAttention(mod: mod)
+                    }
+                    .layoutPriority(1)
+                    Spacer(minLength: 8)
+                    if let status = mod.status, !status.isEmpty {
+                        ModStatus(mod: mod, status: status)
+                    }
                 }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                if let status = mod.status, !status.isEmpty {
-                    ModStatus(mod: mod, status: status)
-                }
-                if mod.hasSwitch {
-                    // The switch lies over this room, outside the row's button.
-                    Color.clear.frame(width: GlassSwitch.trackSize.width)
-                }
+                .frame(minHeight: Metrics.rowMinHeight)
+                .contentShape(.rect)
             }
-            .frame(minHeight: Metrics.rowMinHeight)
-            .contentShape(.rect)
-        }
-        .buttonStyle(RowButtonStyle())
-        .overlay(alignment: .trailing) {
+            .buttonStyle(RowButtonStyle())
+            // Beside the row's button rather than inside it, so a click on the control is the control's.
             if mod.hasSwitch {
                 ModSwitch(mod: mod)
                     .debugAnchor("tile-switch:\(mod.id)")
+            } else if let quick {
+                ModQuickControl(mod: mod, control: quick.control, inRow: true)
+                    .fixedSize()
+                    .debugAnchor("quick:\(mod.id)/\(quick.index)")
             }
         }
+        .environment(\.modTint, appearance.tint)
         .contextMenu { ModMenu(mod: mod) }
         .debugAnchor("tile:\(mod.id)")
     }
@@ -216,7 +239,8 @@ private struct ModAttention: View {
     }
 }
 
-/// The context menu of a mod in the list: open it, switch it, change how it looks or where it is listed, remove it.
+/// The context menu of a mod in the list: open it, switch it, use its quick controls, change how it looks or where it
+/// is listed, remove it.
 struct ModMenu: View {
     let mod: Mod
     @Environment(ModsModel.self) private var model
@@ -234,6 +258,7 @@ struct ModMenu: View {
             }
             .disabled(!model.canSwitch(mod))
         }
+        ModQuickMenuItems(mod: mod)
         Divider()
         Button(String(localized: "Appearance…"), systemImage: "paintbrush") { panel.push(.modAppearance(mod.id)) }
         Button(isHidden ? String(localized: "Show in the List") : String(localized: "Hide from the List"),

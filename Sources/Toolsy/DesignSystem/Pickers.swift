@@ -205,11 +205,14 @@ struct MenuPicker<Value: Hashable>: View {
     @Binding private var selection: Value
     private let options: [PickerOption<Value>]
     private let label: String
+    private let fillsWidth: Bool
 
-    init(selection: Binding<Value>, options: [PickerOption<Value>], label: String) {
+    /// `fillsWidth` stretches the capsule across the width it is offered, as in a row of a card's quick controls.
+    init(selection: Binding<Value>, options: [PickerOption<Value>], label: String, fillsWidth: Bool = false) {
         _selection = selection
         self.options = options
         self.label = label
+        self.fillsWidth = fillsWidth
     }
 
     @State private var isHovered = false
@@ -233,14 +236,13 @@ struct MenuPicker<Value: Hashable>: View {
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
-            HStack(spacing: 6) {
-                if let icon = current?.icon { SymbolImage(icon) }
-                Text(current?.label ?? "—").lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            // Where the capsule is narrow (a row of quick controls), the choice keeps its words and drops its icon.
+            ViewThatFits(in: .horizontal) {
+                choice(showsIcon: true)
+                choice(showsIcon: false)
             }
             .font(.system(size: 13))
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
             .padding(.horizontal, 12)
             .frame(height: Metrics.controlHeight)
             .background { GlassChip(shape: Capsule(), isHovered: isHovered && isEnabled) }
@@ -249,12 +251,22 @@ struct MenuPicker<Value: Hashable>: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .fixedSize()
+        .fixedSize(horizontal: !fillsWidth, vertical: true)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { isHovered = $0 }
         .animation(Motion.fade, value: isHovered)
         .accessibilityLabel(label)
         .accessibilityValue(current?.label ?? "")
+    }
+
+    private func choice(showsIcon: Bool) -> some View {
+        HStack(spacing: 6) {
+            if showsIcon, let icon = current?.icon { SymbolImage(icon) }
+            Text(current?.label ?? "—").lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

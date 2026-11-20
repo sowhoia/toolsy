@@ -197,7 +197,7 @@ private struct WidgetGrid: View {
                 : isExpanded ? String(localized: "Hides details") : String(localized: "Shows details"))
             .accessibilityAddTraits(isExpanded ? .isSelected : [])
             .contextMenu {
-                // A mod's widget leads to the mod, and switches it.
+                // A mod's widget leads to the mod, switches it and offers its quick controls.
                 if case .mod(let mod, _, let appearance) = widget.info.content {
                     Button(String(localized: "Open “\(appearance.name)”"), systemImage: "arrow.right.circle") { panel.push(.mod(mod.id)) }
                     if mod.hasSwitch {
@@ -207,6 +207,7 @@ private struct WidgetGrid: View {
                         }
                         .disabled(!mods.canSwitch(mod))
                     }
+                    ModQuickMenuItems(mod: mod)
                     Divider()
                 }
                 Button(String(localized: "Customise"), systemImage: "square.grid.2x2") {

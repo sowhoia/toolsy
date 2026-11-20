@@ -252,23 +252,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.menu = nil
     }
 
-    /// The menu of the menu bar icon: the panel, a switch for each listed mod that has one, settings, quitting.
+    /// The menu of the menu bar icon: the panel, the listed mods with their switches and quick controls, settings,
+    /// quitting.
     func makeMenu() -> NSMenu {
         let menu = NSMenu()
         // A mod whose switch is changing has its item disabled, which autoenabling would undo.
         menu.autoenablesItems = false
         menu.addItem(withTitle: String(localized: "Open Toolsy"), action: #selector(openFromMenu), keyEquivalent: "")
             .image = NSImage(systemSymbolName: "wrench.and.screwdriver", accessibilityDescription: nil)
-        let switches = mods.menuSwitches
-        if !switches.isEmpty {
+        let entries = mods.menuEntries
+        if !entries.isEmpty {
             menu.addItem(.separator())
             menu.addItem(.sectionHeader(title: String(localized: "Mods")))
-            for entry in switches {
-                let switchItem = menu.addItem(withTitle: entry.name, action: #selector(switchMod(_:)), keyEquivalent: "")
-                switchItem.representedObject = entry.id
-                switchItem.state = entry.isOn ? .on : .off
-                switchItem.image = NSImage(systemSymbolName: entry.symbol, accessibilityDescription: nil)
-                switchItem.isEnabled = !entry.isBusy
+            for entry in entries {
+                let modItem = menu.addItem(withTitle: entry.name, action: nil, keyEquivalent: "")
+                modItem.image = NSImage(systemSymbolName: entry.symbol, accessibilityDescription: nil)
+                modItem.state = entry.isOn == true ? .on : .off
+                if entry.quick.isEmpty {
+                    // A mod with nothing but its switch is switched with one click.
+                    modItem.action = #selector(switchMod(_:))
+                    modItem.representedObject = entry.id
+                    modItem.isEnabled = !entry.isBusy
+                } else {
+                    modItem.submenu = submenu(of: entry)
+                }
             }
         }
         menu.addItem(.separator())
@@ -289,10 +296,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openPanel(on: .settings)
     }
 
+    /// A mod's own menu: its switch, its quick controls (a picker's options under its label, ticked when chosen) and the
+    /// way to its page.
+    private func submenu(of entry: ModMenuEntry) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        if let isOn = entry.isOn {
+            let item = menu.addItem(withTitle: String(localized: "On"), action: #selector(switchMod(_:)), keyEquivalent: "")
+            item.state = isOn ? .on : .off
+            item.representedObject = entry.id
+            item.isEnabled = !entry.isBusy
+            menu.addItem(.separator())
+        }
+        for quick in entry.quick {
+            func add(_ title: String, symbol: String?, option: Int? = nil, isOn: Bool = false) {
+                let item = menu.addItem(withTitle: title, action: #selector(useQuickControl(_:)), keyEquivalent: "")
+                item.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }
+                item.state = isOn ? .on : .off
+                item.representedObject = QuickControlReference(modID: entry.id, index: quick.index, option: option)
+                item.isEnabled = quick.isEnabled
+            }
+            switch quick.kind {
+            case .button:
+                add(quick.label, symbol: quick.symbol)
+            case .toggle(let isOn):
+                add(quick.label, symbol: quick.symbol, isOn: isOn)
+            case .picker(let options):
+                if !quick.label.isEmpty { menu.addItem(.sectionHeader(title: quick.label)) }
+                for (index, option) in options.enumerated() {
+                    add(option.label, symbol: option.symbol, option: index, isOn: option.isSelected)
+                }
+            }
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: String(localized: "Open “\(entry.name)”"), action: #selector(openMod(_:)), keyEquivalent: "")
+            .representedObject = entry.id
+        for item in menu.items {
+            item.target = self
+        }
+        return menu
+    }
+
     @objc private func switchMod(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String, let mod = mods.mod(id: id) else { return }
         mods.switchFromMenu(mod)
     }
+
+    @objc private func useQuickControl(_ sender: NSMenuItem) {
+        guard let reference = sender.representedObject as? QuickControlReference, let mod = mods.mod(id: reference.modID) else { return }
+        mods.useQuickControl(at: reference.index, option: reference.option, of: mod)
+    }
+
+    @objc private func openMod(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        openPanel(on: .mod(id))
+    }
+}
+
+/// Which quick control of which mod a menu item uses, and for a picker which option.
+private struct QuickControlReference {
+    let modID: String
+    let index: Int
+    let option: Int?
 }
 
 /// Lies over the status item's button and accepts files dropped on the menu bar icon. The button

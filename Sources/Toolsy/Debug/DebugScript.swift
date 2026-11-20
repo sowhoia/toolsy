@@ -29,7 +29,9 @@ import ToolsyShared
 ///               deviceline on|off
 ///     modlist print|style cards|compact|hide <mod>|show <mod>|move <mod> <position>|look <mod> <json>|look <mod> reset
 ///     arrange                        (Arrange Mods… of a mod's context menu: Customise, scrolled to the mods)
-///     statusmenu print|capture <name> (the menu bar icon's menu: its items, or a picture of it popped up on the panel)
+///     statusmenu print|capture <name> (the menu bar icon's menu: its items and submenus, or a picture of it popped up on
+///                                     the panel)
+///     quick <mod> <index> [option]   (uses the mod's quick control at index as its item in that menu does; option picks)
 ///     event launch|wake|network|power                     notifications
 ///     developer on|off               (developer mode, as the switch in Settings sets it)
 ///     update check|install|wait|print (Check Now; start installing the release found; wait until that has
@@ -314,6 +316,12 @@ private final class Runner {
             try await modList(rest)
         case "statusmenu":
             try await statusMenu(rest)
+        case "quick":
+            guard arguments.count >= 2, let mod = mods.mod(id: arguments[0]), let index = Int(arguments[1]) else {
+                throw ScriptError("quick <mod> <index> [option]")
+            }
+            mods.useQuickControl(at: index, option: arguments.count > 2 ? Int(arguments[2]) : nil, of: mod)
+            try await Task.sleep(for: .milliseconds(400))
         case "arrange":
             ModsArrangement.show(dashboard: app.dashboard, panel: panel, reduceMotion: false)
             try await Task.sleep(for: .seconds(0.8))
@@ -406,10 +414,15 @@ private final class Runner {
     func statusMenu(_ rest: String) async throws {
         let menu = app.makeMenu()
         if rest == "print" {
-            for item in menu.items {
-                let title = item.isSeparatorItem ? "—" : item.title
-                say("MENU \(title) state=\(item.state == .on ? "on" : "off") enabled=\(item.isEnabled) image=\(item.image != nil)")
+            func print(_ menu: NSMenu, depth: Int) {
+                for item in menu.items {
+                    let title = item.isSeparatorItem ? "—" : item.title
+                    say("MENU " + String(repeating: "  ", count: depth)
+                        + "\(title) state=\(item.state == .on ? "on" : "off") enabled=\(item.isEnabled) image=\(item.image != nil)")
+                    if let submenu = item.submenu { print(submenu, depth: depth + 1) }
+                }
             }
+            print(menu, depth: 0)
             return
         }
         guard rest.hasPrefix("capture "), let view = window?.contentView else { throw ScriptError("statusmenu print|capture <name>") }
