@@ -223,6 +223,7 @@ scripts/                 build-app.sh, build-mods.sh, install.sh, release.sh, si
                          make-icon.swift
 docs/                    MOD_FORMAT.md, MOD_AUTHORING_FOR_AI.md, ARCHITECTURE.md
 .github/workflows/       ci.yml: what every push and pull request is checked with
+AGENTS.md                the rules for coding agents working on this repository
 ```
 
 ```sh
