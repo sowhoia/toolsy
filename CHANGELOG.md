@@ -5,7 +5,11 @@ All notable changes to Toolsy are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.1] - 2026-11-19
+
+The list of mods shows which are on and is yours to arrange: rename, recolour, reorder and hide
+mods, show the list compactly, and use a mod's switch and quick controls from its card or from the
+menu bar icon's menu.
 
 ### Mods
 

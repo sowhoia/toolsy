@@ -62,8 +62,12 @@ private func failure(_ json: String) -> String {
 
     /// Without the field a mod written for a later Toolsy failed with "unknown control type", or worse, had a
     /// new field silently ignored.
-    @Test func refusesAModForALaterToolsy() {
-        for version in ["1.10", "2", "1.1.1"] {
+    @Test func refusesAModForALaterToolsy() throws {
+        // The release after this one, its last number one higher, whatever this one is.
+        let numbers = ToolsyVersion.current.split(separator: ".").compactMap { Int($0) }
+        try #require(numbers.count == 3)
+        let nextPatch = "\(numbers[0]).\(numbers[1]).\(numbers[2] + 1)"
+        for version in ["1.10", "2", nextPatch] {
             #expect(failure(minimal(#""toolsy": "\#(version)""#)) == "needs Toolsy \(version) or later; this is Toolsy \(ToolsyVersion.current)")
         }
     }
