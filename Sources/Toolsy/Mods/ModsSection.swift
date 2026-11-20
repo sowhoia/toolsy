@@ -232,7 +232,7 @@ struct ModMenu: View {
             Button(isOn ? String(localized: "Turn Off") : String(localized: "Turn On"), systemImage: "power") {
                 model.setEnabled(mod, !isOn)
             }
-            .disabled(model.requestedSwitch[mod.id] != nil || mod.isSwitching)
+            .disabled(!model.canSwitch(mod))
         }
         Divider()
         Button(String(localized: "Appearance…"), systemImage: "paintbrush") { panel.push(.modAppearance(mod.id)) }

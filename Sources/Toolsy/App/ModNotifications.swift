@@ -68,8 +68,9 @@ final class ModNotifier: NSObject {
 
     func show(_ notification: ModNotification) async {
         guard await isAllowed() else { return }
+        let name = mods.mod(id: notification.modID).map { mods.appearance(of: $0).name }
         do {
-            try await center.add(Self.request(for: notification))
+            try await center.add(Self.request(for: notification, modName: name))
         } catch {
             logger.error("mod \(notification.modID, privacy: .public): the notification was not shown: \(error.localizedDescription, privacy: .public)")
         }
@@ -127,9 +128,11 @@ final class ModNotifier: NSObject {
         return allowed
     }
 
-    static func request(for notification: ModNotification) -> UNNotificationRequest {
+    /// `modName` is what the user calls the mod: a notification titled by the manifest's name, as one without a title
+    /// of its own is, carries it instead.
+    static func request(for notification: ModNotification, modName: String? = nil) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
-        content.title = notification.title
+        content.title = notification.title == notification.modName ? modName ?? notification.title : notification.title
         content.body = notification.body
         // Groups a mod's notifications, and names the mod a click opens.
         content.threadIdentifier = notification.modID

@@ -88,7 +88,7 @@ private struct EmptyDashboard: View {
                            message: String(localized: "Add widgets from the list below."))
             } else {
                 EmptyState(String(localized: "No widgets"), symbol: "square.grid.2x2",
-                           actionTitle: String(localized: "Edit Widgets")) {
+                           actionTitle: String(localized: "Customise")) {
                     withAnimation(Motion.resolve(Motion.gentle, reduceMotion: reduceMotion)) { store.isEditing = true }
                 }
             }
@@ -205,7 +205,7 @@ private struct WidgetGrid: View {
                         Button(isOn ? String(localized: "Turn Off") : String(localized: "Turn On"), systemImage: "power") {
                             mods.setEnabled(mod, !isOn)
                         }
-                        .disabled(mods.requestedSwitch[mod.id] != nil || mod.isSwitching)
+                        .disabled(!mods.canSwitch(mod))
                     }
                     Divider()
                 }

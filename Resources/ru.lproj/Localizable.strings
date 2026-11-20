@@ -246,7 +246,6 @@
 "Memory couldn’t be freed. Try again in a moment." = "Не удалось освободить память. Попробуйте ещё раз чуть позже.";
 
 /* Dashboard: widgets and editing */
-"Edit Widgets" = "Изменить виджеты";
 "Done" = "Готово";
 "Opens the mod" = "Открывает мод";
 "Shows its options" = "Показывает параметры";

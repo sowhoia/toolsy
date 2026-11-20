@@ -238,6 +238,18 @@ final class ModsModel {
         requestedSwitch[mod.id] ?? mod.isEnabled
     }
 
+    /// Whether the mod can be switched now: not while its switch is changing or the mod is being removed.
+    func canSwitch(_ mod: Mod) -> Bool {
+        requestedSwitch[mod.id] == nil && !mod.isSwitching && !removing.contains(mod.id)
+    }
+
+    /// Gives an installed mod a look of the user's (`ModPreferences.setLook`). A mod that is gone gets none: a name
+    /// field closing after the removal would otherwise bring back what the removal forgot.
+    func setLook(_ look: ModLook, of mod: Mod) {
+        guard store.mod(id: mod.id) != nil else { return }
+        preferences.setLook(look, of: mod.id, originalName: mod.manifest.name)
+    }
+
     /// Flips the main switch. When the hook that runs is privileged and the mod lacks access, explains
     /// what is wrong instead (and, after a helper update, flips it).
     func setEnabled(_ mod: Mod, _ on: Bool) {
@@ -256,7 +268,7 @@ final class ModsModel {
         arrangedMods.filter { $0.hasSwitch && !preferences.isHidden($0.id) }.map { mod in
             let appearance = appearance(of: mod)
             return ModMenuSwitch(id: mod.id, name: appearance.name, symbol: appearance.symbol, isOn: isSwitchedOn(mod),
-                                 isBusy: requestedSwitch[mod.id] != nil || mod.isSwitching || removing.contains(mod.id))
+                                 isBusy: !canSwitch(mod))
         }
     }
 
@@ -266,7 +278,9 @@ final class ModsModel {
         let on = !isSwitchedOn(mod)
         if ModInterface.isPrivileged(on ? mod.manifest.lifecycle.enable : mod.manifest.lifecycle.disable, in: mod.manifest),
            mod.needsAccess {
-            if !panel.isVisible { presentPanel() }
+            // Not `isVisible`: a panel fading out after the click that opened this menu is still visible, and would
+            // close over the question.
+            if !panel.isPresented { presentPanel() }
             panel.show(.mod(mod.id))
         }
         setEnabled(mod, on)

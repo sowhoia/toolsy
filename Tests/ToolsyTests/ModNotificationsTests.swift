@@ -109,6 +109,22 @@ struct ModNotifierTests {
         await fixture.cleanUp()
     }
 
+    @Test func aModTheUserRenamedNotifiesUnderItsNewName() async throws {
+        let fixture = try Fixture(center: FakeCenter(status: .authorized), notifying: [
+            "backup": #"{"title": "Backup finished", "body": "42 files"}"#,
+            "vpn": #""Connected""#,
+        ])
+        for id in ["backup", "vpn"] {
+            fixture.mods.preferences.setLook(ModLook(name: "My \(id)"), of: id, originalName: "Mod \(id)")
+        }
+        try await fixture.start()
+        try await fixture.waitUntil("both notifications") { fixture.center.added.count == 2 }
+        let titles = fixture.center.added.map(\.content).sorted { $0.threadIdentifier < $1.threadIdentifier }.map(\.title)
+        // A title of the mod's own stays; the one that was the mod's name is the user's name for it.
+        #expect(titles == ["Backup finished", "My vpn"])
+        await fixture.cleanUp()
+    }
+
     @Test func alreadyAllowedNotificationsAreShownWithoutAsking() async throws {
         let fixture = try Fixture(center: FakeCenter(status: .authorized), notifying: ["vpn": #""Connected""#])
         try await fixture.start()

@@ -483,12 +483,12 @@ struct AdministratorAccessTests {
         let fixture = try Fixture(relaunching: first)
         await fixture.model.waitUntilStarted()
         let mod = try #require(fixture.model.mod(id: "root"))
-        // The panel is closed, as it is when the menu bar icon's menu is open.
-        fixture.panel.setVisible(false)
+        // Still visible but no longer presented: the panel fading out after the right click that opened the menu.
+        #expect(fixture.panel.isVisible && !fixture.panel.isPresented)
         var presented = false
         fixture.model.presentPanel = {
             presented = true
-            fixture.panel.setVisible(true)
+            fixture.panel.isPresented = true
         }
         fixture.model.switchFromMenu(mod)
         #expect(presented)
@@ -666,13 +666,17 @@ struct ModPreferencesOfInstalledModsTests {
         #expect(relaunched.model.preferences.isHidden("c"))
 
         // Removed, the mod takes what the user chose for it along; installed again, it starts afresh.
-        relaunched.model.remove(try #require(relaunched.model.mod(id: "c")))
+        let removed = try #require(relaunched.model.mod(id: "c"))
+        relaunched.model.remove(removed)
         _ = try await relaunched.waitForDialog()
         relaunched.panel.dismissDialog(confirmed: true)
         try await relaunched.waitUntil("the removal") { relaunched.model.mod(id: "c") == nil }
         #expect(!relaunched.model.preferences.order.contains("c"))
         #expect(!relaunched.model.preferences.isHidden("c"))
         #expect(relaunched.model.preferences.look(of: "c").isEmpty)
+        // A name field closing after the removal brings nothing back.
+        relaunched.model.setLook(ModLook(name: "Typed"), of: removed)
+        #expect(relaunched.model.preferences.looks["c"] == nil)
         try await relaunched.installConfirmed(try relaunched.modFolder("c", plainManifest("c")), id: "c")
         #expect(relaunched.model.arrangedMods.map(\.id) == ["a", "b", "c"])
         await relaunched.cleanUp()
@@ -699,9 +703,10 @@ struct ModPreferencesOfInstalledModsTests {
             ModMenuSwitch(id: "a", name: "Mod a", symbol: ModAppearance.defaultSymbol, isOn: false, isBusy: false),
         ])
 
+        // While its hook runs, the item shows the position asked for and waits.
         let a = try #require(model.mod(id: "a"))
         model.switchFromMenu(a)
-        #expect(model.menuSwitches.last?.isOn == true)
+        #expect(model.menuSwitches.last == ModMenuSwitch(id: "a", name: "Mod a", symbol: ModAppearance.defaultSymbol, isOn: true, isBusy: true))
         try await fixture.waitUntil("the mod to be on") { a.isEnabled && model.requestedSwitch["a"] == nil }
         model.switchFromMenu(a)
         try await fixture.waitUntil("the mod to be off") { !a.isEnabled && model.requestedSwitch["a"] == nil }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ToolsyEngine
 
@@ -47,7 +48,9 @@ private struct AppearanceEditor: View {
                     .padding(.vertical, 2)
             }
             GlassButton(String(localized: "Use the Mod’s Own Look"), icon: "arrow.uturn.backward", fillsWidth: true) {
-                change { $0 = ModLook() }
+                // A name still being typed is kept when its field loses focus; it does, and then everything goes.
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                DispatchQueue.main.async { change { $0 = ModLook() } }
             }
             .disabled(look.isEmpty)
             .debugAnchor("look-reset")
@@ -57,9 +60,7 @@ private struct AppearanceEditor: View {
     private func change(_ body: (inout ModLook) -> Void) {
         var look = model.preferences.look(of: mod.id)
         body(&look)
-        withAnimation(Motion.resolve(Motion.snappy, reduceMotion: reduceMotion)) {
-            model.preferences.setLook(look, of: mod.id, originalName: mod.manifest.name)
-        }
+        withAnimation(Motion.resolve(Motion.snappy, reduceMotion: reduceMotion)) { model.setLook(look, of: mod) }
     }
 }
 
