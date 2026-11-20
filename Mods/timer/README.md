@@ -5,7 +5,8 @@ break (5 minutes). A system notification says when each phase ends. After the br
 waits until you start the next work phase.
 
 Start, pause, resume and reset it on its page, on its dashboard tile (whose bar shows the progress
-of the phase) or with the mod's main switch, which starts and pauses it.
+of the phase) or with the mod's main switch, which starts and pauses it. **Reset**, a quick control,
+is also on its card and in the menu of Toolsy's menu bar icon.
 
 ## How it keeps time
 

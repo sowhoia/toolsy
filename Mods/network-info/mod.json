@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "network-info",
   "name": "Network Info",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Toolsy",
   "summary": "Addresses, router, DNS and Wi-Fi of the current connection, read locally",
   "icon": "network",
@@ -103,6 +103,9 @@
         { "type": "button", "label": "Copy Address", "icon": "doc.on.doc", "copy": "{{address}}", "disabled": "!address" }
       ]
     }
+  ],
+  "quick": [
+    { "type": "button", "label": "Copy Address", "icon": "doc.on.doc", "copy": "{{address}}", "disabled": "!address" }
   ],
   "localizations": {
     "ru": {

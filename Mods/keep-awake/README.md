@@ -5,7 +5,8 @@ or until you switch it off. Optionally the display stays on too. When the time i
 switches itself off.
 
 The page and the dashboard tile show whether it is on, how much time is left and when it ends; the
-tile can switch it on and off and change the duration.
+tile can switch it on and off and change the duration. Its quick controls put the duration and the
+display on its card and in the menu of Toolsy's menu bar icon.
 
 ## What it runs
 

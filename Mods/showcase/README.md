@@ -15,6 +15,7 @@ standard macOS tools (`sysctl`, `netstat`, `ps`, `scutil --get ComputerName`, `s
 | **Text and values** | Every text style, a copyable value, a button that copies a template. |
 | **Template filters** | A collapsed section with the remaining filters: `date`, `time`, `ago`, `div`, `mul`, `add`, `round`, `number`, `upper`, `lower`, `truncate`, `count`, `join`, `either`. |
 | Dashboard | Four widgets: small ones with a chart and with a gauge, shown only while the mod is on; a medium one whose detail has buttons; a wide one with a two-series chart and settings in its detail. |
+| Quick controls | A button, a toggle and a picker on the mod's card, in its context menu and in the menu of Toolsy's menu bar icon. |
 
 The manifest is written in English with a Russian table under `localizations`; the scripts translate
 what they report with `TOOLSY_LOCALE`.

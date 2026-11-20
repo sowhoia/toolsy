@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "showcase",
   "name": "Showcase",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "Toolsy",
   "summary": "Every part of the mod format on one page",
   "icon": "square.grid.2x2.fill",
@@ -255,6 +255,18 @@
         { "type": "slider", "label": "Amplitude", "bind": "amplitude", "min": 10, "max": 100, "step": 5, "unit": "%" },
         { "type": "toggle", "label": "Second wave", "bind": "showSecond" },
         { "type": "text", "text": "Switch the mod on to start the wave.", "style": "caption", "when": "!enabled" }
+      ]
+    }
+  ],
+  "quick": [
+    { "type": "button", "label": "Roll", "icon": "dice", "command": "dice", "style": "prominent" },
+    { "type": "toggle", "label": "Second wave", "icon": "square.on.square", "bind": "showSecond" },
+    {
+      "type": "picker", "label": "Shape", "bind": "waveShape",
+      "options": [
+        { "value": "sine", "label": "Sine", "icon": "waveform.path" },
+        { "value": "triangle", "label": "Triangle", "icon": "triangle" },
+        { "value": "square", "label": "Square", "icon": "square" }
       ]
     }
   ],

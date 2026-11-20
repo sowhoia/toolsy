@@ -1783,7 +1783,7 @@ with `jq`.
   "schema": 1,
   "id": "keep-awake",
   "name": "Keep Awake",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Toolsy",
   "summary": "Keeps the Mac awake for a while or until you switch it off",
   "icon": "cup.and.saucer.fill",
@@ -1862,6 +1862,18 @@ with `jq`.
         { "type": "toggle", "label": "Keep the display on", "bind": "display" }
       ]
     }
+  ],
+  "quick": [
+    {
+      "type": "picker", "label": "Keep awake for", "icon": "timer", "bind": "duration", "command": "retime",
+      "options": [
+        { "value": 30, "label": "30 min" },
+        { "value": 60, "label": "1 hour" },
+        { "value": 120, "label": "2 hours" },
+        { "value": 0, "label": "Indefinitely" }
+      ]
+    },
+    { "type": "toggle", "label": "Keep the display on", "icon": "display", "bind": "display" }
   ],
   "localizations": {
     "ru": {

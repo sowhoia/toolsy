@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "timer",
   "name": "Focus Timer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Toolsy",
   "summary": "Work and break phases with a notification when each one ends",
   "icon": "timer",
@@ -77,6 +77,9 @@
         }
       ]
     }
+  ],
+  "quick": [
+    { "type": "button", "label": "Reset", "icon": "arrow.counterclockwise", "command": "reset", "disabled": "!enabled && !pausedLeft && phase == 'work'" }
   ],
   "localizations": {
     "ru": {

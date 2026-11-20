@@ -5,7 +5,8 @@ VPN) and its interface, IPv4 and IPv6 addresses, router, DNS servers and search 
 address was configured, the subnet mask, MTU and MAC address, and for Wi-Fi the channel, band,
 width, standard, signal, noise, link rate and security. Values can be copied with a click; **Copy
 All** copies a summary. A dashboard tile shows the address, with the router, DNS server and signal
-when expanded.
+when expanded. **Copy Address**, a quick control, copies the address from the mod's card and from the
+menu of Toolsy's menu bar icon.
 
 ## What it runs
 
