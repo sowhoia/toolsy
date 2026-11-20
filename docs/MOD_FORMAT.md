@@ -72,7 +72,7 @@ toolsy-mod pack my-mod -o my-mod.toolsymod
 | `new <id> [--template T] [--name N] [-o F]` | Writes a folder (`./<id>` unless `-o`; never over an existing one) holding a mod that validates and works as it is: `mod.json`, its script and a `README.md` saying how to try it. Templates: `basic` (a value kept fresh by `refresh`, a stepper setting, a button; the default), `switch` (`enable`/`disable` of a lasting effect, with `refresh` reporting `enabled`), `service` (a service feeding a chart and the status), `widget` (a dashboard widget with a gauge and `detail`, system events, a notification). |
 | `validate <mod> [--json]` | Takes a folder, a `.toolsymod` file or a lone manifest and runs every check installing runs. Prints `OK <id> <version>`, then `signed with key <fingerprint>` for a [signed](#signing) package, or the error naming the field on standard error. Then [warnings](#warnings), one per line on standard error after `warning: `. |
 | `run <folder> <command> [options]` | Validates the mod, runs one command exactly as Toolsy does and reports what Toolsy would make of it, see [Running a command](#running-a-command). |
-| `preview <mod> [--state J] [--language L]` | Takes a folder, a `.toolsymod` file or a lone manifest and prints what the page and the widgets show for a state, as an outline: each control with its rendered text and bound value, `[hidden]` when its `when` is false (or nothing inside a section or row is shown), `[disabled]`, a picker's options, a list's rows, each widget's title, value, gauge or chart and `detail`. `--language` shows the mod through its table for that language. Runs nothing. |
+| `preview <mod> [--state J] [--language L]` | Takes a folder, a `.toolsymod` file or a lone manifest and prints what the quick controls, the page and the widgets show for a state, as an outline: each control with its rendered text and bound value, `[hidden]` when its `when` is false (or nothing inside a section or row is shown), `[disabled]`, a picker's options, a list's rows, each widget's title, value, gauge or chart and `detail`. `--language` shows the mod through its table for that language. Runs nothing. |
 | `pack <folder> [-o file.toolsymod] [--sign key]` | Validates the folder and writes it as a package (`./<id>.toolsymod` unless `-o`), without `.DS_Store` files. The same files always give the same bytes, so a published package can be checked against its sources. `-o` must end in `.toolsymod` and replaces only an earlier package. `--sign` [signs](#signing) it with a key from `keygen`. Prints `OK <id> <version> <file>`, then `signed with key <fingerprint>` when signed. |
 | `keygen <file>` | Writes a new signing key to a file readable by you only, never over an existing one, and prints `OK <fingerprint>`. Keep it private and backed up. |
 
@@ -156,6 +156,7 @@ Toolsy shows for a failed run; and standard error.
 | `lifecycle` | no | Which commands Toolsy runs on its own, see [Lifecycle](#lifecycle). |
 | `ui` | no | The mod's page, see [Interface](#interface). |
 | `widgets` | no | Tiles for the dashboard, see [Widgets](#widgets). |
+| `quick` | no | Buttons, toggles and pickers next to the mod's name, see [Quick controls](#quick-controls) (since 1.1.1). |
 | `language` | no | The language the manifest's own text is written in, as a code like the keys of `localizations`. Default `"en"`. |
 | `localizations` | no | Translations of the mod's text, see [Localization](#localization). |
 
@@ -394,7 +395,7 @@ read them. No control can read `notify`, which is never stored.
 | `divider` | — |
 
 Controls may be nested up to four levels deep; a manifest may hold up to 200 controls, counting
-those in the `detail` of its [widgets](#widgets).
+those in the `detail` of its [widgets](#widgets) and its [quick controls](#quick-controls).
 
 ### Inputs
 
@@ -480,6 +481,33 @@ When a mod is installed for the first time, its widgets are put on the dashboard
 again or updating it adds none and brings back none the user removed; the user switches each widget
 on the mod's page.
 
+## Quick controls
+
+Since 1.1.1 a mod may put up to four of its controls next to its name: on its card in the list of mods,
+in its context menu, and in the menu of Toolsy's menu bar icon, where the mod has a submenu. They are
+for what the user does most without opening the page: a button for the mod's main action, a toggle or a
+picker for the setting that changes most.
+
+```json
+"quick": [
+  { "type": "button", "label": "Reset", "icon": "arrow.counterclockwise", "command": "reset", "disabled": "!enabled" },
+  { "type": "picker", "label": "Keep awake for", "bind": "duration", "command": "retime",
+    "options": [ { "value": 60, "label": "1 hour" }, { "value": 0, "label": "Indefinitely" } ] },
+  { "type": "toggle", "label": "Keep the display on", "bind": "display" }
+]
+```
+
+| Rule | |
+| --- | --- |
+| Types | `button`, `toggle` and `picker`, with the fields and rules they have on the page ([Inputs](#inputs)), `when`, `disabled` and `help` included. Any other type is refused. |
+| Number | At most 4. They count toward the 200 controls of the manifest. |
+| Card | Under the mod's name, side by side in equal columns, in the mod's colour. A toggle is a chip with a check that fills while it is on; a picker opens as a menu, whatever its `style`. In the compact list, a mod without a main switch shows its first quick control where the switch would be. |
+| Menus | In the mod's context menu and in its submenu of the menu bar icon's menu: a button is an item, a toggle an item ticked while it is on, a picker its options under its `label`, the chosen one ticked. The main switch, when the mod has one, comes first. A mod with neither a main switch nor a quick control shown is not in the menu bar icon's menu. |
+| Questions | A button's `confirm`, and a command needing [administrator access](#administrator-privileges) the mod lacks, ask in the panel; chosen from the menu bar icon's menu, they open the panel on the mod's page to ask. |
+
+Quick controls do not replace the page: keep every control there as well. Toolsy before 1.1.1 ignores
+`quick` and shows the mod without them; set `"toolsy": "1.1.1"` only if the mod is no use without them.
+
 ## Localization
 
 `localizations` translates the mod's text into other languages:
@@ -496,7 +524,7 @@ on the mod's page.
 | Entries | Each language maps a source string, exactly as written in the manifest, to its translation. At most 500 entries per language. Text without an entry stays as written. |
 | Choice | Toolsy goes through the user's preferred languages in order and stops at the first the mod has text in: the manifest's own `language`, for which the manifest is shown as written, or a table, the most specific first (for `pt-BR` it takes `pt-br`, otherwise `pt`; for `ru-RU`, `ru`). So a user who prefers English and then Russian reads an English mod in English, whatever tables it has. Without a match the manifest is shown as written. |
 | The manifest's language | `language` says what the manifest's own text is written in (`"en"` unless stated). It cannot also be a key of `localizations`. |
-| What is translated | `name`, `summary`, and in every control and widget the text fields: `label`, `title`, `footer`, `text`, `value`, `placeholder`, `confirm`, `empty`, `unit`, `help`, `copy`, option labels, chart and series labels, widget `title` and `value`. |
+| What is translated | `name`, `summary`, and in every control (of `ui`, of widgets' `detail` and of `quick`) and widget the text fields: `label`, `title`, `footer`, `text`, `value`, `placeholder`, `confirm`, `empty`, `unit`, `help`, `copy`, option labels, chart and series labels, widget `title` and `value`. |
 | What is not | `id`, commands, `bind`s, icons, tints, expressions, `author`, option values, a button's `value`, and anything a command reports. |
 | Templates | A template is translated as a whole string before it is rendered: `"{{ms}} ms"` → `"{{ms}} мс"`. Translations must keep the manifest valid: they are checked at install like the text they replace. |
 

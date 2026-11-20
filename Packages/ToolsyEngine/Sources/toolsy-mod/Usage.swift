@@ -10,7 +10,7 @@ enum Usage {
           new <id>                 start a mod from a template that works as it is
           validate <mod>           check a mod as installing it does, and point out likely mistakes
           run <folder> <command>   run one command of a mod as Toolsy does and report what it did
-          preview <folder>         print what the mod's page and widgets show for a state
+          preview <folder>         print what the mod's quick controls, page and widgets show for a state
           pack <folder>            check a mod folder and pack it into a .toolsymod file
           keygen <file>            make a key to sign the mods you pack
           help [<command>]         explain a command
@@ -76,10 +76,10 @@ enum Usage {
         case "preview": """
             usage: toolsy-mod preview <folder> [--state <json>] [--language <code>]
 
-            Validates the mod and prints, as an indented outline, what its page and widgets show for a state:
-            every control with its rendered text and bound value, [hidden] where its "when" is false,
-            [disabled], and each widget's title, value and gauge or chart. Runs no command. Also takes a
-            .toolsymod file or a lone manifest.
+            Validates the mod and prints, as an indented outline, what its quick controls, page and widgets
+            show for a state: every control with its rendered text and bound value, [hidden] where its "when"
+            is false, [disabled], and each widget's title, value and gauge or chart. Runs no command. Also
+            takes a .toolsymod file or a lone manifest.
 
               --state <json>     a JSON object merged over the mod's starting state (its settings plus
                                  "enabled": false); null removes a key

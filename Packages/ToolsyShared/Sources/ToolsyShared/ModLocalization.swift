@@ -51,6 +51,7 @@ extension ModManifest {
         copy.summary = summary.map(translate)
         copy.ui = ui.map { $0.translated(with: translate) }
         copy.widgets = widgets.map { $0.translated(with: translate) }
+        copy.quick = quick.map { $0.translated(with: translate) }
         return copy
     }
 }

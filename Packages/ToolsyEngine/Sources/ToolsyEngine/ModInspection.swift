@@ -19,7 +19,7 @@ extension ModManifest {
         programsShellCannotStart(in: payload) + unsuitableSettingDefaults() + unusedTranslations()
     }
 
-    /// Every control of the page and of the widgets' details with its path, depth first.
+    /// Every control of the page, of the widgets' details and of the quick controls with its path, depth first.
     private var locatedControls: [(path: String, control: ModControl)] {
         func walk(_ controls: [ModControl], _ path: String) -> [(path: String, control: ModControl)] {
             controls.enumerated().flatMap { index, control in
@@ -27,6 +27,7 @@ extension ModManifest {
             }
         }
         return walk(ui, "ui") + widgets.enumerated().flatMap { index, widget in walk(widget.detail, "widgets[\(index)].detail") }
+            + walk(quick, "quick")
     }
 
     /// A `shell` script that starts with a path inside the mod (`scripts/run.sh …`, `./run.sh`) fails unless

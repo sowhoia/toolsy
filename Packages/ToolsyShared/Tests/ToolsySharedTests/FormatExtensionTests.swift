@@ -97,7 +97,7 @@ private func widgets(_ widgets: String) -> String {
         let full = minimal(#""ui": [\#(dividers(150))], "widgets": [{"id": "a", "value": "x", "detail": [\#(dividers(50))]}]"#)
         #expect(failure(full) == "no error")
         let over = minimal(#""ui": [\#(dividers(150))], "widgets": [{"id": "a", "value": "x", "detail": [\#(dividers(51))]}]"#)
-        #expect(failure(over) == "widgets[0].detail: more than 200 controls in ui and the widgets' details together")
+        #expect(failure(over) == "widgets[0].detail: more than 200 controls in ui, the widgets' details and quick together")
     }
 }
 
@@ -433,5 +433,71 @@ private func widgets(_ widgets: String) -> String {
         #expect(try JSONDecoder().decode(CommandInput.self, from: JSONEncoder().encode(input)) == input)
         let old = try JSONDecoder().decode(CommandInput.self, from: Data(#"{"event": "refresh", "command": "s", "state": {}}"#.utf8))
         #expect(old.locale == nil)
+    }
+}
+
+@Suite struct QuickControlTests {
+    private func quick(_ controls: String) -> String {
+        failure(minimal(#""settings": {"on": false, "mode": "a"}, "commands": {"go": {"shell": "true"}}, "quick": [\#(controls)]"#))
+    }
+
+    @Test func buttonsTogglesAndPickersAreQuickControls() throws {
+        let mod = try manifest(minimal(#"""
+            "settings": {"on": false, "mode": "a"}, "commands": {"go": {"shell": "true"}},
+            "quick": [{"type": "button", "label": "Go", "icon": "play.fill", "command": "go", "when": "!on"},
+                      {"type": "toggle", "label": "On", "bind": "on"},
+                      {"type": "picker", "label": "Mode", "bind": "mode", "options": ["a", "b"], "command": "go"}]
+            """#))
+        #expect(mod.quick.count == 3)
+        guard case .button(let button) = mod.quick[0].kind, case .toggle = mod.quick[1].kind, case .picker = mod.quick[2].kind else {
+            Issue.record("quick controls decoded into unexpected kinds")
+            return
+        }
+        #expect(button.command == "go" && button.icon == "play.fill" && mod.quick[0].when == "!on")
+        #expect(try manifest(minimal()).quick.isEmpty)
+    }
+
+    @Test func aModHasAFewAndOnlyOfTheseKinds() {
+        let button = #"{"type": "button", "label": "Go", "command": "go"}"#
+        #expect(quick(Array(repeating: button, count: 4).joined(separator: ", ")) == "no error")
+        #expect(quick(Array(repeating: button, count: 5).joined(separator: ", ")) == "quick: a mod has at most 4 quick controls")
+        for other in [#"{"type": "slider", "label": "S", "bind": "v", "min": 0, "max": 1}"#, #"{"type": "value", "label": "V", "value": "x"}"#,
+                      #"{"type": "section", "children": []}"#, #"{"type": "divider"}"#] {
+            #expect(quick(other) == "quick[0]: a quick control is a button, a toggle or a picker", "\(other)")
+        }
+    }
+
+    @Test func eachFollowsTheRulesOfItsType() {
+        #expect(quick(#"{"type": "button", "label": "Go", "command": "nope"}"#) == #"quick[0]: command "nope" is not defined"#)
+        #expect(quick(#"{"type": "button", "label": "Go"}"#) == #"quick[0]: a button needs exactly one of "command", "open" and "copy""#)
+        #expect(quick(#"{"type": "button", "label": "Go", "open": "file:///etc"}"#) == "quick[0]: open must be an http or https URL")
+        #expect(quick(#"{"type": "toggle", "label": "T", "bind": "enabled"}"#)
+            == #"quick[0]: "enabled" is managed by the host and cannot be bound to an input"#)
+        #expect(quick(#"{"type": "picker", "bind": "mode", "options": []}"#) == "quick[0]: a picker needs 1–32 options")
+    }
+
+    @Test func theyCountTowardTheControlsOfTheManifest() {
+        let dividers = Array(repeating: #"{"type": "divider"}"#, count: 198).joined(separator: ", ")
+        let button = #"{"type": "button", "label": "Go", "copy": "x"}"#
+        #expect(failure(minimal(#""ui": [\#(dividers)], "quick": [\#(button), \#(button)]"#)) == "no error")
+        #expect(failure(minimal(#""ui": [\#(dividers)], "quick": [\#(button), \#(button), \#(button)]"#))
+            == "quick: more than 200 controls in ui, the widgets' details and quick together")
+    }
+
+    @Test func theirTextIsTranslated() throws {
+        let mod = try manifest(minimal(#"""
+            "settings": {"mode": "a"}, "commands": {"go": {"shell": "true"}},
+            "quick": [{"type": "button", "label": "Go", "command": "go", "confirm": "Sure?", "help": "Runs it"},
+                      {"type": "picker", "label": "Mode", "bind": "mode", "options": [{"value": "a", "label": "First"}]}],
+            "localizations": {"ru": {"Go": "Вперёд", "Sure?": "Точно?", "Runs it": "Запускает", "Mode": "Режим", "First": "Первый"}}
+            """#))
+        let ru = mod.localized(for: ["ru"])
+        guard case .button(let button) = ru.quick[0].kind, case .picker(let picker) = ru.quick[1].kind else {
+            Issue.record("quick controls translated into unexpected kinds")
+            return
+        }
+        #expect(button.label == "Вперёд" && button.confirm == "Точно?" && ru.quick[0].help == "Запускает" && button.command == "go")
+        #expect(picker.label == "Режим" && picker.options.map(\.label) == ["Первый"])
+        #expect(picker.options.map(\.value) == ["a"], "option values are data, not text")
     }
 }

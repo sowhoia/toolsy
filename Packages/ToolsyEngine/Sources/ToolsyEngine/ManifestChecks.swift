@@ -29,6 +29,7 @@ extension ModManifest {
             }
             try Self.check(widget.detail, path: "\(path).detail")
         }
+        try Self.check(quick, path: "quick")
     }
 
     /// Checks that every `exec` program is a file of the mod with its executable bit set.
@@ -44,12 +45,12 @@ extension ModManifest {
         }
     }
 
-    /// Every control of the page and of the widgets' details, depth first.
+    /// Every control of the page, of the widgets' details and of the quick controls, depth first.
     public var allControls: [ModControl] {
         func flatten(_ controls: [ModControl]) -> [ModControl] {
             controls.flatMap { [$0] + flatten($0.children) }
         }
-        return flatten(ui) + widgets.flatMap { flatten($0.detail) }
+        return flatten(ui) + widgets.flatMap { flatten($0.detail) } + quick
     }
 
     private static func check(_ controls: [ModControl], path: String) throws(ManifestError) {

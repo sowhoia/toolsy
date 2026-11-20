@@ -33,6 +33,7 @@ name.
   - [Lifecycle](#lifecycle)
   - [Interface](#interface)
   - [Widgets](#widgets)
+  - [Quick controls](#quick-controls)
   - [Localization](#localization)
   - [Templates](#templates)
   - [Expressions](#expressions)
@@ -163,6 +164,12 @@ Widget or page: a widget is one headline (`value`) with at most one gauge or cha
 `detail` when the user needs two or three controls right at the tile (a start button, a picker).
 Everything else belongs on the page. A mod SHOULD always have a page (`ui`); without one Toolsy
 shows only the status and summary.
+
+Quick controls: when the user will reach for one action or one setting again and again (start a
+run, copy an address, choose a duration, flip an option), put it in `quick` as well as on the page.
+It then sits on the mod's card and in the menu of Toolsy's menu bar icon, where it works without
+opening the panel. Give `quick` one to three controls, the most used first; leave it out when the
+main switch is all the user needs. See [Quick controls](#quick-controls).
 
 ### Scaffold
 
@@ -343,6 +350,7 @@ Rules for the contents (installing refuses a mod that breaks one):
 | `lifecycle` | object | no | Which commands Toolsy runs on its own. See [Lifecycle](#lifecycle). |
 | `ui` | array | no | The controls of the mod's page. See [Interface](#interface). |
 | `widgets` | array | no | Tiles for the dashboard. See [Widgets](#widgets). |
+| `quick` | array | no | Up to 4 buttons, toggles and pickers next to the mod's name: on its card, in its context menu and in its submenu of the menu bar icon's menu. See [Quick controls](#quick-controls). Since 1.1.1. |
 | `language` | string | no | The language the manifest's own text is written in, a code like the keys of `localizations`. Default `"en"`. MUST NOT also be a key of `localizations`. See [Localization](#localization). |
 | `localizations` | object | no | Language → source text → translation. See [Localization](#localization). |
 
@@ -612,7 +620,7 @@ draws a line.
 | `divider` | No fields. |
 
 Controls nest at most 4 levels deep (a widget's `detail` counts as level 2), and a manifest holds
-at most 200 controls in `ui` and all widgets' `detail` together.
+at most 200 controls in `ui`, all widgets' `detail` and `quick` together.
 
 #### Inputs
 
@@ -716,6 +724,40 @@ and optionally a small chart or a level bar, like the built-in CPU and memory ti
 - The tile's value is rendered from state like any template: keep it short (it has the width of
   one column when `small`), and make sure something reports it soon after launch (`launch` event or
   the service) if it must be right before the panel is first opened.
+
+### Quick controls
+
+`quick` is an array of up to 4 controls that Toolsy shows next to the mod's name: on its card in the
+list of mods, in its context menu, and in its submenu of the menu bar icon's menu, so the user can use
+them without opening the panel. Since Toolsy 1.1.1; an older Toolsy ignores the field and shows the mod
+without them.
+
+```json
+"quick": [
+  { "type": "button", "label": "Reset", "icon": "arrow.counterclockwise", "command": "reset", "disabled": "!enabled" },
+  { "type": "picker", "label": "Keep awake for", "bind": "duration", "command": "retime",
+    "options": [ { "value": 60, "label": "1 hour" }, { "value": 0, "label": "Indefinitely" } ] },
+  { "type": "toggle", "label": "Keep the display on", "bind": "display" }
+]
+```
+
+- Each element is a `button`, a `toggle` or a `picker` with exactly the fields and rules of that type
+  in `ui` ([Inputs](#inputs)), `when`, `disabled` and `help` included. Any other type is refused.
+- They count toward the 200 controls of the manifest. Their text is translated like the page's.
+- On the card they stand side by side in equal columns, in the mod's colour: a button as on the page,
+  a toggle as a chip with a check that fills while it is on, a picker as a menu (its `style` is
+  ignored) showing the chosen option. Keep labels short: with three controls each has about a third of
+  the card's width. In the compact list a mod without a main switch shows its first quick control where
+  the switch would be, a button with an `icon` as a round icon button.
+- In the menus a button is an item, a toggle an item ticked while it is on, and a picker lists its
+  options under its `label`, the chosen one ticked. The main switch comes first; the submenu ends with
+  an item that opens the mod's page. A mod appears in the menu bar icon's menu only if it has a main
+  switch or a quick control shown at that moment.
+- A button's `confirm`, and a command needing [administrator access](#administrator-privileges) the
+  mod lacks, ask in the panel; from the menu bar icon's menu the panel opens on the mod's page to ask.
+- Quick controls do not replace the page: the page MUST still hold every control the mod has.
+- `when` hides a quick control as it hides a control of the page (the card and the menus follow it),
+  so a mod can offer Start while it is off and Stop while it is on in the same place.
 
 ### Localization
 
@@ -893,8 +935,13 @@ the user (most root operations simply fail without root, but not all of them).
   the next launch stops the services the crashed instance left running before starting new ones.
 - **The panel.** The panel opens from the menu bar icon. Opening it runs every mod's `refresh`;
   refresh schedules without `background` run only while it is open. The dashboard shows built-in
-  tiles and mod widgets; below it is the list of mods, each with its switch and status, opening its
-  page.
+  tiles and mod widgets; below it is the list of mods, each with its switch, status and quick
+  controls, opening its page. A right click on the menu bar icon lists the mods with their switches
+  and quick controls without opening the panel.
+- **What the user changes.** The user can give a mod a name, a colour and an icon of their own,
+  reorder the list and hide mods from it. Toolsy then shows the user's name, colour and icon wherever
+  it shows the mod, except in the install confirmation; a hidden mod keeps running. A mod cannot see
+  or change any of this.
 - **Developer mode** (a switch in Toolsy's settings): Toolsy watches the installed mods folder.
   Editing `mod.json` there reloads the mod (keeping its settings); editing another file restarts its
   running service; a folder added by hand is loaded. Each mod's page then ends with a Reload button,
@@ -917,7 +964,8 @@ the user (most root operations simply fail without root, but not all of them).
 | Standard output and standard error read per command | 1 MB each |
 | One line of the service | 256 KB |
 | `refresh.every` | at least 1 s |
-| Controls in `ui` and all widgets' `detail` together | 200 |
+| Controls in `ui`, all widgets' `detail` and `quick` together | 200 |
+| Quick controls | 4 |
 | Nesting of controls | 4 levels |
 | Children of a `row` | 1–4 |
 | Options of a picker | 32 |
@@ -941,7 +989,7 @@ option is an error.
 | `new <id> [--template <template>] [--name <name>] [-o <folder>]` | Writes a new mod folder (`./<id>` unless `-o`) that validates and works as it is: `mod.json`, one script, `README.md`. Never overwrites anything. Templates: `basic` (the default), `switch`, `service`, `widget`. The default name is made from the id (`my-mod` → `My mod`). | `OK <id> <folder>`, the files, a next step |
 | `validate <mod> [--json]` | Every check installing runs, then [warnings](#warnings). | `OK <id> <version>` on standard output (then `signed with key <fingerprint>` for a signed package), or the error on standard error; then each warning on standard error after `warning: ` |
 | `run <folder> <command> [options]` | Validates the mod and runs one command exactly as Toolsy does, then reports what Toolsy would make of it. Takes a folder only. | a report, see below |
-| `preview <mod> [--state <json>] [--language <code>]` | Validates the mod and prints what its page and widgets show for a state, as an outline. Runs nothing. | the outline |
+| `preview <mod> [--state <json>] [--language <code>]` | Validates the mod and prints what its quick controls, page and widgets show for a state, as an outline. Runs nothing. | the outline |
 | `pack <folder> [-o <file.toolsymod>] [--sign <key>]` | Validates the folder and writes the package (`./<id>.toolsymod` unless `-o`), without `.DS_Store`, `.git`, `.hg`, `.svn` or `.toolsymod` files, executable bits kept, the same bytes for the same files. `-o` must end in `.toolsymod`; it replaces an earlier package, never a folder. `--sign` signs the package with a key made by `keygen`; use it only with a key the user gave you. | `OK <id> <version> <file>`, then `signed with key <fingerprint>` when signed |
 | `keygen <file>` | Makes a signing key for the user, readable by them only, never over an existing file. Do not make one unless the user asks: a key is theirs to keep and back up. | `OK <fingerprint>` |
 | `help [<command>]` | Explains a command; without one, lists them. | to standard output |
@@ -1726,8 +1774,9 @@ printf '{"percent": %s, "remaining": %s, "source": %s, "status": %s, "level": "%
 
 Keep Awake ships with Toolsy. Its service is `caffeinate`, which exits with status 0 when its time
 is up and so switches the mod off; the end of the hold is a setting, so it survives a restart of
-Toolsy; the tile's buttons switch the mod by setting `enabled` in their patches; every patch is
-built with `jq`.
+Toolsy; the tile's buttons switch the mod by setting `enabled` in their patches; its quick controls
+put the duration and the display on its card and in the menu bar icon's menu; every patch is built
+with `jq`.
 
 ```json keep-awake/mod.json
 {
@@ -2030,7 +2079,8 @@ files you can check by reading them.
 5. `toolsy-mod preview <folder>` with the starting state, a typical state (the patch `run` printed),
    an empty state and an error state shows no `{{`, no empty label or value, every control
    `[hidden]` exactly when intended, every widget with a value, and every picker with a `[selected]`
-   option (a picker with `optionsFrom` once the state holds its options).
+   option (a picker with `optionsFrom` once the state holds its options). Under `quick:` it shows the
+   one to three controls the user reaches for most, with short labels, or `quick` is left out.
 6. `toolsy-mod preview <folder> --language ru` shows every text translated.
 7. Every field name in `mod.json` appears in this document's tables for that object; every
    template is in a template field; every `when`/`disabled` is an expression without braces.

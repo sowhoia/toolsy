@@ -4,6 +4,7 @@ extension ModManifest {
     static let maxControls = 200
     static let maxNesting = 4
     static let maxWidgets = 8
+    static let maxQuickControls = 4
 
     /// "1", "1.2" or "1.2.3" as three numbers, missing ones 0; nil for anything else.
     static func versionNumbers(_ text: String) -> [Int]? {
@@ -54,6 +55,7 @@ extension ModManifest {
         var count = 0
         try validate(ui, path: "ui", depth: 1, count: &count)
         try validateWidgets(count: &count)
+        try validateQuickControls(count: &count)
         try validateLocalizations()
     }
 
@@ -173,7 +175,7 @@ extension ModManifest {
             guard count <= Self.maxControls else {
                 throw ManifestError(path.hasPrefix("ui")
                     ? "ui: more than \(Self.maxControls) controls"
-                    : "\(path): more than \(Self.maxControls) controls in ui and the widgets' details together")
+                    : "\(path): more than \(Self.maxControls) controls in ui, the widgets' details and quick together")
             }
             try validate(control, path: "\(path)[\(index)]", depth: depth, count: &count)
         }
@@ -313,6 +315,21 @@ extension ModManifest {
             // The detail is laid out like the children of a top-level section.
             try validate(widget.detail, path: "\(path).detail", depth: 2, count: &count)
         }
+    }
+
+    /// Quick controls are what fits a card and a menu: buttons, toggles and pickers, a few of them. They count toward
+    /// the controls of the manifest.
+    private func validateQuickControls(count: inout Int) throws {
+        guard quick.count <= Self.maxQuickControls else {
+            throw ManifestError("quick: a mod has at most \(Self.maxQuickControls) quick controls")
+        }
+        for (index, control) in quick.enumerated() {
+            switch control.kind {
+            case .button, .toggle, .picker: break
+            default: throw ManifestError("quick[\(index)]: a quick control is a button, a toggle or a picker")
+            }
+        }
+        try validate(quick, path: "quick", depth: 1, count: &count)
     }
 
     private func validateLocalizations() throws {

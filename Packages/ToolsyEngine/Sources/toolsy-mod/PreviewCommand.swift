@@ -2,8 +2,9 @@ import Foundation
 import ToolsyEngine
 import ToolsyShared
 
-/// `preview`: what a mod's page and widgets show for a state, as a stable indented outline. It follows the
-/// rules of MOD_FORMAT.md "Interface" and "Widgets" as the app renders them, and runs nothing.
+/// `preview`: what a mod's quick controls, page and widgets show for a state, as a stable indented outline. It
+/// follows the rules of MOD_FORMAT.md "Interface", "Widgets" and "Quick controls" as the app renders them, and runs
+/// nothing.
 struct PreviewCommand {
     let package: URL
     let stateChanges: ModState
@@ -45,6 +46,8 @@ private struct Outline {
     let manifest: ModManifest
     let state: ModState
     private(set) var lines: [String] = []
+    /// The controls being added are quick controls.
+    private var isQuick = false
 
     init(manifest: ModManifest, state: ModState, language: String?) {
         self.manifest = manifest
@@ -54,6 +57,12 @@ private struct Outline {
             add(0, "switch: \(state[ReservedStateKey.enabled]?.boolValue == true ? "on" : "off")")
         }
         add(0, attention)
+        if !manifest.quick.isEmpty {
+            add(0, "quick:")
+            isQuick = true
+            manifest.quick.forEach { add($0, depth: 1) }
+            isQuick = false
+        }
         add(0, "page:")
         if manifest.ui.isEmpty {
             add(1, "no controls: Toolsy shows the status and the summary")
@@ -193,7 +202,8 @@ private struct Outline {
             head = "picker" + (picker.label.map { " " + Self.quoted(render($0)) } ?? "") + ": "
                 + (selected.map { Self.quoted($0.label) } ?? "nothing selected")
             detail(bound(picker.bind))
-            detail(picker.style?.rawValue ?? (options.count <= 4 ? "segmented" : "menu"))
+            // A quick picker is always a menu: on a card and in the menus alike.
+            detail(isQuick ? "menu" : picker.style?.rawValue ?? (options.count <= 4 ? "segmented" : "menu"))
             if let source = picker.optionsFrom {
                 detail("options from \(source)")
                 let elements = state[source]?.arrayValue
