@@ -4,7 +4,8 @@ A menu bar app for macOS 26. Its panel opens on a dashboard of the Mac — CPU, 
 network, storage, GPU and disk activity — that you arrange yourself, and below it a list of
 **mods**: small features you install from a file and switch on and off, such as keeping the Mac
 awake or a focus timer. Mods can show switches, sliders, pickers, text fields, buttons, gauges,
-charts and lists, put their own tiles on the dashboard, send notifications, and do their work with
+charts and lists, put their own tiles on the dashboard, offer buttons, toggles and pickers right on
+their card and in the menu bar icon's menu, send notifications, and do their work with
 administrator privileges without asking for the password every time.
 
 Toolsy is native (Swift, AppKit, SwiftUI, Liquid Glass), has no third-party dependencies and
@@ -126,8 +127,11 @@ update that names another author.
 ### Your mods
 
 The list under the dashboard shows at a glance which mods are on: a mod that is on glows in its
-colour, with its badge lit and its switch in its colour; one that is off keeps its icon, unlit. Each
-mod's context menu turns it on or off, opens it, hides it or leads to:
+colour, with its badge lit and its switch in its colour; one that is off keeps its icon, unlit. A mod
+can put a few **quick controls** under its name: buttons, toggles and pickers for what you do with it
+most, such as resetting the timer, copying the address or choosing how long to keep the Mac awake.
+Each mod's context menu turns it on or off, offers its quick controls, opens it, hides it or leads
+to:
 
 - **Appearance**, also on the mod's page: give the mod a name, a colour and an icon of your own. They
   apply wherever Toolsy shows the mod — the list, its page, its widgets and its controls — and each
@@ -138,8 +142,10 @@ mod's context menu turns it on or off, opens it, hides it or leads to:
   **Compact** rows. A hidden mod keeps working and keeps its widgets; it waits in **Hidden** at the end
   of the list.
 
-A right click on the menu bar icon lists the mods in the list that have a switch, ticked while on, to
-turn them on or off without opening the panel.
+A right click on the menu bar icon lists the mods in the list that have a switch or quick controls,
+ticked while on: one click switches a mod that has only its switch, and a mod with quick controls has
+a submenu with its switch, its quick controls and a way to its page. Nothing of this needs the panel
+open.
 
 ## Writing mods
 
@@ -150,7 +156,7 @@ alias toolsy-mod=/Applications/Toolsy.app/Contents/Helpers/toolsy-mod
 toolsy-mod new my-mod --template widget     # a working mod to start from: basic, switch, service, widget
 toolsy-mod validate my-mod                  # the checks installing runs, and likely mistakes
 toolsy-mod run my-mod read                  # one command, run exactly as Toolsy runs it
-toolsy-mod preview my-mod                   # what the page and the widgets show for a state
+toolsy-mod preview my-mod                   # what the quick controls, page and widgets show for a state
 toolsy-mod pack my-mod -o my-mod.toolsymod
 toolsy-mod keygen author.key                # once: a key to sign your mods; keep it private
 toolsy-mod pack my-mod --sign author.key    # a signed package
@@ -165,9 +171,10 @@ Two documents describe mods:
 - [docs/MOD_FORMAT.md](docs/MOD_FORMAT.md) — the format, for people.
 - [docs/MOD_AUTHORING_FOR_AI.md](docs/MOD_AUTHORING_FOR_AI.md) — a self-contained specification for
   AI models that write mods. Give it to the model together with a sentence describing the mod you
-  want; it tells the model how to choose the mod's shape, write it from a template, check every
-  command with `toolsy-mod`, and hand you the files, the packed mod and what it runs. If the model
-  cannot run commands, it gives you the exact `toolsy-mod` commands to run and asks for their output.
+  want; it tells the model how to choose the mod's shape (and which actions deserve quick controls),
+  write it from a template, check every command with `toolsy-mod`, and hand you the files, the packed
+  mod and what it runs. If the model cannot run commands, it gives you the exact `toolsy-mod` commands
+  to run and asks for their output.
 
 ## Administrator access
 

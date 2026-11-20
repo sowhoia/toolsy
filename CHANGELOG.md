@@ -17,9 +17,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the list as cards or as compact rows. Hidden mods keep working and wait, folded, at the end of
   the list. The arrows beside + lead there, and so does a mod's context menu, which also turns the
   mod on or off and hides or shows it.
-- The menu of a right click on the menu bar icon switches mods on and off without the panel.
-- A mod's widget on the dashboard opens the mod or switches it from its context menu.
+- Quick controls: a mod can put up to four buttons, toggles and pickers under its name, on its card,
+  in its context menu and in the menu bar icon's menu, to use them without opening its page. Keep
+  Awake offers its duration and the display, Focus Timer Reset, Network Info Copy Address.
+- The menu of a right click on the menu bar icon switches mods on and off without the panel; a mod
+  with quick controls has a submenu with its switch, its quick controls and a way to its page.
+- A mod's widget on the dashboard opens the mod, switches it or uses its quick controls from its
+  context menu.
 - The choices are kept in `ModPreferences.json` in the data root; removing a mod forgets them.
+
+### For mod authors
+
+- `quick` in `mod.json`: up to four `button`, `toggle` and `picker` controls with the rules they have
+  on the page. They count toward the 200 controls of a manifest and are translated like the page.
+  Toolsy 1.1.0 ignores the field.
+- `toolsy-mod preview` shows the quick controls above the page, and `validate` checks them and warns
+  about them like the page's controls.
+- docs/MOD_FORMAT.md describes quick controls, and docs/MOD_AUTHORING_FOR_AI.md tells a model when a
+  mod deserves them and what the user can change about a mod.
+- Keep Awake 1.1.0, Focus Timer 1.1.0, Network Info 1.1.0 and Showcase 2.1.0 have quick controls.
 
 ## [1.1.0] - 2026-11-17
 

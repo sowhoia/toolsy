@@ -181,8 +181,15 @@ of ids that are not listed, as the dashboard does. Removing a mod forgets its en
 installed mod uses it; the mod's colour reaches its controls through the `modTint` environment value.
 A widget's own title, icon or colour still wins over the mod's. The install confirmation shows what
 the package says it is, never the user's look. The menu bar icon's menu is built each time it opens
-(`AppDelegate.makeMenu`), with `ModsModel.menuSwitches`: the listed mods that have a switch, in the
-user's order.
+(`AppDelegate.makeMenu`) from `ModsModel.menuEntries`: the listed mods that have a switch or a quick
+control shown, in the user's order, each with what its submenu holds.
+
+A mod's `quick` controls are the controls of its page reduced to three kinds. The card draws them with
+the page's components (a toggle as a chip), the context menus as SwiftUI menu items, the menu bar
+icon's submenu as `NSMenuItem`s that call `ModsModel.useQuickControl`. Every button of a mod, on the
+page, the card or a menu, goes through `ModsModel.press`, which asks a `confirm` in the panel and, from
+the menu bar icon's menu, first opens the panel on the mod's page; so do toggles and pickers whose
+command needs administrator access the mod lacks.
 
 ## Readings of the Mac
 
